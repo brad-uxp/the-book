@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Subscriptions
+// ============================================================
+
+enum Frequency {
+  monthly
+  annual
+}
+
+enum Category {
+  work
+  personal
+  essential_service
+}
+
+enum PaymentMode {
+  auto
+  manual
+}
+
+enum SubscriptionStatus {
+  active
+  paused
+  canceled
+}
+
+model Subscription {
+  id           String             @id @default(uuid())
+  name         String
+  amount_cents Int
+  frequency    Frequency
+  pay_day      Int // 1-31
+  pay_month    Int? // 1-12, required when frequency=annual
+  category     Category
+  payment_mode PaymentMode
+  status       SubscriptionStatus @default(active)
+  notes        String?
+  created_at   DateTime           @default(now())
+  updated_at   DateTime           @updatedAt
+
+  payments SubscriptionPayment[]
+}
+
+model SubscriptionPayment {
+  id                    String    @id @default(uuid())
+  subscription_id       String
+  period_key            String // "YYYY-MM" for monthly, "YYYY" for annual
+  due_date              DateTime
+  paid_at               DateTime
+  amount_cents_snapshot Int
+  created_at            DateTime  @default(now())
+  deleted_at            DateTime? // soft delete
+
+  subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+
+  // NOTE: No DB-level unique on (subscription_id, period_key) because of soft deletes.
+  // Uniqueness among non-deleted records is enforced at the application level.
+  @@index([subscription_id, period_key])
+}
+
+// ============================================================
+// People / Salaries
+// ============================================================
+
+enum PersonStatus {
+  active
+  inactive
+}
+
+enum ReminderStatus {
+  scheduled
+  ignored
+  done
+}
+
+model Person {
+  id         String       @id @default(uuid())
+  name       String
+  payday_day Int // 1-31
+  status     PersonStatus @default(active)
+  notes      String?
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  salary_base        SalaryBase?
+  salary_payments    SalaryPayment[]
+  increase_reminders SalaryIncreaseReminder[]
+}
+
+model SalaryBase {
+  person_id         String   @id
+  base_salary_cents Int
+  updated_at        DateTime @updatedAt
+
+  person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
+}
+
+model SalaryPayment {
+  id                         String   @id @default(uuid())
+  person_id                  String
+  period_key                 String // "YYYY-MM"
+  due_date                   DateTime
+  paid_at                    DateTime
+  base_salary_cents_snapshot Int
+  adjustment_cents           Int      @default(0)
+  adjustment_note            String?
+  total_cents                Int // base_salary_cents_snapshot + adjustment_cents
+  created_at                 DateTime @default(now())
+
+  person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
+
+  @@unique([person_id, period_key])
+}
+
+model SalaryIncreaseReminder {
+  id                       String         @id @default(uuid())
+  person_id                String
+  effective_date           DateTime
+  suggested_new_base_cents Int
+  status                   ReminderStatus @default(scheduled)
+  created_at               DateTime       @default(now())
+  updated_at               DateTime       @updatedAt
+
+  person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Notifications
+// ============================================================
+
+enum NotificationType {
+  subscription_auto_upcoming
+  subscription_manual_due
+  subscription_auto_paid
+  salary_manual_due
+  salary_increase_due
+  invoice_reminder_due
+  invoice_due
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  type        NotificationType
+  title       String
+  body        String
+  entity_type String
+  entity_id   String
+  event_date  DateTime
+  created_at  DateTime         @default(now())
+  read_at     DateTime?
+
+  @@unique([type, entity_id, event_date])
+}
+
+// ============================================================
+// Invoices
+// ============================================================
+
+enum InvoiceStatus {
+  pending
+  accounting
+  sent
+  paid
+}
+
+model Client {
+  id        String @id @default(uuid())
+  name      String
+  color_hex String @default("#6366f1")
+
+  invoices Invoice[]
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  invoice_number String?
+  client_id      String
+  amount_cents   Int
+  fee_cents      Int           @default(0)
+  status         InvoiceStatus @default(pending)
+  due_date       DateTime
+  reminder_date  DateTime?
+  notes          String?
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+
+  client Client @relation(fields: [client_id], references: [id])
+}

@@ -1,0 +1,98 @@
+import { z } from "zod";
+
+// ─── Subscriptions ────────────────────────────────────────────────────────────
+
+export const SubscriptionSchema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    amount_cents: z.number().int().positive("Amount must be positive"),
+    frequency: z.enum(["monthly", "annual"]),
+    pay_day: z.number().int().min(1).max(31),
+    pay_month: z.number().int().min(1).max(12).nullable().optional(),
+    category: z.enum(["work", "personal", "essential_service"]),
+    payment_mode: z.enum(["auto", "manual"]),
+    status: z.enum(["active", "paused", "canceled"]).default("active"),
+    notes: z.string().nullable().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.frequency === "annual") {
+        return data.pay_month != null;
+      }
+      return true;
+    },
+    { message: "pay_month is required for annual subscriptions", path: ["pay_month"] }
+  );
+
+export type SubscriptionInput = z.infer<typeof SubscriptionSchema>;
+
+export const SubscriptionPaymentSchema = z.object({
+  paid_at: z.string().min(1, "Payment date is required"),
+  amount_cents: z.number().int().positive().optional(),
+});
+
+export type SubscriptionPaymentInput = z.infer<typeof SubscriptionPaymentSchema>;
+
+// ─── People / Salaries ────────────────────────────────────────────────────────
+
+export const PersonSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  payday_day: z.number().int().min(1).max(31),
+  status: z.enum(["active", "inactive"]).default("active"),
+  notes: z.string().nullable().optional(),
+  base_salary_cents: z.number().int().min(0, "Salary must be non-negative"),
+});
+
+export type PersonInput = z.infer<typeof PersonSchema>;
+
+export const SalaryPaymentSchema = z.object({
+  period_key: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, "Period must be in YYYY-MM format"),
+  paid_at: z.string().min(1, "Payment date is required"),
+  adjustment_cents: z.number().int().default(0),
+  adjustment_note: z.string().nullable().optional(),
+});
+
+export type SalaryPaymentInput = z.infer<typeof SalaryPaymentSchema>;
+
+export const SalaryIncreaseReminderSchema = z.object({
+  effective_date: z.string().min(1, "Effective date is required"),
+  suggested_new_base_cents: z
+    .number()
+    .int()
+    .positive("Suggested salary must be positive"),
+});
+
+export type SalaryIncreaseReminderInput = z.infer<
+  typeof SalaryIncreaseReminderSchema
+>;
+
+// ─── Clients ──────────────────────────────────────────────────────────────────
+
+export const ClientSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  color_hex: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color")
+    .default("#6366f1"),
+});
+
+export type ClientInput = z.infer<typeof ClientSchema>;
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+export const InvoiceSchema = z.object({
+  invoice_number: z.string().nullable().optional(),
+  client_id: z.string().uuid("Client is required"),
+  amount_cents: z.number().int().min(0, "Amount must be non-negative"),
+  fee_cents: z.number().int().default(0),
+  status: z
+    .enum(["pending", "accounting", "sent", "paid"])
+    .default("pending"),
+  due_date: z.string().min(1, "Due date is required"),
+  reminder_date: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export type InvoiceInput = z.infer<typeof InvoiceSchema>;
