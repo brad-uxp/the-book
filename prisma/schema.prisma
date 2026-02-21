@@ -148,17 +148,46 @@ enum NotificationType {
 }
 
 model Notification {
-  id          String           @id @default(uuid())
-  type        NotificationType
-  title       String
-  body        String
-  entity_type String
-  entity_id   String
-  event_date  DateTime
-  created_at  DateTime         @default(now())
-  read_at     DateTime?
+  id             String           @id @default(uuid())
+  type           NotificationType
+  title          String
+  body           String
+  entity_type    String
+  entity_id      String
+  event_date     DateTime
+  created_at     DateTime         @default(now())
+  read_at        DateTime?
+  email_sent_at  DateTime?
 
   @@unique([type, entity_id, event_date])
+}
+
+// ============================================================
+// Settings
+// ============================================================
+
+model Settings {
+  id                       String   @id @default("singleton")
+  email_recipient          String?
+  days_before_subscription Int      @default(2)
+  days_before_salary       Int      @default(4)
+  days_before_invoice      Int      @default(0)
+  updated_at               DateTime @updatedAt
+}
+
+// ============================================================
+// Other Expenses
+// ============================================================
+
+model OtherExpense {
+  id           String   @id @default(uuid())
+  name         String
+  category     Category
+  paid_at      DateTime
+  amount_cents Int
+  notes        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 }
 
 // ============================================================
@@ -190,6 +219,7 @@ model Invoice {
   due_date       DateTime
   reminder_date  DateTime?
   notes          String?
+  file_url       String?
   created_at     DateTime      @default(now())
   updated_at     DateTime      @updatedAt
 

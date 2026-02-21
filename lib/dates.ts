@@ -73,19 +73,23 @@ export function annualPeriodKey(year: number): string {
 }
 
 /**
- * Format a date for display using the Montevideo timezone.
+ * Format a date for display.
+ * Dates are stored as UTC midnight "date-only" values, so we read the UTC
+ * components directly to avoid the Montevideo (UTC-3) offset shifting the day.
  */
 export function formatDate(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  return format(toZonedTime(d, TZ), "dd/MM/yyyy");
+  const str = typeof date === "string" ? date : date.toISOString();
+  const [year, month, day] = str.slice(0, 10).split("-").map(Number);
+  return format(new Date(year, month - 1, day), "dd/MM/yyyy");
 }
 
 /**
  * Format a date with month name for display.
  */
 export function formatDateLong(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  return format(toZonedTime(d, TZ), "d 'de' MMMM yyyy");
+  const str = typeof date === "string" ? date : date.toISOString();
+  const [year, month, day] = str.slice(0, 10).split("-").map(Number);
+  return format(new Date(year, month - 1, day), "d 'de' MMMM yyyy");
 }
 
 /**

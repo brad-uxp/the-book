@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import {
   Select,
   SelectContent,
@@ -38,10 +39,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ChevronRight } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, X, FileText } from "lucide-react";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
 import { InvoiceForm } from "./invoice-form";
@@ -64,22 +64,17 @@ interface Invoice {
   due_date: string;
   reminder_date: string | null;
   notes: string | null;
+  file_url: string | null;
   created_at: string;
   updated_at: string;
   client: Client;
 }
 
-const STATUS_COLORS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  pending: "outline",
-  accounting: "secondary",
-  sent: "default",
-  paid: "secondary",
-};
-
-const STATUS_FLOW: Record<string, string> = {
-  pending: "accounting",
-  accounting: "sent",
-  sent: "paid",
+const STATUS_CLASSES: Record<string, string> = {
+  pending: "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+  accounting: "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800",
+  sent: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+  paid: "bg-green-100 text-green-800 border-green-300 hover:bg-green-100 dark:bg-green-900/25 dark:text-green-500 dark:border-green-900",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -100,10 +95,13 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "due_date", desc: true },
   ]);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [editItem, setEditItem] = useState<Invoice | null>(null);
   const [detailItem, setDetailItem] = useState<Invoice | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
@@ -136,40 +134,71 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   };
 
   const handleEdit = async (input: InvoiceInput) => {
-    if (!editItem) return;
+    if (!detailItem) return;
     setLoading(true);
     try {
-      await fetch(`/api/invoices/${editItem.id}`, {
+      const res = await fetch(`/api/invoices/${detailItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error ?? "Error updating invoice");
+        return;
+      }
       await refresh();
-      setEditItem(null);
+      setDetailItem(null);
+      setIsEditMode(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAdvanceStatus = async (invoice: Invoice) => {
-    const next = STATUS_FLOW[invoice.status];
-    if (!next) return;
-    await fetch(`/api/invoices/${invoice.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    await refresh();
-  };
-
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this invoice?")) return;
     await fetch(`/api/invoices/${id}`, { method: "DELETE" });
     await refresh();
   };
 
-  const filtered =
-    statusFilter === "all" ? data : data.filter((i) => i.status === statusFilter);
+  const openDetail = (inv: Invoice) => {
+    setIsEditMode(false);
+    setDetailItem(inv);
+  };
+
+  const openEdit = (inv: Invoice) => {
+    setDetailItem(inv);
+    setIsEditMode(true);
+  };
+
+  const closeDetail = () => {
+    setDetailItem(null);
+    setIsEditMode(false);
+  };
+
+  const hasActiveFilters =
+    statusFilter !== "all" || clientFilter !== "all" || !!dateFrom || !!dateTo;
+
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setClientFilter("all");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const filtered = useMemo(() => {
+    let result = data;
+    if (statusFilter !== "all") result = result.filter((i) => i.status === statusFilter);
+    if (clientFilter !== "all") result = result.filter((i) => i.client_id === clientFilter);
+    if (dateFrom) result = result.filter((i) => i.due_date >= dateFrom);
+    if (dateTo) result = result.filter((i) => i.due_date <= dateTo);
+    return result;
+  }, [data, statusFilter, clientFilter, dateFrom, dateTo]);
+
+  const totals = useMemo(() => {
+    const amount = filtered.reduce((sum, i) => sum + i.amount_cents, 0);
+    const fee = filtered.reduce((sum, i) => sum + i.fee_cents, 0);
+    return { amount, fee, net: amount + fee };
+  }, [filtered]);
 
   const columns: ColumnDef<Invoice>[] = [
     {
@@ -196,17 +225,19 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
         ),
     },
     {
-      id: "amount",
+      accessorKey: "amount_cents",
       header: "Amount",
       cell: ({ row }) => (
-        <div className="text-right tabular-nums">
-          <div>{formatCents(row.original.amount_cents)}</div>
-          {row.original.fee_cents !== 0 && (
-            <div className="text-xs text-muted-foreground">
-              fee: {formatCents(row.original.fee_cents)}
-            </div>
-          )}
-        </div>
+        <span className="tabular-nums">{formatCents(row.original.amount_cents)}</span>
+      ),
+    },
+    {
+      accessorKey: "fee_cents",
+      header: "Fee",
+      cell: ({ row }) => (
+        <span className="tabular-nums text-muted-foreground">
+          {formatCents(row.original.fee_cents)}
+        </span>
       ),
     },
     {
@@ -222,7 +253,7 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
-        <Badge variant={STATUS_COLORS[row.original.status]}>
+        <Badge variant="outline" className={STATUS_CLASSES[row.original.status]}>
           {STATUS_LABELS[row.original.status]}
         </Badge>
       ),
@@ -248,47 +279,28 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
       header: "",
       cell: ({ row }) => {
         const inv = row.original;
-        const nextStatus = STATUS_FLOW[inv.status];
         return (
-          <div className="flex items-center gap-1">
-            {nextStatus && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAdvanceStatus(inv);
-                }}
-              >
-                → {STATUS_LABELS[nextStatus]}
-              </Button>
-            )}
+          <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <Button variant="ghost" size="icon" className="h-8 w-8">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setDetailItem(inv)}>
+                <DropdownMenuItem onClick={() => openDetail(inv)}>
                   View details
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setEditItem(inv)}>
+                <DropdownMenuItem onClick={() => openEdit(inv)}>
                   Edit
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => handleDelete(inv.id)}
-                >
-                  Delete
-                </DropdownMenuItem>
+                {inv.file_url && (
+                  <DropdownMenuItem asChild>
+                    <a href={inv.file_url} target="_blank" rel="noopener noreferrer">
+                      View file
+                    </a>
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -310,30 +322,73 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center gap-3">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36">
-            <SelectValue placeholder="All statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="accounting">Accounting</SelectItem>
-            <SelectItem value="sent">Sent</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="accounting">Accounting</SelectItem>
+              <SelectItem value="sent">Sent</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <span className="text-sm text-muted-foreground">
-          {filtered.length} invoices
-        </span>
+          <Select value={clientFilter} onValueChange={setClientFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="All clients" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All clients</SelectItem>
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <div className="ml-auto flex gap-2">
+          <DateRangePicker
+            value={{ from: dateFrom, to: dateTo }}
+            onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+          />
+
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+              <X className="mr-1 h-3 w-3" /> Clear
+            </Button>
+          )}
+
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
           <ClientManager clients={clients} onRefresh={refresh} />
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" /> New Invoice
           </Button>
         </div>
+      </div>
+
+      {/* Totals */}
+      <div className="flex items-center gap-6 rounded-md border bg-muted/30 px-4 py-2 text-sm">
+        <div>
+          <span className="text-muted-foreground">Amount </span>
+          <span className="font-medium tabular-nums">{formatCents(totals.amount)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Fee </span>
+          <span className="font-medium tabular-nums">{formatCents(totals.fee)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Net </span>
+          <span className="font-semibold tabular-nums">{formatCents(totals.net)}</span>
+        </div>
+        <span className="ml-auto text-muted-foreground">
+          {filtered.length} invoices
+        </span>
       </div>
 
       {/* Table */}
@@ -370,7 +425,7 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
                 <TableRow
                   key={row.id}
                   className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => setDetailItem(row.original)}
+                  onClick={() => openDetail(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -399,40 +454,35 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Edit dialog */}
-      <Dialog open={!!editItem} onOpenChange={(o) => !o && setEditItem(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Invoice</DialogTitle>
-          </DialogHeader>
-          {editItem && (
-            <InvoiceForm
-              clients={clients}
-              defaultValues={{
-                ...editItem,
-                due_date: editItem.due_date.slice(0, 10),
-                reminder_date: editItem.reminder_date?.slice(0, 10) ?? null,
-              }}
-              onSubmit={handleEdit}
-              onCancel={() => setEditItem(null)}
-              loading={loading}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Detail dialog */}
-      <Dialog
-        open={!!detailItem}
-        onOpenChange={(o) => !o && setDetailItem(null)}
-      >
-        <DialogContent className="max-w-md">
+      {/* Detail / Edit dialog — single Dialog to avoid Radix focus conflicts */}
+      <Dialog open={!!detailItem} onOpenChange={(o) => !o && closeDetail()}>
+        <DialogContent className={isEditMode ? "max-w-lg" : "max-w-md"}>
           <DialogHeader>
             <DialogTitle>
-              Invoice{detailItem?.invoice_number ? ` #${detailItem.invoice_number}` : ""}
+              {isEditMode
+                ? "Edit Invoice"
+                : `Invoice${detailItem?.invoice_number ? ` #${detailItem.invoice_number}` : ""}`}
             </DialogTitle>
           </DialogHeader>
-          {detailItem && (
+
+          {detailItem && isEditMode ? (
+            <InvoiceForm
+              key={detailItem.id}
+              clients={clients}
+              defaultValues={{
+                ...detailItem,
+                due_date: detailItem.due_date.slice(0, 10),
+                reminder_date: detailItem.reminder_date?.slice(0, 10) ?? null,
+              }}
+              onSubmit={handleEdit}
+              onCancel={() => setIsEditMode(false)}
+              onDelete={async () => {
+                await handleDelete(detailItem.id);
+                closeDetail();
+              }}
+              loading={loading}
+            />
+          ) : detailItem ? (
             <div className="space-y-4">
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
@@ -448,9 +498,28 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
                 <div>
                   <dt className="text-muted-foreground">Status</dt>
                   <dd>
-                    <Badge variant={STATUS_COLORS[detailItem.status]}>
-                      {STATUS_LABELS[detailItem.status]}
-                    </Badge>
+                    <Select
+                      value={detailItem.status}
+                      onValueChange={async (newStatus) => {
+                        await fetch(`/api/invoices/${detailItem.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ status: newStatus }),
+                        });
+                        setDetailItem({ ...detailItem, status: newStatus as Invoice["status"] });
+                        await refresh();
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-36 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="accounting">Accounting</SelectItem>
+                        <SelectItem value="sent">Sent</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </dd>
                 </div>
                 <div>
@@ -491,45 +560,29 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
                 )}
               </dl>
 
-              {/* Status flow */}
-              {STATUS_FLOW[detailItem.status] && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Badge variant={STATUS_COLORS[detailItem.status]}>
-                    {STATUS_LABELS[detailItem.status]}
-                  </Badge>
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      handleAdvanceStatus(detailItem);
-                      setDetailItem(null);
-                    }}
-                  >
-                    Move to {STATUS_LABELS[STATUS_FLOW[detailItem.status]]}
+              <div className="border-t" />
+              <div className="flex items-center justify-between">
+                {detailItem.file_url ? (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={detailItem.file_url} target="_blank" rel="noopener noreferrer">
+                      <FileText className="mr-1.5 h-4 w-4" />
+                      View file
+                    </a>
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setIsEditMode(true)}>
+                    Edit
+                  </Button>
+                  <Button variant="outline" onClick={closeDetail}>
+                    Close
                   </Button>
                 </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setDetailItem(null);
-                    setEditItem(detailItem);
-                  }}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setDetailItem(null)}
-                >
-                  Close
-                </Button>
               </div>
             </div>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

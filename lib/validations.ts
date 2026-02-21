@@ -2,27 +2,27 @@ import { z } from "zod";
 
 // ─── Subscriptions ────────────────────────────────────────────────────────────
 
-export const SubscriptionSchema = z
-  .object({
-    name: z.string().min(1, "Name is required"),
-    amount_cents: z.number().int().positive("Amount must be positive"),
-    frequency: z.enum(["monthly", "annual"]),
-    pay_day: z.number().int().min(1).max(31),
-    pay_month: z.number().int().min(1).max(12).nullable().optional(),
-    category: z.enum(["work", "personal", "essential_service"]),
-    payment_mode: z.enum(["auto", "manual"]),
-    status: z.enum(["active", "paused", "canceled"]).default("active"),
-    notes: z.string().nullable().optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.frequency === "annual") {
-        return data.pay_month != null;
-      }
-      return true;
-    },
-    { message: "pay_month is required for annual subscriptions", path: ["pay_month"] }
-  );
+export const SubscriptionBaseSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  amount_cents: z.number().int().positive("Amount must be positive"),
+  frequency: z.enum(["monthly", "annual"]),
+  pay_day: z.number().int().min(1).max(31),
+  pay_month: z.number().int().min(1).max(12).nullable().optional(),
+  category: z.enum(["work", "personal", "essential_service"]),
+  payment_mode: z.enum(["auto", "manual"]),
+  status: z.enum(["active", "paused", "canceled"]).default("active"),
+  notes: z.string().nullable().optional(),
+});
+
+export const SubscriptionSchema = SubscriptionBaseSchema.refine(
+  (data) => {
+    if (data.frequency === "annual") {
+      return data.pay_month != null;
+    }
+    return true;
+  },
+  { message: "pay_month is required for annual subscriptions", path: ["pay_month"] }
+);
 
 export type SubscriptionInput = z.infer<typeof SubscriptionSchema>;
 
@@ -84,7 +84,7 @@ export type ClientInput = z.infer<typeof ClientSchema>;
 
 export const InvoiceSchema = z.object({
   invoice_number: z.string().nullable().optional(),
-  client_id: z.string().uuid("Client is required"),
+  client_id: z.string().min(1, "Client is required"),
   amount_cents: z.number().int().min(0, "Amount must be non-negative"),
   fee_cents: z.number().int().default(0),
   status: z
@@ -93,6 +93,7 @@ export const InvoiceSchema = z.object({
   due_date: z.string().min(1, "Due date is required"),
   reminder_date: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  file_url: z.string().nullable().optional(),
 });
 
 export type InvoiceInput = z.infer<typeof InvoiceSchema>;

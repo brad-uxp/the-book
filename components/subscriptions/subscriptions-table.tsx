@@ -32,10 +32,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, History } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/currency";
 import { formatDate, formatPeriodKey } from "@/lib/dates";
 import { SubscriptionForm } from "./subscription-form";
@@ -60,11 +60,11 @@ interface Subscription {
   }>;
 }
 
-const STATUS_COLORS = {
-  active: "default",
-  paused: "secondary",
-  canceled: "destructive",
-} as const;
+const STATUS_CLASSES: Record<string, string> = {
+  active:   "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800",
+  paused:   "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+  canceled: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+};
 
 const CATEGORY_LABELS = {
   work: "Work",
@@ -77,6 +77,7 @@ interface Props {
 }
 
 export function SubscriptionsTable({ initialData }: Props) {
+  const router = useRouter();
   const [data, setData] = useState(initialData);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -124,7 +125,6 @@ export function SubscriptionsTable({ initialData }: Props) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this subscription and all its payments?")) return;
     await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
     await refresh();
   };
@@ -190,7 +190,14 @@ export function SubscriptionsTable({ initialData }: Props) {
       accessorKey: "payment_mode",
       header: "Mode",
       cell: ({ row }) => (
-        <Badge variant={row.original.payment_mode === "auto" ? "default" : "secondary"}>
+        <Badge
+          variant="outline"
+          className={
+            row.original.payment_mode === "auto"
+              ? "bg-gray-200 text-gray-600 border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+              : "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+          }
+        >
           {row.original.payment_mode === "auto" ? "Auto" : "Manual"}
         </Badge>
       ),
@@ -199,7 +206,7 @@ export function SubscriptionsTable({ initialData }: Props) {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
-        <Badge variant={STATUS_COLORS[row.original.status]}>
+        <Badge variant="outline" className={STATUS_CLASSES[row.original.status]}>
           {row.original.status}
         </Badge>
       ),
@@ -223,6 +230,7 @@ export function SubscriptionsTable({ initialData }: Props) {
       cell: ({ row }) => {
         const sub = row.original;
         return (
+          <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -241,15 +249,9 @@ export function SubscriptionsTable({ initialData }: Props) {
                   Register payment
                 </DropdownMenuItem>
               )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() => handleDelete(sub.id)}
-              >
-                Delete
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         );
       },
     },
@@ -356,6 +358,10 @@ export function SubscriptionsTable({ initialData }: Props) {
               defaultValues={editItem}
               onSubmit={handleEdit}
               onCancel={() => setEditItem(null)}
+              onDelete={async () => {
+                await handleDelete(editItem.id);
+                setEditItem(null);
+              }}
               loading={loading}
             />
           )}
@@ -440,7 +446,7 @@ export function SubscriptionsTable({ initialData }: Props) {
                 <div>
                   <dt className="text-muted-foreground">Status</dt>
                   <dd>
-                    <Badge variant={STATUS_COLORS[detailItem.status]}>
+                    <Badge variant="outline" className={STATUS_CLASSES[detailItem.status]}>
                       {detailItem.status}
                     </Badge>
                   </dd>
@@ -453,38 +459,33 @@ export function SubscriptionsTable({ initialData }: Props) {
                 )}
               </dl>
 
-              {detailItem.payments.length > 0 && (
-                <div>
-                  <h4 className="mb-2 text-sm font-semibold">Payment History</h4>
-                  <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {detailItem.payments.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex justify-between text-sm border rounded px-3 py-1.5"
-                      >
-                        <span>{formatPeriodKey(p.period_key)}</span>
-                        <span className="text-muted-foreground">
-                          {formatDate(p.paid_at)}
-                        </span>
-                        <span className="font-medium">
-                          {formatCents(p.amount_cents_snapshot)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
+              <div className="border-t" />
+              <div className="flex items-center justify-between">
                 <Button
                   variant="outline"
-                  onClick={() => { setDetailItem(null); setEditItem(detailItem); }}
+                  size="sm"
+                  onClick={() => {
+                    setDetailItem(null);
+                    router.push(
+                      `/expenses?source=${detailItem.id}&name=${encodeURIComponent(detailItem.name)}`
+                    );
+                  }}
                 >
-                  Edit
+                  <History className="mr-2 h-4 w-4" />
+                  Payment history
                 </Button>
-                <Button variant="outline" onClick={() => setDetailItem(null)}>
-                  Close
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setDetailItem(null); setEditItem(detailItem); }}
+                  >
+                    Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setDetailItem(null)}>
+                    Close
+                  </Button>
+                </div>
               </div>
             </div>
           )}

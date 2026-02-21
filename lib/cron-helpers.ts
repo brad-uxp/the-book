@@ -27,16 +27,18 @@ export interface CronPeriodResult {
   periodKey: string;
   dueDate: Date;
   isToday: boolean;
-  isTwoDaysBefore: boolean;
+  isDaysBefore: boolean;
 }
 
 /**
  * Given a subscription and today's date, compute the current period's
  * due_date and period_key, then determine if today matches.
+ * daysBefore controls how many days ahead to fire the "upcoming" notification.
  */
 export function getSubscriptionPeriod(
   sub: SubscriptionForCron,
-  today: Date
+  today: Date,
+  daysBefore = 2
 ): CronPeriodResult {
   const year = today.getUTCFullYear();
   const month = today.getUTCMonth() + 1;
@@ -54,13 +56,13 @@ export function getSubscriptionPeriod(
     periodKey = annualPeriodKey(year);
   }
 
-  const twoDaysBefore = addDaysUTC(dueDate, -2);
+  const notifyDate = addDaysUTC(dueDate, -daysBefore);
 
   return {
     periodKey,
     dueDate,
     isToday: isSameDay(today, dueDate),
-    isTwoDaysBefore: isSameDay(today, twoDaysBefore),
+    isDaysBefore: isSameDay(today, notifyDate),
   };
 }
 
@@ -77,6 +79,7 @@ export function buildSubscriptionNotification(params: {
   sub: SubscriptionForCron;
   dueDate: Date;
   eventDate: Date;
+  daysBefore?: number;
 }): {
   type: NotificationType;
   title: string;
@@ -85,16 +88,17 @@ export function buildSubscriptionNotification(params: {
   entity_id: string;
   event_date: Date;
 } {
-  const { type, sub, eventDate } = params;
+  const { type, sub, eventDate, daysBefore = 2 } = params;
+  const amount = `$${(sub.amount_cents / 100).toFixed(2)}`;
   const titles: Record<typeof type, string> = {
     subscription_auto_upcoming: `Upcoming auto payment: ${sub.name}`,
-    subscription_manual_due: `Payment due: ${sub.name}`,
+    subscription_manual_due: `Payment due in ${daysBefore} day${daysBefore !== 1 ? "s" : ""}: ${sub.name}`,
     subscription_auto_paid: `Auto payment processed: ${sub.name}`,
   };
   const bodies: Record<typeof type, string> = {
-    subscription_auto_upcoming: `Auto payment of $${(sub.amount_cents / 100).toFixed(2)} will be charged in 2 days.`,
-    subscription_manual_due: `Manual payment of $${(sub.amount_cents / 100).toFixed(2)} is due today.`,
-    subscription_auto_paid: `$${(sub.amount_cents / 100).toFixed(2)} was automatically charged today.`,
+    subscription_auto_upcoming: `Auto payment of ${amount} will be charged in ${daysBefore} day${daysBefore !== 1 ? "s" : ""}.`,
+    subscription_manual_due: `Manual payment of ${amount} is due in ${daysBefore} day${daysBefore !== 1 ? "s" : ""}.`,
+    subscription_auto_paid: `${amount} was automatically charged today.`,
   };
   return {
     type,

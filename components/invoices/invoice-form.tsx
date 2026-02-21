@@ -23,6 +23,18 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Trash2 } from "lucide-react";
 
 interface Client {
   id: string;
@@ -39,6 +51,7 @@ const FormSchema = z.object({
   due_date: z.string().min(1, "Due date is required"),
   reminder_date: z.string().optional(),
   notes: z.string().optional(),
+  file_url: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
@@ -48,6 +61,7 @@ interface InvoiceFormProps {
   defaultValues?: Partial<InvoiceInput>;
   onSubmit: (data: InvoiceInput) => Promise<void>;
   onCancel: () => void;
+  onDelete?: () => Promise<void>;
   loading?: boolean;
 }
 
@@ -56,6 +70,7 @@ export function InvoiceForm({
   defaultValues,
   onSubmit,
   onCancel,
+  onDelete,
   loading,
 }: InvoiceFormProps) {
   const form = useForm<FormValues>({
@@ -63,10 +78,10 @@ export function InvoiceForm({
     defaultValues: {
       invoice_number: defaultValues?.invoice_number ?? "",
       client_id: defaultValues?.client_id ?? "",
-      amount_dollars: defaultValues?.amount_cents
+      amount_dollars: defaultValues?.amount_cents != null
         ? centsToDecimalString(defaultValues.amount_cents)
         : "",
-      fee_dollars: defaultValues?.fee_cents
+      fee_dollars: defaultValues?.fee_cents != null
         ? centsToDecimalString(defaultValues.fee_cents)
         : "0",
       status: defaultValues?.status ?? "pending",
@@ -77,6 +92,7 @@ export function InvoiceForm({
         ? new Date(defaultValues.reminder_date).toISOString().slice(0, 10)
         : "",
       notes: defaultValues?.notes ?? "",
+      file_url: defaultValues?.file_url ?? "",
     },
   });
 
@@ -90,6 +106,7 @@ export function InvoiceForm({
       due_date: data.due_date,
       reminder_date: data.reminder_date || null,
       notes: data.notes || null,
+      file_url: data.file_url || null,
     });
   };
 
@@ -235,13 +252,58 @@ export function InvoiceForm({
           )}
         />
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={loading}>
-            {loading ? "Saving..." : "Save"}
-          </Button>
+        <FormField
+          control={form.control}
+          name="file_url"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>File link (optional)</FormLabel>
+              <FormControl>
+                <Input type="url" placeholder="https://..." {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="flex items-center justify-between pt-2">
+          {onDelete ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" disabled={loading}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the invoice. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={onDelete}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving..." : "Save"}
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

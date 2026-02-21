@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { SubscriptionSchema } from "@/lib/validations";
+import { SubscriptionSchema, SubscriptionBaseSchema } from "@/lib/validations";
 
 export async function GET(
   _req: NextRequest,
@@ -26,7 +26,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const parsed = SubscriptionSchema.partial().safeParse(body);
+  const parsed = SubscriptionBaseSchema.partial().safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

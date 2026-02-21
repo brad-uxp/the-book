@@ -23,6 +23,18 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Trash2 } from "lucide-react";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -48,6 +60,7 @@ interface SubscriptionFormProps {
   defaultValues?: Partial<SubscriptionInput>;
   onSubmit: (data: SubscriptionInput) => Promise<void>;
   onCancel: () => void;
+  onDelete?: () => Promise<void>;
   loading?: boolean;
 }
 
@@ -55,6 +68,7 @@ export function SubscriptionForm({
   defaultValues,
   onSubmit,
   onCancel,
+  onDelete,
   loading,
 }: SubscriptionFormProps) {
   const form = useForm<FormValues>({
@@ -298,13 +312,44 @@ export function SubscriptionForm({
           )}
         />
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={loading}>
-            {loading ? "Saving..." : "Save"}
-          </Button>
+        <div className="flex items-center justify-between pt-2">
+          {onDelete ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" disabled={loading}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete subscription?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the subscription and all its payment history. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={onDelete}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving..." : "Save"}
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
         ? new Date(parsed.data.reminder_date)
         : null,
       notes: parsed.data.notes ?? null,
+      file_url: parsed.data.file_url ?? null,
     },
     include: { client: true },
   });

@@ -48,6 +48,7 @@ export async function PATCH(
       ? new Date(parsed.data.reminder_date)
       : null;
   if (parsed.data.notes !== undefined) data.notes = parsed.data.notes ?? null;
+  if (parsed.data.file_url !== undefined) data.file_url = parsed.data.file_url ?? null;
 
   const invoice = await prisma.invoice.update({
     where: { id },

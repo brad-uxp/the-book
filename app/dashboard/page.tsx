@@ -1,0 +1,198 @@
+import { prisma } from "@/lib/db";
+import { DashboardChart } from "@/components/dashboard/dashboard-chart";
+import { UpcomingCards } from "@/components/dashboard/upcoming-cards";
+import {
+  getTodayInTZ,
+  addDaysUTC,
+  clampDay,
+  monthlyPeriodKey,
+  annualPeriodKey,
+} from "@/lib/dates";
+
+export const dynamic = "force-dynamic";
+
+function toPeriodKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getLast36Months(): string[] {
+  const now = new Date();
+  return Array.from({ length: 36 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (35 - i), 1);
+    return toPeriodKey(d);
+  });
+}
+
+export default async function DashboardPage() {
+  const today = getTodayInTZ();
+  const in5Days = addDaysUTC(today, 5);
+
+  const todayYear  = today.getUTCFullYear();
+  const todayMonth = today.getUTCMonth() + 1;
+  const nextMonthDate = new Date(Date.UTC(todayYear, todayMonth, 1));
+  const nextYear  = nextMonthDate.getUTCFullYear();
+  const nextMonth = nextMonthDate.getUTCMonth() + 1;
+
+  const currentMonthKey = monthlyPeriodKey(todayYear, todayMonth);
+  const nextMonthKey    = monthlyPeriodKey(nextYear, nextMonth);
+  const currentYearKey  = annualPeriodKey(todayYear);
+
+  // ── Chart data ──────────────────────────────────────────────────────────────
+  const months = getLast36Months();
+  const from = months[0];
+  const to   = months[months.length - 1];
+
+  const fromDate = new Date(from + "-01");
+  const toDate   = new Date(parseInt(to.slice(0, 4)), parseInt(to.slice(5, 7)), 0);
+
+  const [subPayments, salaryPayments, invoices] = await Promise.all([
+    prisma.subscriptionPayment.findMany({
+      where: { deleted_at: null, paid_at: { gte: fromDate, lte: toDate } },
+      select: { paid_at: true, amount_cents_snapshot: true },
+    }),
+    prisma.salaryPayment.findMany({
+      where: { paid_at: { gte: fromDate, lte: toDate } },
+      select: { paid_at: true, total_cents: true },
+    }),
+    prisma.invoice.findMany({
+      where: { status: "paid", due_date: { gte: fromDate, lte: toDate } },
+      select: { due_date: true, amount_cents: true, fee_cents: true },
+    }),
+  ]);
+
+  const monthlyData = months.map((month) => {
+    const expenses =
+      subPayments
+        .filter((p) => toPeriodKey(p.paid_at) === month)
+        .reduce((s, p) => s + p.amount_cents_snapshot, 0) +
+      salaryPayments
+        .filter((p) => toPeriodKey(p.paid_at) === month)
+        .reduce((s, p) => s + p.total_cents, 0);
+
+    const income = invoices
+      .filter((inv) => toPeriodKey(inv.due_date) === month)
+      .reduce((s, inv) => s + inv.amount_cents + inv.fee_cents, 0);
+
+    return { month, expenses, income };
+  });
+
+  // ── Upcoming data ───────────────────────────────────────────────────────────
+  const [activeSubscriptions, activePeople, upcomingInvoices] = await Promise.all([
+    prisma.subscription.findMany({
+      where: { status: "active" },
+      select: {
+        id: true, name: true, amount_cents: true,
+        frequency: true, pay_day: true, pay_month: true,
+        payments: {
+          where: { deleted_at: null, period_key: { in: [currentMonthKey, nextMonthKey, currentYearKey] } },
+          select: { period_key: true },
+        },
+      },
+    }),
+    prisma.person.findMany({
+      where: { status: "active" },
+      select: {
+        id: true, name: true, payday_day: true,
+        salary_base: { select: { base_salary_cents: true } },
+        salary_payments: {
+          where: { period_key: { in: [currentMonthKey, nextMonthKey] } },
+          select: { period_key: true },
+        },
+      },
+    }),
+    prisma.invoice.findMany({
+      where: { status: { not: "paid" }, due_date: { gte: today, lte: in5Days } },
+      include: { client: true },
+      orderBy: { due_date: "asc" },
+    }),
+  ]);
+
+  // Compute which subscriptions are due in the next 5 days and unpaid
+  const upcomingSubPayments = activeSubscriptions.flatMap((sub) => {
+    for (let i = 0; i <= 5; i++) {
+      const checkDate = addDaysUTC(today, i);
+      const y = checkDate.getUTCFullYear();
+      const m = checkDate.getUTCMonth() + 1;
+      const d = checkDate.getUTCDate();
+
+      let isDue = false;
+      let periodKey = "";
+
+      if (sub.frequency === "monthly") {
+        isDue = clampDay(y, m, sub.pay_day) === d;
+        periodKey = monthlyPeriodKey(y, m);
+      } else {
+        isDue = sub.pay_month === m && clampDay(y, m, sub.pay_day) === d;
+        periodKey = annualPeriodKey(y);
+      }
+
+      if (isDue) {
+        const alreadyPaid = sub.payments.some((p) => p.period_key === periodKey);
+        if (!alreadyPaid) {
+          return [{
+            id: sub.id,
+            type: "subscription" as const,
+            name: sub.name,
+            amount_cents: sub.amount_cents,
+            due_date: checkDate.toISOString(),
+          }];
+        }
+        break;
+      }
+    }
+    return [];
+  });
+
+  // Compute which people are due in the next 5 days and unpaid
+  const upcomingSalaryPayments = activePeople.flatMap((person) => {
+    for (let i = 0; i <= 5; i++) {
+      const checkDate = addDaysUTC(today, i);
+      const y = checkDate.getUTCFullYear();
+      const m = checkDate.getUTCMonth() + 1;
+      const d = checkDate.getUTCDate();
+
+      if (clampDay(y, m, person.payday_day) === d) {
+        const periodKey = monthlyPeriodKey(y, m);
+        const alreadyPaid = person.salary_payments.some((p) => p.period_key === periodKey);
+        if (!alreadyPaid) {
+          return [{
+            id: person.id,
+            type: "salary" as const,
+            name: person.name,
+            amount_cents: person.salary_base?.base_salary_cents ?? 0,
+            due_date: checkDate.toISOString(),
+          }];
+        }
+        break;
+      }
+    }
+    return [];
+  });
+
+  const upcomingPayments = [...upcomingSubPayments, ...upcomingSalaryPayments].sort(
+    (a, b) => a.due_date.localeCompare(b.due_date)
+  );
+
+  const upcomingInvoicesList = upcomingInvoices.map((inv) => ({
+    id: inv.id,
+    invoice_number: inv.invoice_number,
+    client: { name: inv.client.name, color_hex: inv.client.color_hex },
+    amount_cents: inv.amount_cents,
+    fee_cents: inv.fee_cents,
+    status: inv.status,
+    due_date: inv.due_date.toISOString(),
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Monthly income vs expenses overview.
+        </p>
+      </div>
+      <DashboardChart data={monthlyData} />
+      <UpcomingCards payments={upcomingPayments} invoices={upcomingInvoicesList} />
+    </div>
+  );
+}

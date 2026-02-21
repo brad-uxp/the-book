@@ -80,8 +80,8 @@ export function ClientManager({ clients, onRefresh }: ClientManagerProps) {
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={openCreate}>
-        <Plus className="mr-2 h-3.5 w-3.5" /> Manage Clients
+      <Button variant="outline" onClick={openCreate}>
+        <Plus className="mr-2 h-4 w-4" /> Manage Clients
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

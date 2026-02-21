@@ -34,7 +34,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, History } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
 import { formatDate, formatPeriodKey } from "@/lib/dates";
 import { PersonForm } from "./person-form";
@@ -72,7 +73,13 @@ interface Props {
   initialData: Person[];
 }
 
+const STATUS_CLASSES: Record<string, string> = {
+  active:   "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800",
+  inactive: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+};
+
 export function SalariesTable({ initialData }: Props) {
+  const router = useRouter();
   const [data, setData] = useState(initialData);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -246,9 +253,7 @@ export function SalariesTable({ initialData }: Props) {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
-        <Badge
-          variant={row.original.status === "active" ? "default" : "secondary"}
-        >
+        <Badge variant="outline" className={STATUS_CLASSES[row.original.status]}>
           {row.original.status}
         </Badge>
       ),
@@ -285,6 +290,7 @@ export function SalariesTable({ initialData }: Props) {
       cell: ({ row }) => {
         const person = row.original;
         return (
+          <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -317,6 +323,7 @@ export function SalariesTable({ initialData }: Props) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         );
       },
     },
@@ -569,11 +576,7 @@ export function SalariesTable({ initialData }: Props) {
                 <div>
                   <dt className="text-muted-foreground">Status</dt>
                   <dd>
-                    <Badge
-                      variant={
-                        detailPerson.status === "active" ? "default" : "secondary"
-                      }
-                    >
+                    <Badge variant="outline" className={STATUS_CLASSES[detailPerson.status]}>
                       {detailPerson.status}
                     </Badge>
                   </dd>
@@ -652,55 +655,40 @@ export function SalariesTable({ initialData }: Props) {
                 </div>
               )}
 
-              {/* Payment history */}
-              {detailPerson.salary_payments.length > 0 && (
-                <div>
-                  <h4 className="mb-2 text-sm font-semibold">Payment History</h4>
-                  <div className="max-h-48 space-y-1 overflow-y-auto">
-                    {detailPerson.salary_payments.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between rounded border px-3 py-1.5 text-sm"
-                      >
-                        <span className="font-medium">
-                          {formatPeriodKey(p.period_key)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {formatDate(p.paid_at)}
-                        </span>
-                        <div className="text-right">
-                          <span className="font-medium">
-                            {formatCents(p.total_cents)}
-                          </span>
-                          {p.adjustment_cents !== 0 && (
-                            <span className="ml-1 text-xs text-muted-foreground">
-                              ({p.adjustment_cents > 0 ? "+" : ""}
-                              {formatCents(p.adjustment_cents)})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
+              <div className="border-t" />
+              <div className="flex items-center justify-between">
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={() => {
                     setDetailPerson(null);
-                    setEditItem(detailPerson);
+                    router.push(
+                      `/expenses?source=${detailPerson.id}&name=${encodeURIComponent(detailPerson.name)}`
+                    );
                   }}
                 >
-                  Edit
+                  <History className="mr-2 h-4 w-4" />
+                  Payment history
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setDetailPerson(null)}
-                >
-                  Close
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDetailPerson(null);
+                      setEditItem(detailPerson);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDetailPerson(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
               </div>
             </div>
           )}
