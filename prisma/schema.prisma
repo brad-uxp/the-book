@@ -44,6 +44,7 @@ model Subscription {
   payment_mode PaymentMode
   status       SubscriptionStatus @default(active)
   notes        String?
+  icon_url     String?
   created_at   DateTime           @default(now())
   updated_at   DateTime           @updatedAt
 
@@ -82,15 +83,25 @@ enum ReminderStatus {
   done
 }
 
+model Role {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  created_at DateTime @default(now())
+
+  people Person[]
+}
+
 model Person {
   id         String       @id @default(uuid())
   name       String
   payday_day Int // 1-31
   status     PersonStatus @default(active)
+  role_id    String?
   notes      String?
   created_at DateTime     @default(now())
   updated_at DateTime     @updatedAt
 
+  role               Role?                    @relation(fields: [role_id], references: [id])
   salary_base        SalaryBase?
   salary_payments    SalaryPayment[]
   increase_reminders SalaryIncreaseReminder[]
@@ -180,14 +191,15 @@ model Settings {
 // ============================================================
 
 model OtherExpense {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   name         String
   category     Category
   paid_at      DateTime
   amount_cents Int
+  period_key   String?
   notes        String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 }
 
 // ============================================================

@@ -4,14 +4,18 @@ import { SalariesTable } from "@/components/salaries/salaries-table";
 export const dynamic = "force-dynamic";
 
 export default async function SalariesPage() {
-  const people = await prisma.person.findMany({
-    orderBy: { name: "asc" },
-    include: {
-      salary_base: true,
-      salary_payments: { orderBy: { due_date: "desc" }, take: 5 },
-      increase_reminders: { orderBy: { effective_date: "asc" } },
-    },
-  });
+  const [people, roles] = await Promise.all([
+    prisma.person.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        role: true,
+        salary_base: true,
+        salary_payments: { orderBy: { due_date: "desc" }, take: 5 },
+        increase_reminders: { orderBy: { effective_date: "asc" } },
+      },
+    }),
+    prisma.role.findMany({ orderBy: { name: "asc" } }),
+  ]);
 
   const data = people.map((p) => ({
     ...p,
@@ -43,7 +47,7 @@ export default async function SalariesPage() {
         </p>
       </div>
 
-      <SalariesTable initialData={data} />
+      <SalariesTable initialData={data} initialRoles={roles} />
     </div>
   );
 }

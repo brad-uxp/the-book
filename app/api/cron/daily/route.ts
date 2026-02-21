@@ -44,6 +44,13 @@ export async function GET(req: NextRequest) {
 
     log.push(`  [settings] daysSub=${daysSub}, daysSalary=${daysSalary}, daysInvoice=${daysInvoice}, recipient=${recipient ?? "none"}`);
 
+    // Purge notifications older than 7 days
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const purged = await prisma.notification.deleteMany({
+      where: { created_at: { lt: sevenDaysAgo } },
+    });
+    log.push(`  [cleanup] Deleted ${purged.count} notifications older than 7 days`);
+
     await runSubscriptions(today, daysSub, log);
     await runSalaries(today, daysSalary, log);
     await runIncreaseReminders(today, log);

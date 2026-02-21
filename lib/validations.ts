@@ -12,6 +12,7 @@ export const SubscriptionBaseSchema = z.object({
   payment_mode: z.enum(["auto", "manual"]),
   status: z.enum(["active", "paused", "canceled"]).default("active"),
   notes: z.string().nullable().optional(),
+  icon_url: z.string().nullable().optional(),
 });
 
 export const SubscriptionSchema = SubscriptionBaseSchema.refine(
@@ -39,6 +40,7 @@ export const PersonSchema = z.object({
   name: z.string().min(1, "Name is required"),
   payday_day: z.number().int().min(1).max(31),
   status: z.enum(["active", "inactive"]).default("active"),
+  role_id: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   base_salary_cents: z.number().int().min(0, "Salary must be non-negative"),
 });

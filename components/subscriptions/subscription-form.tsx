@@ -52,6 +52,7 @@ const FormSchema = z.object({
   payment_mode: z.enum(["auto", "manual"]),
   status: z.enum(["active", "paused", "canceled"]),
   notes: z.string().nullable().optional(),
+  icon_url: z.string().nullable().optional(),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
@@ -85,6 +86,7 @@ export function SubscriptionForm({
       payment_mode: defaultValues?.payment_mode ?? "manual",
       status: defaultValues?.status ?? "active",
       notes: defaultValues?.notes ?? "",
+      icon_url: defaultValues?.icon_url ?? "",
     },
   });
 
@@ -97,25 +99,41 @@ export function SubscriptionForm({
       amount_cents: parseToCents(amount_dollars),
       pay_month: rest.frequency === "annual" ? (rest.pay_month ?? null) : null,
       notes: rest.notes ?? null,
+      icon_url: rest.icon_url?.trim() || null,
     });
   };
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Name</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g. GitHub Pro" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Name</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g. GitHub Pro" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="icon_url"
+            render={({ field }) => (
+              <FormItem className="w-48">
+                <FormLabel>Website URL <span className="font-normal text-muted-foreground">(icon)</span></FormLabel>
+                <FormControl>
+                  <Input placeholder="https://github.com" {...field} value={field.value ?? ""} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FormField

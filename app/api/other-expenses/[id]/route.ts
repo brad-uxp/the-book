@@ -7,6 +7,7 @@ const PatchSchema = z.object({
   category: z.enum(["work", "personal", "essential_service"]).optional(),
   paid_at: z.string().optional(),
   amount_cents: z.number().int().min(1).optional(),
+  period_key: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -26,6 +27,7 @@ export async function PATCH(
   if (parsed.data.category !== undefined) data.category = parsed.data.category;
   if (parsed.data.paid_at !== undefined) data.paid_at = new Date(parsed.data.paid_at);
   if (parsed.data.amount_cents !== undefined) data.amount_cents = parsed.data.amount_cents;
+  if (parsed.data.period_key !== undefined) data.period_key = parsed.data.period_key;
   if (parsed.data.notes !== undefined) data.notes = parsed.data.notes;
 
   const updated = await prisma.otherExpense.update({ where: { id }, data });

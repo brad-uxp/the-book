@@ -23,6 +23,7 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [paidAt, setPaidAt] = useState("");
+  const [periodKey, setPeriodKey] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -47,6 +48,7 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
           category,
           paid_at: paidAt,
           amount_cents,
+          period_key: periodKey || null,
           notes: notes.trim() || null,
         }),
       });
@@ -100,18 +102,32 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="oe-amount">Amount (USD)</Label>
-        <Input
-          id="oe-amount"
-          type="number"
-          step="0.01"
-          min="0.01"
-          placeholder="0.00"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          required
-        />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="oe-amount">Amount (USD)</Label>
+          <Input
+            id="oe-amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="oe-period">
+            Period <span className="text-muted-foreground font-normal">(optional)</span>
+          </Label>
+          <Input
+            id="oe-period"
+            type="month"
+            value={periodKey}
+            onChange={(e) => setPeriodKey(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="space-y-1.5">

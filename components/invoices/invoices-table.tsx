@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   useReactTable,
   getCoreRowModel,
@@ -12,15 +13,7 @@ import {
 } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -37,11 +30,19 @@ import {
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, X, FileText } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, ChevronDown } from "lucide-react";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
 import { InvoiceForm } from "./invoice-form";
@@ -90,13 +91,16 @@ interface Props {
 }
 
 export function InvoicesTable({ initialData, initialClients }: Props) {
+  const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [clients, setClients] = useState(initialClients);
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "due_date", desc: true },
+    { id: "invoice_number", desc: false },
   ]);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [clientFilter, setClientFilter] = useState("all");
+  const [statusFilters, setStatusFilters] = useState<string[]>(
+    searchParams.get("status") ? [searchParams.get("status")!] : []
+  );
+  const [clientFilters, setClientFilters] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -176,23 +180,33 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   };
 
   const hasActiveFilters =
-    statusFilter !== "all" || clientFilter !== "all" || !!dateFrom || !!dateTo;
+    statusFilters.length > 0 || clientFilters.length > 0 || !!dateFrom || !!dateTo;
 
   const clearFilters = () => {
-    setStatusFilter("all");
-    setClientFilter("all");
+    setStatusFilters([]);
+    setClientFilters([]);
     setDateFrom("");
     setDateTo("");
   };
 
+  const toggleStatus = (val: string) =>
+    setStatusFilters((prev) =>
+      prev.includes(val) ? prev.filter((s) => s !== val) : [...prev, val]
+    );
+
+  const toggleClient = (id: string) =>
+    setClientFilters((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
+    );
+
   const filtered = useMemo(() => {
     let result = data;
-    if (statusFilter !== "all") result = result.filter((i) => i.status === statusFilter);
-    if (clientFilter !== "all") result = result.filter((i) => i.client_id === clientFilter);
+    if (statusFilters.length > 0) result = result.filter((i) => statusFilters.includes(i.status));
+    if (clientFilters.length > 0) result = result.filter((i) => clientFilters.includes(i.client_id));
     if (dateFrom) result = result.filter((i) => i.due_date >= dateFrom);
     if (dateTo) result = result.filter((i) => i.due_date <= dateTo);
     return result;
-  }, [data, statusFilter, clientFilter, dateFrom, dateTo]);
+  }, [data, statusFilters, clientFilters, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
     const amount = filtered.reduce((sum, i) => sum + i.amount_cents, 0);
@@ -201,6 +215,41 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   }, [filtered]);
 
   const columns: ColumnDef<Invoice>[] = [
+    {
+      accessorKey: "invoice_number",
+      size: 80,
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Inv{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
+      cell: ({ row }) =>
+        row.original.invoice_number ? (
+          <span className="font-mono text-sm">{row.original.invoice_number}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      sortingFn: (a, b) => {
+        const aNum = a.original.invoice_number ?? "";
+        const bNum = b.original.invoice_number ?? "";
+        return aNum.localeCompare(bNum, undefined, { numeric: true });
+      },
+    },
     {
       id: "client",
       header: "Client",
@@ -215,16 +264,6 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
       ),
     },
     {
-      accessorKey: "invoice_number",
-      header: "Invoice #",
-      cell: ({ row }) =>
-        row.original.invoice_number ? (
-          <span className="font-mono text-sm">{row.original.invoice_number}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
       accessorKey: "amount_cents",
       header: "Amount",
       cell: ({ row }) => (
@@ -234,17 +273,20 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
     {
       accessorKey: "fee_cents",
       header: "Fee",
-      cell: ({ row }) => (
-        <span className="tabular-nums text-muted-foreground">
-          {formatCents(row.original.fee_cents)}
-        </span>
-      ),
+      cell: ({ row }) =>
+        row.original.fee_cents === 0 ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          <span className="tabular-nums text-muted-foreground">
+            {formatCents(row.original.fee_cents)}
+          </span>
+        ),
     },
     {
       id: "net",
       header: "Net",
       cell: ({ row }) => (
-        <span className="font-semibold tabular-nums">
+        <span className="tabular-nums">
           {formatCents(row.original.amount_cents + row.original.fee_cents)}
         </span>
       ),
@@ -260,15 +302,26 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
     },
     {
       accessorKey: "due_date",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Due Date <ArrowUpDown className="ml-1 h-3 w-3" />
-        </Button>
-      ),
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Due Date{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
       cell: ({ row }) => formatDate(row.original.due_date),
       sortingFn: (a, b) =>
         new Date(a.original.due_date).getTime() -
@@ -283,8 +336,8 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
           <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreHorizontal className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-5 w-5">
+                  <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -314,6 +367,7 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
     columns,
     state: { sorting },
     onSortingChange: setSorting,
+    enableMultiSort: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -322,73 +376,102 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="accounting">Accounting</SelectItem>
-              <SelectItem value="sent">Sent</SelectItem>
-              <SelectItem value="paid">Paid</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="All clients" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All clients</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 w-full justify-between gap-1 font-normal sm:w-auto sm:min-w-36">
+                <span className="truncate">
+                  {statusFilters.length === 0
+                    ? "All statuses"
+                    : statusFilters.length === 1
+                    ? STATUS_LABELS[statusFilters[0]]
+                    : `${statusFilters.length} statuses`}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {(["pending", "accounting", "sent", "paid"] as const).map((s) => (
+                <DropdownMenuCheckboxItem
+                  key={s}
+                  checked={statusFilters.includes(s)}
+                  onCheckedChange={() => toggleStatus(s)}
+                >
+                  {STATUS_LABELS[s]}
+                </DropdownMenuCheckboxItem>
               ))}
-            </SelectContent>
-          </Select>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 w-full justify-between gap-1 font-normal sm:w-auto sm:min-w-40">
+                <span className="truncate">
+                  {clientFilters.length === 0
+                    ? "All clients"
+                    : clientFilters.length === 1
+                    ? (clients.find((c) => c.id === clientFilters[0])?.name ?? "1 client")
+                    : `${clientFilters.length} clients`}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {clients.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.id}
+                  checked={clientFilters.includes(c.id)}
+                  onCheckedChange={() => toggleClient(c.id)}
+                >
+                  {c.name}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <DateRangePicker
             value={{ from: dateFrom, to: dateTo }}
             onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+            className="w-full justify-between sm:w-auto"
           />
 
           {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-muted-foreground sm:w-auto">
               <X className="mr-1 h-3 w-3" /> Clear
             </Button>
           )}
-
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <ClientManager clients={clients} onRefresh={refresh} />
-          <Button onClick={() => setCreateOpen(true)}>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-2">
+          <div className="[&>button]:w-full sm:[&>button]:w-auto">
+            <ClientManager clients={clients} onRefresh={refresh} />
+          </div>
+          <Button className="w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" /> New Invoice
           </Button>
         </div>
       </div>
 
       {/* Totals */}
-      <div className="flex items-center gap-6 rounded-md border bg-muted/30 px-4 py-2 text-sm">
-        <div>
-          <span className="text-muted-foreground">Amount </span>
-          <span className="font-medium tabular-nums">{formatCents(totals.amount)}</span>
+      <div className="overflow-x-auto rounded-md border bg-muted/30">
+        <div className="flex min-w-max items-center gap-6 px-4 py-2 text-sm">
+          <div>
+            <span className="text-muted-foreground">Amount </span>
+            <span className="font-medium tabular-nums">{formatCents(totals.amount)}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Fee </span>
+            <span className="font-medium tabular-nums">{formatCents(totals.fee)}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Net </span>
+            <span className="font-semibold tabular-nums">{formatCents(totals.net)}</span>
+          </div>
+          <span className="ml-auto text-muted-foreground">
+            {filtered.length} invoices
+          </span>
         </div>
-        <div>
-          <span className="text-muted-foreground">Fee </span>
-          <span className="font-medium tabular-nums">{formatCents(totals.fee)}</span>
-        </div>
-        <div>
-          <span className="text-muted-foreground">Net </span>
-          <span className="font-semibold tabular-nums">{formatCents(totals.net)}</span>
-        </div>
-        <span className="ml-auto text-muted-foreground">
-          {filtered.length} invoices
-        </span>
       </div>
 
       {/* Table */}
@@ -398,7 +481,10 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    style={header.column.getSize() !== 150 ? { width: `${header.column.getSize()}px` } : undefined}
+                  >
                     {header.isPlaceholder
                       ? null
                       : flexRender(

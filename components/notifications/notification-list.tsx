@@ -3,13 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatDate } from "@/lib/dates";
 import { Bell, CheckCheck, Inbox } from "lucide-react";
 
@@ -48,22 +41,18 @@ const TYPE_COLORS: Record<string, string> = {
 export function NotificationList() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [filter, setFilter] = useState<"unread" | "all">("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ filter, limit: "100" });
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    const res = await fetch(`/api/notifications?${params}`);
+    const res = await fetch("/api/notifications?filter=all&limit=100");
     if (res.ok) {
       const data = await res.json();
       setNotifications(data.notifications);
       setUnreadCount(data.unreadCount);
     }
     setLoading(false);
-  }, [filter, typeFilter]);
+  }, []);
 
   useEffect(() => {
     fetchNotifications();
@@ -86,48 +75,13 @@ export function NotificationList() {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bell className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
-            {unreadCount} unread
-          </span>
+          <span className="text-sm text-muted-foreground">{unreadCount} unread</span>
         </div>
-
-        <Select
-          value={filter}
-          onValueChange={(v) => setFilter(v as "unread" | "all")}
-        >
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="unread">Unread</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="All types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            {Object.entries(TYPE_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>
-                {v}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         {unreadCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={markAllRead}
-          >
+          <Button variant="outline" size="sm" onClick={markAllRead}>
             <CheckCheck className="mr-2 h-4 w-4" />
             Mark all read
           </Button>
@@ -155,14 +109,18 @@ export function NotificationList() {
             <div
               key={n.id}
               className={`flex gap-4 rounded-lg border p-4 transition-colors ${
-                !n.read_at ? "bg-accent/20 border-accent" : "bg-card"
+                n.read_at
+                  ? "border-muted bg-muted/30"
+                  : "bg-card"
               }`}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span
                     className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                      TYPE_COLORS[n.type] ?? "bg-muted text-muted-foreground"
+                      n.read_at
+                        ? "bg-muted text-muted-foreground"
+                        : (TYPE_COLORS[n.type] ?? "bg-muted text-muted-foreground")
                     }`}
                   >
                     {TYPE_LABELS[n.type] ?? n.type}
@@ -171,10 +129,14 @@ export function NotificationList() {
                     {formatDate(n.event_date)}
                   </span>
                   {!n.read_at && (
-                    <span className="inline-block h-2 w-2 rounded-full bg-primary" />
+                    <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                      New
+                    </span>
                   )}
                 </div>
-                <p className="font-medium text-sm">{n.title}</p>
+                <p className={`font-medium text-sm ${n.read_at ? "text-muted-foreground" : ""}`}>
+                  {n.title}
+                </p>
                 <p className="text-sm text-muted-foreground leading-snug">
                   {n.body}
                 </p>

@@ -7,6 +7,7 @@ const OtherExpenseSchema = z.object({
   category: z.enum(["work", "personal", "essential_service"]),
   paid_at: z.string().min(1, "Date is required"),
   amount_cents: z.number().int().min(1, "Amount must be positive"),
+  period_key: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
       category: parsed.data.category,
       paid_at: new Date(parsed.data.paid_at),
       amount_cents: parsed.data.amount_cents,
+      period_key: parsed.data.period_key ?? null,
       notes: parsed.data.notes ?? null,
     },
   });

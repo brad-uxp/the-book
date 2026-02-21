@@ -34,11 +34,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, History } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
 import { formatDate, formatPeriodKey } from "@/lib/dates";
 import { PersonForm } from "./person-form";
+import { RoleManager } from "./role-manager";
 import type { PersonInput } from "@/lib/validations";
 
 interface SalaryReminder {
@@ -58,11 +59,18 @@ interface SalaryPayment {
   adjustment_note: string | null;
 }
 
+interface Role {
+  id: string;
+  name: string;
+}
+
 interface Person {
   id: string;
   name: string;
   payday_day: number;
   status: "active" | "inactive";
+  role_id: string | null;
+  role: Role | null;
   notes: string | null;
   salary_base: { base_salary_cents: number } | null;
   salary_payments: SalaryPayment[];
@@ -71,17 +79,24 @@ interface Person {
 
 interface Props {
   initialData: Person[];
+  initialRoles: Role[];
 }
 
 const STATUS_CLASSES: Record<string, string> = {
   active:   "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800",
-  inactive: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+  inactive: "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
 };
 
-export function SalariesTable({ initialData }: Props) {
+const AVATAR_CLASSES: Record<string, string> = {
+  active:   "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
+  inactive: "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500",
+};
+
+export function SalariesTable({ initialData, initialRoles }: Props) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [roles, setRoles] = useState(initialRoles);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<Person | null>(null);
   const [detailPerson, setDetailPerson] = useState<Person | null>(null);
@@ -100,8 +115,12 @@ export function SalariesTable({ initialData }: Props) {
   const [reminderAmount, setReminderAmount] = useState("");
 
   const refresh = async () => {
-    const res = await fetch("/api/people");
-    if (res.ok) setData(await res.json());
+    const [peopleRes, rolesRes] = await Promise.all([
+      fetch("/api/people"),
+      fetch("/api/roles"),
+    ]);
+    if (peopleRes.ok) setData(await peopleRes.json());
+    if (rolesRes.ok) setRoles(await rolesRes.json());
   };
 
   const handleCreate = async (input: PersonInput) => {
@@ -226,15 +245,41 @@ export function SalariesTable({ initialData }: Props) {
   const columns: ColumnDef<Person>[] = [
     {
       accessorKey: "name",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name <ArrowUpDown className="ml-1 h-3 w-3" />
-        </Button>
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${AVATAR_CLASSES[row.original.status] ?? "bg-muted text-muted-foreground"}`}>
+            <User className="h-3.5 w-3.5" />
+          </div>
+          <div>
+            <span>{row.original.name}</span>
+            {row.original.role && (
+              <p className="text-xs text-muted-foreground leading-tight">
+                {row.original.role.name}
+              </p>
+            )}
+          </div>
+        </div>
       ),
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Name{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
     },
     {
       id: "salary",
@@ -293,8 +338,8 @@ export function SalariesTable({ initialData }: Props) {
           <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-5 w-5">
+                <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -334,6 +379,7 @@ export function SalariesTable({ initialData }: Props) {
     columns,
     state: { sorting },
     onSortingChange: setSorting,
+    enableMultiSort: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -341,9 +387,11 @@ export function SalariesTable({ initialData }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div />
-        <Button onClick={() => setCreateOpen(true)}>
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between">
+        <div className="[&>button]:w-full sm:[&>button]:w-auto">
+          <RoleManager roles={roles} onRefresh={refresh} />
+        </div>
+        <Button className="w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> New Person
         </Button>
       </div>
@@ -402,6 +450,7 @@ export function SalariesTable({ initialData }: Props) {
             <DialogTitle>Add Person</DialogTitle>
           </DialogHeader>
           <PersonForm
+            roles={roles}
             onSubmit={handleCreate}
             onCancel={() => setCreateOpen(false)}
             loading={loading}
@@ -421,6 +470,7 @@ export function SalariesTable({ initialData }: Props) {
                 ...editItem,
                 base_salary_cents: editItem.salary_base?.base_salary_cents ?? 0,
               }}
+              roles={roles}
               onSubmit={handleEdit}
               onCancel={() => setEditItem(null)}
               loading={loading}
@@ -556,7 +606,12 @@ export function SalariesTable({ initialData }: Props) {
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{detailPerson?.name}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${AVATAR_CLASSES[detailPerson?.status ?? ""] ?? "bg-muted text-muted-foreground"}`}>
+                <User className="h-4 w-4" />
+              </div>
+              {detailPerson?.name}
+            </DialogTitle>
           </DialogHeader>
           {detailPerson && (
             <div className="space-y-5">
@@ -581,6 +636,12 @@ export function SalariesTable({ initialData }: Props) {
                     </Badge>
                   </dd>
                 </div>
+                {detailPerson.role && (
+                  <div>
+                    <dt className="text-muted-foreground">Role</dt>
+                    <dd className="font-medium">{detailPerson.role.name}</dd>
+                  </div>
+                )}
                 {detailPerson.notes && (
                   <div className="col-span-3">
                     <dt className="text-muted-foreground">Notes</dt>

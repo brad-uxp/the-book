@@ -24,19 +24,25 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
-// Avoid z.default() — provide defaults via useForm defaultValues instead
 const FormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   payday_day: z.number().int().min(1).max(31),
   status: z.enum(["active", "inactive"]),
+  role_id: z.string().optional(),
   notes: z.string().optional(),
   base_salary_dollars: z.string().min(1, "Salary is required"),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
 
+interface Role {
+  id: string;
+  name: string;
+}
+
 interface PersonFormProps {
   defaultValues?: Partial<PersonInput>;
+  roles?: Role[];
   onSubmit: (data: PersonInput) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
@@ -44,6 +50,7 @@ interface PersonFormProps {
 
 export function PersonForm({
   defaultValues,
+  roles = [],
   onSubmit,
   onCancel,
   loading,
@@ -54,6 +61,7 @@ export function PersonForm({
       name: defaultValues?.name ?? "",
       payday_day: defaultValues?.payday_day ?? 1,
       status: defaultValues?.status ?? "active",
+      role_id: defaultValues?.role_id ?? "",
       notes: defaultValues?.notes ?? "",
       base_salary_dollars: defaultValues?.base_salary_cents
         ? centsToDecimalString(defaultValues.base_salary_cents)
@@ -66,6 +74,7 @@ export function PersonForm({
       name: data.name,
       payday_day: data.payday_day,
       status: data.status,
+      role_id: data.role_id || null,
       notes: data.notes || null,
       base_salary_cents: parseToCents(data.base_salary_dollars),
     });
@@ -74,19 +83,53 @@ export function PersonForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Name</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g. John Doe" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Name</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g. John Doe" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="role_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  Role{" "}
+                  <span className="text-muted-foreground font-normal">(optional)</span>
+                </FormLabel>
+                <Select
+                  onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                  value={field.value || "__none__"}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="No role" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="__none__">No role</SelectItem>
+                    {roles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FormField

@@ -6,6 +6,7 @@ export async function GET() {
   const people = await prisma.person.findMany({
     orderBy: { created_at: "desc" },
     include: {
+      role: true,
       salary_base: true,
       salary_payments: { orderBy: { created_at: "desc" }, take: 1 },
       increase_reminders: {
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
         name: personData.name,
         payday_day: personData.payday_day,
         status: personData.status ?? "active",
+        role_id: personData.role_id ?? null,
         notes: personData.notes ?? null,
       },
     });
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
     });
     return tx.person.findUnique({
       where: { id: p.id },
-      include: { salary_base: true },
+      include: { role: true, salary_base: true },
     });
   });
 

@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       payment_mode: parsed.data.payment_mode,
       status: parsed.data.status ?? "active",
       notes: parsed.data.notes ?? null,
+      icon_url: parsed.data.icon_url ?? null,
     },
   });
 

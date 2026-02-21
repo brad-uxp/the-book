@@ -10,6 +10,7 @@ export async function GET(
   const person = await prisma.person.findUnique({
     where: { id },
     include: {
+      role: true,
       salary_base: true,
       salary_payments: { orderBy: { due_date: "desc" } },
       increase_reminders: { orderBy: { effective_date: "asc" } },
@@ -42,6 +43,7 @@ export async function PATCH(
         ...(personData.name !== undefined && { name: personData.name }),
         ...(personData.payday_day !== undefined && { payday_day: personData.payday_day }),
         ...(personData.status !== undefined && { status: personData.status }),
+        ...(personData.role_id !== undefined && { role_id: personData.role_id ?? null }),
         ...(personData.notes !== undefined && { notes: personData.notes ?? null }),
       },
     });
@@ -56,7 +58,7 @@ export async function PATCH(
 
     return tx.person.findUnique({
       where: { id },
-      include: { salary_base: true },
+      include: { role: true, salary_base: true },
     });
   });
 

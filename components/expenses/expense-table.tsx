@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { ArrowUpDown, X, Plus, Trash2, Pencil } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Plus, Trash2, Pencil, User, Receipt } from "lucide-react";
 import { formatCents } from "@/lib/currency";
 import { formatDate, formatPeriodKey } from "@/lib/dates";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -49,11 +49,14 @@ interface ExpenseItem {
   category: string | null;
   paid_at: string;
   amount_cents: number;
-  period_key: string;
+  period_key: string | null;
   source_id: string;
   // salary-specific
   adjustment_cents?: number;
   adjustment_note?: string | null;
+  role?: string | null;
+  // subscription-specific
+  icon_url?: string | null;
   // other-specific
   notes?: string | null;
 }
@@ -73,6 +76,7 @@ export function ExpenseTable({ items }: Props) {
   const router = useRouter();
   const sourceId = searchParams.get("source");
   const sourceName = searchParams.get("name");
+  const typeParam = searchParams.get("type") ?? "all";
 
   const [sorting, setSorting] = useState<SortingState>([
     { id: "paid_at", desc: true },
@@ -88,6 +92,7 @@ export function ExpenseTable({ items }: Props) {
     name: "",
     category: "",
     paid_at: "",
+    period_key: "",
     amount: "",
     adjustment: "",
     adjustment_note: "",
@@ -96,7 +101,7 @@ export function ExpenseTable({ items }: Props) {
 
   // Filters
   const [nameFilter, setNameFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState(typeParam);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -125,6 +130,7 @@ export function ExpenseTable({ items }: Props) {
       name: detail.name,
       category: detail.category ?? "",
       paid_at: detail.paid_at.slice(0, 10),
+      period_key: detail.period_key ?? "",
       amount: detail.type !== "salary"
         ? (detail.amount_cents / 100).toFixed(2)
         : "",
@@ -156,6 +162,7 @@ export function ExpenseTable({ items }: Props) {
             category: editValues.category,
             paid_at: editValues.paid_at,
             amount_cents,
+            period_key: editValues.period_key || null,
             notes: editValues.notes.trim() || null,
           }),
         });
@@ -240,31 +247,72 @@ export function ExpenseTable({ items }: Props) {
 
   const columns: ColumnDef<ExpenseItem>[] = [
     {
+      accessorKey: "name",
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Name{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
+      cell: ({ row }) => {
+        const item = row.original;
+        let icon: React.ReactNode;
+        if (item.type === "salary") {
+          icon = (
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              <User className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+            </div>
+          );
+        } else if (item.type === "subscription" && item.icon_url) {
+          const src = `${item.icon_url.replace(/\/$/, "")}/favicon.ico`;
+          icon = (
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border bg-white">
+              <img
+                src={src}
+                alt=""
+                className="h-4 w-4 object-contain"
+                onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
+              />
+            </div>
+          );
+        } else {
+          icon = (
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              <Receipt className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center gap-2">
+            {icon}
+            {item.name}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: "type",
       header: "Type",
       cell: ({ row }) => {
         const t = row.original.type;
-        const cls =
-          t === "salary"
-            ? "bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800"
-            : t === "other"
-            ? "bg-gray-200 text-gray-600 border-gray-300 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
-            : "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800";
+        const cls = "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
         const label = t === "salary" ? "Salary" : t === "other" ? "Other" : "Subscription";
         return <Badge variant="outline" className={cls}>{label}</Badge>;
       },
-    },
-    {
-      accessorKey: "name",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name <ArrowUpDown className="ml-1 h-3 w-3" />
-        </Button>
-      ),
     },
     {
       accessorKey: "category",
@@ -277,19 +325,33 @@ export function ExpenseTable({ items }: Props) {
     {
       accessorKey: "period_key",
       header: "Period",
-      cell: ({ row }) => formatPeriodKey(row.original.period_key),
+      cell: ({ row }) =>
+        row.original.period_key
+          ? formatPeriodKey(row.original.period_key)
+          : <span className="text-muted-foreground">—</span>,
     },
     {
       accessorKey: "paid_at",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Date <ArrowUpDown className="ml-1 h-3 w-3" />
-        </Button>
-      ),
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Date{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
       cell: ({ row }) => formatDate(row.original.paid_at),
       sortingFn: (a, b) =>
         new Date(a.original.paid_at).getTime() -
@@ -297,15 +359,26 @@ export function ExpenseTable({ items }: Props) {
     },
     {
       accessorKey: "amount_cents",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Amount <ArrowUpDown className="ml-1 h-3 w-3" />
-        </Button>
-      ),
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Amount{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
       cell: ({ row }) => (
         <span className="font-medium tabular-nums">
           {formatCents(row.original.amount_cents)}
@@ -319,6 +392,7 @@ export function ExpenseTable({ items }: Props) {
     columns,
     state: { sorting },
     onSortingChange: setSorting,
+    enableMultiSort: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
@@ -343,60 +417,61 @@ export function ExpenseTable({ items }: Props) {
       )}
 
       {/* Filters */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            placeholder="Filter by name..."
-            value={nameFilter}
-            onChange={(e) => setNameFilter(e.target.value)}
-            className="w-48"
-          />
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="All types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              <SelectItem value="subscription">Subscription</SelectItem>
-              <SelectItem value="salary">Salary</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              <SelectItem value="work">Work</SelectItem>
-              <SelectItem value="personal">Personal</SelectItem>
-              <SelectItem value="essential_service">Essential</SelectItem>
-            </SelectContent>
-          </Select>
-          <DateRangePicker
-            value={{ from: dateFrom, to: dateTo }}
-            onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
-          />
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-              <X className="mr-1 h-3 w-3" /> Clear
-            </Button>
-          )}
-          <Button className="ml-auto shrink-0" onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add expense
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <Input
+          placeholder="Filter by name..."
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          className="w-full sm:w-48"
+        />
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-full sm:w-36">
+            <SelectValue placeholder="All types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="subscription">Subscription</SelectItem>
+            <SelectItem value="salary">Salary</SelectItem>
+            <SelectItem value="other">Other</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-full sm:w-36">
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            <SelectItem value="work">Work</SelectItem>
+            <SelectItem value="personal">Personal</SelectItem>
+            <SelectItem value="essential_service">Essential</SelectItem>
+          </SelectContent>
+        </Select>
+        <DateRangePicker
+          value={{ from: dateFrom, to: dateTo }}
+          onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+          className="w-full justify-between sm:w-auto"
+        />
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-muted-foreground sm:w-auto">
+            <X className="mr-1 h-3 w-3" /> Clear
           </Button>
-        </div>
+        )}
+        <Button className="w-full sm:ml-auto sm:w-auto sm:shrink-0" onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Add expense
+        </Button>
       </div>
 
       {/* Totals */}
-      <div className="flex items-center gap-6 rounded-md border bg-muted/30 px-4 py-2 text-sm">
-        <div>
-          <span className="text-muted-foreground">Total </span>
-          <span className="font-semibold tabular-nums">{formatCents(totalAmount)}</span>
+      <div className="overflow-x-auto rounded-md border bg-muted/30">
+        <div className="flex min-w-max items-center gap-6 px-4 py-2 text-sm">
+          <div>
+            <span className="text-muted-foreground">Total </span>
+            <span className="font-semibold tabular-nums">{formatCents(totalAmount)}</span>
+          </div>
+          <span className="ml-auto text-muted-foreground">
+            {filtered.length} records
+          </span>
         </div>
-        <span className="ml-auto text-muted-foreground">
-          {filtered.length} records
-        </span>
       </div>
 
       {/* Table */}
@@ -474,6 +549,12 @@ export function ExpenseTable({ items }: Props) {
                   <dt className="text-muted-foreground">Amount</dt>
                   <dd className="font-medium">{formatCents(detail.amount_cents)}</dd>
                 </div>
+                {detail.type === "salary" && detail.role && (
+                  <div>
+                    <dt className="text-muted-foreground">Role</dt>
+                    <dd className="font-medium">{detail.role}</dd>
+                  </div>
+                )}
                 {detail.type === "salary" &&
                   detail.adjustment_cents !== undefined &&
                   detail.adjustment_cents !== 0 && (
@@ -484,7 +565,9 @@ export function ExpenseTable({ items }: Props) {
                   )}
                 <div>
                   <dt className="text-muted-foreground">Period</dt>
-                  <dd className="font-medium">{formatPeriodKey(detail.period_key)}</dd>
+                  <dd className="font-medium">
+                    {detail.period_key ? formatPeriodKey(detail.period_key) : "—"}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Date</dt>
@@ -603,17 +686,32 @@ export function ExpenseTable({ items }: Props) {
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label>Amount (USD)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        value={editValues.amount}
-                        onChange={(e) =>
-                          setEditValues((v) => ({ ...v, amount: e.target.value }))
-                        }
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Amount (USD)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={editValues.amount}
+                          onChange={(e) =>
+                            setEditValues((v) => ({ ...v, amount: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>
+                          Period{" "}
+                          <span className="text-muted-foreground font-normal">(optional)</span>
+                        </Label>
+                        <Input
+                          type="month"
+                          value={editValues.period_key}
+                          onChange={(e) =>
+                            setEditValues((v) => ({ ...v, period_key: e.target.value }))
+                          }
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Notes</Label>

@@ -31,7 +31,10 @@ export default async function RootLayout({
             <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
               {/* Mobile-only top bar */}
               <header className="lg:hidden sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b bg-card px-4">
-                <span className="text-base font-semibold tracking-tight">AccountBook</span>
+                <div className="flex items-center gap-2">
+                  <img src="/logo.svg" alt="AccountBook logo" className="h-5 w-auto shrink-0" />
+                  <span className="text-base font-semibold tracking-tight">AccountBook</span>
+                </div>
                 <MobileNav />
               </header>
               {/* Main content */}

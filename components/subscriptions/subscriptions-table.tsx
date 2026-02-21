@@ -34,12 +34,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, History } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/currency";
 import { formatDate, formatPeriodKey } from "@/lib/dates";
 import { SubscriptionForm } from "./subscription-form";
 import type { SubscriptionInput } from "@/lib/validations";
+
+function faviconSrc(iconUrl: string | null): string | null {
+  if (!iconUrl) return null;
+  return `${iconUrl.replace(/\/$/, "")}/favicon.ico`;
+}
 
 interface Subscription {
   id: string;
@@ -52,6 +57,7 @@ interface Subscription {
   payment_mode: "auto" | "manual";
   status: "active" | "paused" | "canceled";
   notes: string | null;
+  icon_url: string | null;
   payments: Array<{
     id: string;
     period_key: string;
@@ -79,7 +85,7 @@ interface Props {
 export function SubscriptionsTable({ initialData }: Props) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<Subscription | null>(null);
@@ -157,15 +163,44 @@ export function SubscriptionsTable({ initialData }: Props) {
   const columns: ColumnDef<Subscription>[] = [
     {
       accessorKey: "name",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name <ArrowUpDown className="ml-1 h-3 w-3" />
-        </Button>
-      ),
+      header: ({ column }) => {
+        const sorted = column.getIsSorted();
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mx-2.5"
+            onClick={() => column.toggleSorting(sorted === "asc")}
+          >
+            Name{" "}
+            {sorted === "asc" ? (
+              <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
+            ) : sorted === "desc" ? (
+              <ArrowDown className="ml-0.5 h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="ml-0.5 h-3 w-3 text-muted-foreground opacity-50" />
+            )}
+          </Button>
+        );
+      },
+      cell: ({ row }) => {
+        const favicon = faviconSrc(row.original.icon_url);
+        return (
+          <div className="flex items-center gap-2">
+            {favicon && (
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border bg-white">
+                <img
+                  src={favicon}
+                  alt=""
+                  className="h-4 w-4 object-contain"
+                  onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
+                />
+              </div>
+            )}
+            {row.original.name}
+          </div>
+        );
+      },
     },
     {
       accessorKey: "amount_cents",
@@ -233,8 +268,8 @@ export function SubscriptionsTable({ initialData }: Props) {
           <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-5 w-5">
+                <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -244,7 +279,7 @@ export function SubscriptionsTable({ initialData }: Props) {
               <DropdownMenuItem onClick={() => setEditItem(sub)}>
                 Edit
               </DropdownMenuItem>
-              {sub.status === "active" && sub.payment_mode === "manual" && (
+              {sub.status === "active" && (
                 <DropdownMenuItem onClick={() => setPaymentSub(sub)}>
                   Register payment
                 </DropdownMenuItem>
@@ -263,6 +298,7 @@ export function SubscriptionsTable({ initialData }: Props) {
     state: { sorting, columnFilters },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    enableMultiSort: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -271,16 +307,16 @@ export function SubscriptionsTable({ initialData }: Props) {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Input
           placeholder="Filter by name..."
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
           onChange={(e) =>
             table.getColumn("name")?.setFilterValue(e.target.value)
           }
-          className="max-w-xs"
+          className="w-full sm:max-w-xs"
         />
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button className="w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> New Subscription
         </Button>
       </div>
@@ -414,7 +450,19 @@ export function SubscriptionsTable({ initialData }: Props) {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{detailItem?.name}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {detailItem?.icon_url && (
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border bg-white">
+                  <img
+                    src={faviconSrc(detailItem.icon_url)!}
+                    alt=""
+                    className="h-5 w-5 object-contain"
+                    onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
+                  />
+                </div>
+              )}
+              {detailItem?.name}
+            </DialogTitle>
           </DialogHeader>
           {detailItem && (
             <div className="space-y-4">
