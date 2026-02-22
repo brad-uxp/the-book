@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 const LINES = [
   { key: "income",       label: "Income",        color: "#3b82f6" },
   { key: "workExpenses", label: "Work expenses",  color: "#f97316" },
+  { key: "salary",       label: "Salaries",       color: "#ef4444" },
+  { key: "workSubs",     label: "Work subs",      color: "#eab308" },
   { key: "corporateNet", label: "Corporate net",  color: "#10b981" },
 ] as const;
 
@@ -52,6 +54,8 @@ interface MonthData {
   month: string;
   income: number;
   workExpenses: number;
+  salary: number;
+  workSubs: number;
   corporateNet: number;
 }
 
@@ -63,6 +67,8 @@ export function CorporateChart({ data }: Props) {
   const [visible, setVisible] = useState<Record<LineKey, boolean>>({
     income: true,
     workExpenses: true,
+    salary: true,
+    workSubs: true,
     corporateNet: true,
   });
 

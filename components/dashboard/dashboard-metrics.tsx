@@ -92,6 +92,9 @@ export function DashboardMetrics({ monthlyData, sentTotal, sentCount }: Props) {
         expenses,
         workExpenses,
         personalExpenses: d.subsPersonal + d.otherPersonal,
+        essentialExpenses: d.subsEssential,
+        salary: d.salary,
+        workSubs: d.subsWork,
         net: d.income - expenses,
         corporateNet: d.income - workExpenses,
       };

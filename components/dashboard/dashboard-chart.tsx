@@ -14,11 +14,12 @@ import { formatCents } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 const LINES = [
-  { key: "income",           label: "Income",            color: "#3b82f6" },
-  { key: "expenses",         label: "Expenses",          color: "#94a3b8" },
-  { key: "workExpenses",     label: "Work expenses",     color: "#f97316" },
-  { key: "personalExpenses", label: "Personal expenses", color: "#a855f7" },
-  { key: "net",              label: "Net",               color: "#10b981" },
+  { key: "income",             label: "Income",             color: "#3b82f6" },
+  { key: "expenses",           label: "Expenses",           color: "#94a3b8" },
+  { key: "workExpenses",       label: "Work expenses",      color: "#f97316" },
+  { key: "personalExpenses",   label: "Personal expenses",  color: "#ec4899" },
+  { key: "essentialExpenses",  label: "Essential services",  color: "#f59e0b" },
+  { key: "net",                label: "Net",                color: "#10b981" },
 ] as const;
 
 type LineKey = (typeof LINES)[number]["key"];
@@ -69,6 +70,7 @@ interface MonthData {
   expenses: number;
   workExpenses: number;
   personalExpenses: number;
+  essentialExpenses: number;
   net: number;
 }
 
@@ -82,6 +84,7 @@ export function DashboardChart({ data }: Props) {
     expenses: true,
     workExpenses: true,
     personalExpenses: true,
+    essentialExpenses: true,
     net: true,
   });
 
