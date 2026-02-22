@@ -18,7 +18,7 @@ export interface SubscriptionForCron {
   pay_day: number;
   pay_month: number | null;
   payment_mode: "auto" | "manual";
-  status: "active" | "paused" | "canceled";
+  status: "active" | "inactive";
 }
 
 export interface CronPeriodResult {
