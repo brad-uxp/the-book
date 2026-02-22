@@ -128,7 +128,7 @@
     overflow-x: hidden;
   }
   .recharts-wrapper,
-  .recharts-surface {
+  .recharts-wrapper * {
     -webkit-tap-highlight-color: transparent;
     outline: none;
   }
