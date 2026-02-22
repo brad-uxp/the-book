@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { Prisma } from "@/app/generated/prisma/client";
 
 /**
  * Fire-and-forget audit log writer.
@@ -9,8 +10,8 @@ export function auditLog(params: {
   entity_id: string;
   entity_name: string;
   action: "create" | "update" | "delete";
-  before?: Record<string, unknown> | null;
-  after?: Record<string, unknown> | null;
+  before?: Prisma.InputJsonValue | null;
+  after?: Prisma.InputJsonValue | null;
 }): void {
   prisma.auditLog
     .create({

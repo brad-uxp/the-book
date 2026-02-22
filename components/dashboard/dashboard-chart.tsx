@@ -82,6 +82,7 @@ export function DashboardChart({ data }: Props) {
     expenses: true,
     workExpenses: true,
     personalExpenses: true,
+    net: true,
   });
 
   const toggle = (key: LineKey) =>
