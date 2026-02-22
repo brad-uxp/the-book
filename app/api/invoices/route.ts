@@ -21,6 +21,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (parsed.data.invoice_number) {
+    const duplicate = await prisma.invoice.findFirst({
+      where: { invoice_number: { equals: parsed.data.invoice_number, mode: "insensitive" } },
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        { error: `Invoice number "${parsed.data.invoice_number}" already exists` },
+        { status: 409 }
+      );
+    }
+  }
+
   const invoice = await prisma.invoice.create({
     data: {
       invoice_number: parsed.data.invoice_number ?? null,

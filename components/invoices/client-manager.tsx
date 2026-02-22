@@ -28,11 +28,13 @@ export function ClientManager({ clients, onRefresh }: ClientManagerProps) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#6366f1");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const openCreate = () => {
     setEditClient(null);
     setName("");
     setColor("#6366f1");
+    setError(null);
     setOpen(true);
   };
 
@@ -40,25 +42,33 @@ export function ClientManager({ clients, onRefresh }: ClientManagerProps) {
     setEditClient(c);
     setName(c.name);
     setColor(c.color_hex);
+    setError(null);
     setOpen(true);
   };
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
     setLoading(true);
+    setError(null);
     try {
+      let res: Response;
       if (editClient) {
-        await fetch(`/api/clients/${editClient.id}`, {
+        res = await fetch(`/api/clients/${editClient.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, color_hex: color }),
         });
       } else {
-        await fetch("/api/clients", {
+        res = await fetch("/api/clients", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, color_hex: color }),
         });
+      }
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.error ?? "Something went wrong");
+        return;
       }
       await onRefresh();
       setOpen(false);
@@ -93,7 +103,7 @@ export function ClientManager({ clients, onRefresh }: ClientManagerProps) {
           </DialogHeader>
 
           {!editClient && (
-            <div className="space-y-2 mb-4">
+            <div className="max-h-70 overflow-y-auto space-y-2 mb-4 pr-1">
               {clients.map((c) => (
                 <div
                   key={c.id}
@@ -158,6 +168,9 @@ export function ClientManager({ clients, onRefresh }: ClientManagerProps) {
                 />
               </div>
             </div>
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
             <div className="flex gap-2">
               {editClient && (
                 <Button

@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { InvoiceInput } from "@/lib/validations";
 import { parseToCents, centsToDecimalString } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import {
   Form,
   FormControl,
@@ -21,6 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +45,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Trash2 } from "lucide-react";
 
 interface Client {
   id: string;
@@ -73,6 +84,8 @@ export function InvoiceForm({
   onDelete,
   loading,
 }: InvoiceFormProps) {
+  const [clientOpen, setClientOpen] = useState(false);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
@@ -118,22 +131,55 @@ export function InvoiceForm({
             control={form.control}
             name="client_id"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="flex flex-col">
                 <FormLabel>Client</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select client" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={clientOpen} onOpenChange={setClientOpen}>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className={cn(
+                          "w-full justify-between font-normal",
+                          !field.value && "text-muted-foreground"
+                        )}
+                      >
+                        {field.value
+                          ? clients.find((c) => c.id === field.value)?.name
+                          : "Select client"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search client..." />
+                      <CommandList>
+                        <CommandEmpty>No client found.</CommandEmpty>
+                        <CommandGroup>
+                          {clients.map((c) => (
+                            <CommandItem
+                              key={c.id}
+                              value={c.name}
+                              onSelect={() => {
+                                field.onChange(c.id);
+                                setClientOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  c.id === field.value ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {c.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <FormMessage />
               </FormItem>
             )}

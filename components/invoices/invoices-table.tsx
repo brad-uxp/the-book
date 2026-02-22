@@ -34,7 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -42,15 +41,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, ChevronDown, Check } from "lucide-react";
+import { DatePresetFilter, type DatePreset } from "@/components/ui/date-preset-filter";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
 import { InvoiceForm } from "./invoice-form";
 import { ClientManager } from "./client-manager";
 import type { InvoiceInput } from "@/lib/validations";
-
-type DatePreset = "year" | "month" | "custom" | "all";
 
 interface Client {
   id: string;
@@ -107,7 +105,6 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   const [datePreset, setDatePreset] = useState<DatePreset>("year");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<Invoice | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -237,21 +234,6 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
     return { amount, fee, net: amount + fee };
   }, [filtered]);
 
-  const fmtDateLabel = (s: string) => {
-    const [y, m, d] = s.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleString("en", { month: "short", day: "numeric" });
-  };
-
-  const presetLabel = (() => {
-    const now = new Date();
-    if (datePreset === "year") return String(now.getFullYear());
-    if (datePreset === "month") return now.toLocaleString("en", { month: "short", year: "numeric" });
-    if (datePreset === "all") return "All time";
-    if (customFrom && customTo) return `${fmtDateLabel(customFrom)} – ${fmtDateLabel(customTo)}`;
-    if (customFrom) return `From ${fmtDateLabel(customFrom)}`;
-    if (customTo) return `To ${fmtDateLabel(customTo)}`;
-    return "Custom range";
-  })();
 
   const columns: ColumnDef<Invoice>[] = [
     {
@@ -480,60 +462,14 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9 w-full justify-between gap-1 font-normal sm:w-auto sm:min-w-32">
-                <span className="truncate">{presetLabel}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-56 p-1">
-              {([
-                { key: "month",  label: "This month" },
-                { key: "year",   label: "This year" },
-                { key: "custom", label: "Custom range" },
-                { key: "all",    label: "All time" },
-              ] as { key: DatePreset; label: string }[]).map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setDatePreset(key);
-                    if (key !== "custom") setDatePopoverOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                    datePreset === key && "font-medium"
-                  )}
-                >
-                  <Check className={cn("h-3.5 w-3.5 shrink-0", datePreset === key ? "opacity-100" : "opacity-0")} />
-                  {label}
-                </button>
-              ))}
-
-              {datePreset === "custom" && (
-                <div className="mt-1 border-t pt-2 px-1 space-y-2">
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">From</p>
-                    <input
-                      type="date"
-                      value={customFrom}
-                      onChange={(e) => setCustomFrom(e.target.value)}
-                      className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">To</p>
-                    <input
-                      type="date"
-                      value={customTo}
-                      onChange={(e) => setCustomTo(e.target.value)}
-                      className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
-                    />
-                  </div>
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
+          <DatePresetFilter
+            preset={datePreset}
+            customFrom={customFrom}
+            customTo={customTo}
+            onPresetChange={setDatePreset}
+            onCustomFromChange={setCustomFrom}
+            onCustomToChange={setCustomTo}
+          />
 
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-muted-foreground sm:w-auto">

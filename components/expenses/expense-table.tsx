@@ -34,7 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { DatePresetFilter, type DatePreset } from "@/components/ui/date-preset-filter";
 import { ArrowUpDown, ArrowUp, ArrowDown, X, Plus, Trash2, Pencil, User, Receipt, FileText, ArrowLeftRight } from "lucide-react";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
@@ -118,19 +118,21 @@ export function ExpenseTable({ items }: Props) {
   const [nameFilter, setNameFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(typeParam);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("year");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const hasActiveFilters =
     nameFilter || typeFilter !== "all" || categoryFilter !== "all" ||
-    dateFrom || dateTo;
+    datePreset !== "year";
 
   const clearFilters = () => {
     setNameFilter("");
     setTypeFilter("all");
     setCategoryFilter("all");
-    setDateFrom("");
-    setDateTo("");
+    setDatePreset("year");
+    setCustomFrom("");
+    setCustomTo("");
   };
 
   const openDetail = (item: ExpenseItem) => {
@@ -261,15 +263,33 @@ export function ExpenseTable({ items }: Props) {
   };
 
   const filtered = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const mo = now.getMonth() + 1;
+    let df = "";
+    let dt = "";
+    if (datePreset === "year") {
+      df = `${y}-01-01`;
+      dt = `${y}-12-31`;
+    } else if (datePreset === "month") {
+      const lastDay = new Date(y, mo, 0).getDate();
+      const mStr = String(mo).padStart(2, "0");
+      df = `${y}-${mStr}-01`;
+      dt = `${y}-${mStr}-${String(lastDay).padStart(2, "0")}`;
+    } else if (datePreset === "custom") {
+      df = customFrom;
+      dt = customTo;
+    }
+
     let result = items;
     if (sourceId) result = result.filter((i) => i.source_id === sourceId);
     if (typeFilter !== "all") result = result.filter((i) => i.type === typeFilter);
     if (categoryFilter !== "all") result = result.filter((i) => i.category === categoryFilter);
     if (nameFilter) result = result.filter((i) => i.name.toLowerCase().includes(nameFilter.toLowerCase()));
-    if (dateFrom) result = result.filter((i) => i.paid_at >= dateFrom);
-    if (dateTo) result = result.filter((i) => i.paid_at <= dateTo + "T23:59:59");
+    if (df) result = result.filter((i) => i.paid_at >= df);
+    if (dt) result = result.filter((i) => i.paid_at <= dt + "T23:59:59");
     return result;
-  }, [items, sourceId, typeFilter, categoryFilter, nameFilter, dateFrom, dateTo]);
+  }, [items, sourceId, typeFilter, categoryFilter, nameFilter, datePreset, customFrom, customTo]);
 
   const totalAmount = useMemo(
     () => filtered.filter((i) => i.type !== "fee").reduce((sum, i) => sum + i.amount_cents, 0),
@@ -482,10 +502,13 @@ export function ExpenseTable({ items }: Props) {
             <SelectItem value="essential_service">Essential</SelectItem>
           </SelectContent>
         </Select>
-        <DateRangePicker
-          value={{ from: dateFrom, to: dateTo }}
-          onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
-          className="w-full justify-between sm:w-auto"
+        <DatePresetFilter
+          preset={datePreset}
+          customFrom={customFrom}
+          customTo={customTo}
+          onPresetChange={setDatePreset}
+          onCustomFromChange={setCustomFrom}
+          onCustomToChange={setCustomTo}
         />
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-muted-foreground sm:w-auto">

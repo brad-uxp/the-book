@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const duplicate = await prisma.client.findFirst({
+    where: { name: { equals: parsed.data.name, mode: "insensitive" } },
+  });
+  if (duplicate) {
+    return NextResponse.json({ error: "A client with this name already exists" }, { status: 409 });
+  }
+
   const client = await prisma.client.create({ data: parsed.data });
 
   auditLog({
