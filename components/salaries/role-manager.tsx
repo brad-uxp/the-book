@@ -19,10 +19,14 @@ interface Role {
 interface RoleManagerProps {
   roles: Role[];
   onRefresh: () => Promise<void>;
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
 }
 
-export function RoleManager({ roles, onRefresh }: RoleManagerProps) {
-  const [open, setOpen] = useState(false);
+export function RoleManager({ roles, onRefresh, open: externalOpen, onOpenChange: externalOnOpenChange }: RoleManagerProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen ?? internalOpen;
+  const setOpen = (v: boolean) => { setInternalOpen(v); externalOnOpenChange?.(v); };
   const [editRole, setEditRole] = useState<Role | null>(null);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -77,7 +81,7 @@ export function RoleManager({ roles, onRefresh }: RoleManagerProps) {
 
   return (
     <>
-      <Button variant="outline" onClick={openCreate}>
+      <Button variant="outline" className="hidden sm:inline-flex" onClick={openCreate}>
         <Plus className="mr-2 h-4 w-4" /> Manage Roles
       </Button>
 

@@ -6,6 +6,8 @@ import { MobileNav } from "@/components/layout/mobile-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { auth } from "@/auth";
 import { SessionProvider } from "next-auth/react";
+import NextTopLoader from "nextjs-toploader";
+import { InactivityGuard } from "@/components/auth/inactivity-guard";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,8 +27,11 @@ export default async function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <body className={`${inter.className} bg-background`}>
+        <NextTopLoader color="#18181b" showSpinner={false} height={2} shadow={false} />
         <SessionProvider session={session}>
         {session ? (
+          <>
+          <InactivityGuard />
           <div className="flex min-h-screen">
             <Sidebar user={session.user ?? null} />
             <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
@@ -42,6 +47,7 @@ export default async function RootLayout({
               <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
             </div>
           </div>
+          </>
         ) : (
           children
         )}

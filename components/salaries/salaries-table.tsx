@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -34,7 +34,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
@@ -103,6 +104,20 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [paymentPerson, setPaymentPerson] = useState<Person | null>(null);
   const [reminderPerson, setReminderPerson] = useState<Person | null>(null);
   const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<"table" | "cards">("table");
+  const [rolesOpen, setRolesOpen] = useState(false);
+
+  // Bulk payment state
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDate, setBulkDate] = useState("");
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkOverrides, setBulkOverrides] = useState<Record<string, { adj: string; note: string }>>({});
+  const [bulkErrors, setBulkErrors] = useState<Record<string, string>>({});
+
+  // Default to cards on mobile
+  useEffect(() => {
+    if (window.innerWidth < 640) setView("cards");
+  }, []);
 
   // Payment form state
   const [paidAt, setPaidAt] = useState("");
@@ -235,6 +250,82 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
     if (detailPerson?.id === personId) {
       const refreshedRes = await fetch(`/api/people/${personId}`);
       if (refreshedRes.ok) setDetailPerson(await refreshedRes.json());
+    }
+  };
+
+  // Bulk payment helpers
+  const activePeople = data.filter((p) => p.status === "active");
+  const allBulkSelected =
+    activePeople.length > 0 && activePeople.every((p) => bulkSelected.has(p.id));
+  const someBulkSelected = bulkSelected.size > 0 && !allBulkSelected;
+
+  const toggleBulkAll = () => {
+    if (allBulkSelected) setBulkSelected(new Set());
+    else setBulkSelected(new Set(activePeople.map((p) => p.id)));
+  };
+
+  const toggleBulkOne = (id: string) =>
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const setBulkOverride = (id: string, field: "adj" | "note", val: string) =>
+    setBulkOverrides((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? { adj: "0", note: "" }), [field]: val },
+    }));
+
+  const closeBulk = () => {
+    setBulkOpen(false);
+    setBulkErrors({});
+  };
+
+  const handleBulkPayment = async () => {
+    if (bulkSelected.size === 0) return;
+    setLoading(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const date = bulkDate || today;
+      const results = await Promise.allSettled(
+        [...bulkSelected].map(async (id) => {
+          const override = bulkOverrides[id] ?? { adj: "0", note: "" };
+          const res = await fetch(`/api/people/${id}/payments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              paid_at: date,
+              adjustment_cents: parseToCents(override.adj || "0"),
+              adjustment_note: override.note || null,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            // eslint-disable-next-line @typescript-eslint/no-throw-literal
+            throw { id, message: err.error ?? "Error registering payment" };
+          }
+        })
+      );
+      await refresh();
+      const errors: Record<string, string> = {};
+      for (const r of results) {
+        if (r.status === "rejected") {
+          const e = r.reason as { id?: string; message?: string };
+          if (e?.id) errors[e.id] = e.message ?? "Error";
+        }
+      }
+      if (Object.keys(errors).length === 0) {
+        setBulkOpen(false);
+        setBulkSelected(new Set());
+        setBulkOverrides({});
+        setBulkDate("");
+        setBulkErrors({});
+      } else {
+        setBulkErrors(errors);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -393,15 +484,211 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between">
-        <div className="[&>button]:w-full sm:[&>button]:w-auto">
-          <RoleManager roles={roles} onRefresh={refresh} />
+      <div className="flex items-center justify-between gap-2">
+        {/* Left: view toggle — always visible */}
+        <div className="flex overflow-hidden rounded-md border">
+          <Button
+            variant={view === "table" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-9 w-9 rounded-none border-r"
+            onClick={() => setView("table")}
+            title="Table view"
+          >
+            <LayoutList className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={view === "cards" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-9 w-9 rounded-none"
+            onClick={() => setView("cards")}
+            title="Cards view"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
         </div>
-        <Button className="w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> New Person
-        </Button>
+
+        {/* Right */}
+        <div className="flex items-center gap-2">
+          {/* Desktop-only buttons */}
+          <div className="hidden sm:flex items-center gap-2">
+            <RoleManager roles={roles} onRefresh={refresh} open={rolesOpen} onOpenChange={setRolesOpen} />
+            <Button variant="outline" className="h-9" onClick={() => setBulkOpen(true)}>
+              <Users className="mr-2 h-4 w-4" /> Bulk Pay
+            </Button>
+            <Button className="h-9" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> New Person
+            </Button>
+          </div>
+
+          {/* Mobile-only 3-dot */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9 sm:hidden">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setCreateOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> New Person
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setBulkOpen(true)}>
+                <Users className="mr-2 h-4 w-4" /> Bulk Pay
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setRolesOpen(true)}>
+                Manage Roles
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
+      {/* ── Cards view ─────────────────────────────────────────────────── */}
+      {view === "cards" && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {data.length === 0 ? (
+            <p className="col-span-full text-center text-muted-foreground py-12">
+              No people found. Add one to get started.
+            </p>
+          ) : (
+            data.map((p) => (
+              <div
+                key={p.id}
+                className="flex flex-col rounded-xl border bg-card shadow-sm overflow-hidden"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2 p-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${AVATAR_CLASSES[p.status] ?? "bg-muted text-muted-foreground"}`}
+                    >
+                      <User className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold leading-tight truncate">{p.name}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="outline" className={`${STATUS_CLASSES[p.status]} capitalize text-[11px] px-1.5 py-0`}>
+                          {p.status}
+                        </Badge>
+                        {p.role && (
+                          <span className="text-xs text-muted-foreground truncate">{p.role.name}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 -mr-1 -mt-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => setEditItem(p)}
+                    title="Edit"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {/* Body */}
+                <div className="px-4 pb-4 flex-1 space-y-1">
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="rounded-lg bg-muted/50 px-3 py-2.5">
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Base Salary</p>
+                      <p className="text-sm font-semibold">
+                        {p.salary_base ? formatCents(p.salary_base.base_salary_cents) : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 px-3 py-2.5">
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Pay Day</p>
+                      <p className="text-sm font-semibold">Day {p.payday_day}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2.5">
+                    <span className="text-muted-foreground text-xs">Last payment</span>
+                    {p.salary_payments[0] ? (
+                      <span className="text-sm font-medium">
+                        {new Date(p.salary_payments[0].due_date).toLocaleString("en", {
+                          month: "short",
+                          year: "numeric",
+                        })}{" "}
+                        · {formatCents(p.salary_payments[0].total_cents)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">None yet</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between py-2.5">
+                    <span className="text-muted-foreground text-xs">Raise reminder</span>
+                    {p.increase_reminders[0] ? (
+                      <button
+                        onClick={() => setReminderPerson(p)}
+                        className="text-sm font-medium text-amber-600 dark:text-amber-400 underline-offset-2 hover:underline transition-colors text-right"
+                      >
+                        {formatDate(p.increase_reminders[0].effective_date)} → {formatCents(p.increase_reminders[0].suggested_new_base_cents)}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setReminderPerson(p)}
+                        className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
+                      >
+                        + Set reminder
+                      </button>
+                    )}
+                  </div>
+
+                  {p.notes && (
+                    <p className="text-xs text-muted-foreground italic border-t pt-3 mt-1">{p.notes}</p>
+                  )}
+                </div>
+
+                {/* Footer actions */}
+                <div className="border-t flex gap-2 px-4 py-3">
+                  {p.status === "active" ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 flex-1 text-sm"
+                        onClick={() => setPaymentPerson(p)}
+                      >
+                        <DollarSign className="mr-1.5 h-4 w-4" /> Register Pay
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 flex-1 text-sm"
+                        onClick={() =>
+                          router.push(
+                            `/expenses?source=${p.id}&name=${encodeURIComponent(p.name)}`
+                          )
+                        }
+                      >
+                        <History className="mr-1.5 h-4 w-4" /> History
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-full text-sm"
+                      onClick={() =>
+                        router.push(
+                          `/expenses?source=${p.id}&name=${encodeURIComponent(p.name)}`
+                        )
+                      }
+                    >
+                      <History className="mr-1.5 h-4 w-4" /> History
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ── Table view ─────────────────────────────────────────────────── */}
+      {view === "table" && (
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -448,6 +735,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
           </TableBody>
         </Table>
       </div>
+      )}
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -591,6 +879,151 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
               <Button onClick={handleCreateReminder} disabled={loading}>
                 {loading ? "Saving..." : "Create Reminder"}
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk payment dialog */}
+      <Dialog open={bulkOpen} onOpenChange={(o) => !o && closeBulk()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Bulk Salary Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            {/* Shared date */}
+            <div>
+              <label className="text-sm font-medium">Payment Date</label>
+              <Input
+                type="date"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+                className="mt-1"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Leave empty to use today.
+              </p>
+            </div>
+
+            {/* Select all header */}
+            <div className="flex items-center gap-2 border-b pb-2">
+              <Checkbox
+                id="bulk-all"
+                checked={allBulkSelected ? true : someBulkSelected ? "indeterminate" : false}
+                onCheckedChange={toggleBulkAll}
+              />
+              <label htmlFor="bulk-all" className="flex-1 cursor-pointer text-sm font-medium">
+                Select all active people
+              </label>
+              <span className="text-xs text-muted-foreground">
+                {bulkSelected.size} / {activePeople.length} selected
+              </span>
+            </div>
+
+            {/* People list */}
+            <div className="max-h-[45vh] overflow-y-auto -mx-1 px-1 space-y-1.5">
+              {activePeople.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No active people.
+                </p>
+              )}
+              {activePeople.map((p) => {
+                const isSelected = bulkSelected.has(p.id);
+                const override = bulkOverrides[p.id] ?? { adj: "0", note: "" };
+                const error = bulkErrors[p.id];
+                return (
+                  <div
+                    key={p.id}
+                    className={`rounded-lg border px-3 py-2.5 transition-colors ${
+                      isSelected
+                        ? "border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20"
+                        : "border-transparent hover:bg-muted/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Checkbox
+                        id={`bulk-${p.id}`}
+                        checked={isSelected}
+                        onCheckedChange={() => toggleBulkOne(p.id)}
+                      />
+                      <label
+                        htmlFor={`bulk-${p.id}`}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{p.name}</p>
+                          {p.role && (
+                            <p className="text-xs text-muted-foreground">{p.role.name}</p>
+                          )}
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold">
+                          {p.salary_base
+                            ? formatCents(p.salary_base.base_salary_cents)
+                            : <span className="text-muted-foreground text-xs">No salary</span>}
+                        </span>
+                      </label>
+                    </div>
+
+                    {isSelected && (
+                      <div className="mt-2.5 grid grid-cols-2 gap-2 pl-7">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Adjustment</label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={override.adj}
+                            onChange={(e) => setBulkOverride(p.id, "adj", e.target.value)}
+                            className="mt-0.5 h-9"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Note</label>
+                          <Input
+                            value={override.note}
+                            onChange={(e) => setBulkOverride(p.id, "note", e.target.value)}
+                            className="mt-0.5 h-9"
+                            placeholder="Optional..."
+                          />
+                        </div>
+                        {error && (
+                          <p className="col-span-2 text-xs text-destructive">{error}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-sm text-muted-foreground">
+                {bulkSelected.size > 0
+                  ? `Total: ${formatCents(
+                      [...bulkSelected].reduce((sum, id) => {
+                        const person = data.find((p) => p.id === id);
+                        const base = person?.salary_base?.base_salary_cents ?? 0;
+                        const adj = parseToCents(bulkOverrides[id]?.adj || "0");
+                        return sum + base + adj;
+                      }, 0)
+                    )}`
+                  : "No people selected"}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1 sm:flex-none" onClick={closeBulk}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 sm:flex-none"
+                  onClick={handleBulkPayment}
+                  disabled={loading || bulkSelected.size === 0}
+                >
+                  {loading
+                    ? "Saving..."
+                    : `Register ${bulkSelected.size} payment${bulkSelected.size !== 1 ? "s" : ""}`}
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>

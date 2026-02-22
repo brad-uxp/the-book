@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
 import { AuditLogTable } from "@/components/admin-logs/audit-log-table";
 
+export const dynamic = "force-dynamic";
+
 const LIMIT = 50;
 
 export const metadata = {
