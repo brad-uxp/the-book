@@ -29,8 +29,7 @@ enum PaymentMode {
 
 enum SubscriptionStatus {
   active
-  paused
-  canceled
+  inactive
 }
 
 model Subscription {
@@ -54,7 +53,6 @@ model Subscription {
 model SubscriptionPayment {
   id                    String    @id @default(uuid())
   subscription_id       String
-  period_key            String // "YYYY-MM" for monthly, "YYYY" for annual
   due_date              DateTime
   paid_at               DateTime
   amount_cents_snapshot Int
@@ -63,9 +61,10 @@ model SubscriptionPayment {
 
   subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
 
-  // NOTE: No DB-level unique on (subscription_id, period_key) because of soft deletes.
+  // NOTE: No DB-level unique on (subscription_id, due_date) because of soft deletes.
   // Uniqueness among non-deleted records is enforced at the application level.
-  @@index([subscription_id, period_key])
+  @@index([subscription_id, due_date])
+  @@index([paid_at])
 }
 
 // ============================================================
@@ -118,7 +117,6 @@ model SalaryBase {
 model SalaryPayment {
   id                         String   @id @default(uuid())
   person_id                  String
-  period_key                 String // "YYYY-MM"
   due_date                   DateTime
   paid_at                    DateTime
   base_salary_cents_snapshot Int
@@ -129,7 +127,8 @@ model SalaryPayment {
 
   person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
 
-  @@unique([person_id, period_key])
+  @@unique([person_id, due_date])
+  @@index([paid_at])
 }
 
 model SalaryIncreaseReminder {
@@ -142,6 +141,8 @@ model SalaryIncreaseReminder {
   updated_at               DateTime       @updatedAt
 
   person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
+
+  @@index([effective_date, status])
 }
 
 // ============================================================
@@ -171,6 +172,8 @@ model Notification {
   email_sent_at  DateTime?
 
   @@unique([type, entity_id, event_date])
+  @@index([read_at, created_at])
+  @@index([created_at])
 }
 
 // ============================================================
@@ -196,10 +199,11 @@ model OtherExpense {
   category     Category
   paid_at      DateTime
   amount_cents Int
-  period_key   String?
   notes        String?
   created_at   DateTime  @default(now())
   updated_at   DateTime  @updatedAt
+
+  @@index([paid_at])
 }
 
 // ============================================================
@@ -236,4 +240,42 @@ model Invoice {
   updated_at     DateTime      @updatedAt
 
   client Client @relation(fields: [client_id], references: [id])
+
+  @@index([status])
+  @@index([due_date])
+  @@index([status, due_date])
+}
+
+// ============================================================
+// Fee Payments (pass-through: recorded for visibility, excluded from net income)
+// ============================================================
+
+model FeePayment {
+  id           String   @id @default(uuid())
+  name         String
+  paid_at      DateTime
+  amount_cents Int
+  notes        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([paid_at])
+}
+
+// ============================================================
+// Audit Logs
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  entity_type String   // "invoice" | "subscription" | "person" | ...
+  entity_id   String
+  entity_name String   // denormalized label for list display (no JOIN needed)
+  action      String   // "create" | "update" | "delete"
+  before      Json?    // previous state (update/delete)
+  after       Json?    // new state (create/update)
+  created_at  DateTime @default(now())
+
+  @@index([created_at])
+  @@index([entity_type, created_at])
 }

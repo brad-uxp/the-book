@@ -35,21 +35,21 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Plus, Trash2, Pencil, User, Receipt } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Plus, Trash2, Pencil, User, Receipt, FileText, ArrowLeftRight } from "lucide-react";
 import { formatCents } from "@/lib/currency";
-import { formatDate, formatPeriodKey } from "@/lib/dates";
+import { formatDate } from "@/lib/dates";
 import { useSearchParams, useRouter } from "next/navigation";
 import { OtherExpenseForm } from "./other-expense-form";
+import { FeeExpenseForm } from "./fee-expense-form";
 import { toast } from "sonner";
 
 interface ExpenseItem {
   id: string;
-  type: "subscription" | "salary" | "other";
+  type: "subscription" | "salary" | "other" | "fee";
   name: string;
   category: string | null;
   paid_at: string;
   amount_cents: number;
-  period_key: string | null;
   source_id: string;
   // salary-specific
   adjustment_cents?: number;
@@ -67,6 +67,21 @@ const CATEGORY_LABELS: Record<string, string> = {
   essential_service: "Essential",
 };
 
+function SubIcon({ name, iconUrl }: { name: string; iconUrl: string | null }) {
+  const [err, setErr] = useState(false);
+  const src = iconUrl ? `${iconUrl.replace(/\/$/, "")}/favicon.ico` : null;
+  const showImg = src && !err;
+  return (
+    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border ${showImg ? "bg-white dark:bg-white/10" : "bg-muted text-muted-foreground"}`}>
+      {showImg ? (
+        <img src={src} alt="" className="h-4 w-4 object-contain" onError={() => setErr(true)} />
+      ) : (
+        <span className="text-[10px] font-semibold leading-none">{name[0]?.toUpperCase()}</span>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   items: ExpenseItem[];
 }
@@ -83,6 +98,7 @@ export function ExpenseTable({ items }: Props) {
   ]);
   const [detail, setDetail] = useState<ExpenseItem | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createFeeOpen, setCreateFeeOpen] = useState(false);
 
   // Detail modal state
   const [editing, setEditing] = useState(false);
@@ -92,7 +108,6 @@ export function ExpenseTable({ items }: Props) {
     name: "",
     category: "",
     paid_at: "",
-    period_key: "",
     amount: "",
     adjustment: "",
     adjustment_note: "",
@@ -130,7 +145,6 @@ export function ExpenseTable({ items }: Props) {
       name: detail.name,
       category: detail.category ?? "",
       paid_at: detail.paid_at.slice(0, 10),
-      period_key: detail.period_key ?? "",
       amount: detail.type !== "salary"
         ? (detail.amount_cents / 100).toFixed(2)
         : "",
@@ -162,7 +176,6 @@ export function ExpenseTable({ items }: Props) {
             category: editValues.category,
             paid_at: editValues.paid_at,
             amount_cents,
-            period_key: editValues.period_key || null,
             notes: editValues.notes.trim() || null,
           }),
         });
@@ -178,6 +191,23 @@ export function ExpenseTable({ items }: Props) {
             paid_at: editValues.paid_at,
             adjustment_cents,
             adjustment_note: editValues.adjustment_note.trim() || null,
+          }),
+        });
+        if (!res.ok) throw new Error();
+      } else if (detail.type === "fee") {
+        const amount_cents = Math.round(parseFloat(editValues.amount) * 100);
+        if (!amount_cents || amount_cents <= 0) {
+          toast.error("Amount must be greater than 0");
+          return;
+        }
+        const res = await fetch(`/api/fee-payments/${detail.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: editValues.name.trim(),
+            paid_at: editValues.paid_at,
+            amount_cents,
+            notes: editValues.notes.trim() || null,
           }),
         });
         if (!res.ok) throw new Error();
@@ -214,6 +244,7 @@ export function ExpenseTable({ items }: Props) {
     try {
       let url = "";
       if (detail.type === "other") url = `/api/other-expenses/${detail.id}`;
+      else if (detail.type === "fee") url = `/api/fee-payments/${detail.id}`;
       else if (detail.type === "salary") url = `/api/salary-payments/${detail.id}`;
       else if (detail.type === "subscription") url = `/api/subscription-payments/${detail.id}`;
 
@@ -241,7 +272,12 @@ export function ExpenseTable({ items }: Props) {
   }, [items, sourceId, typeFilter, categoryFilter, nameFilter, dateFrom, dateTo]);
 
   const totalAmount = useMemo(
-    () => filtered.reduce((sum, i) => sum + i.amount_cents, 0),
+    () => filtered.filter((i) => i.type !== "fee").reduce((sum, i) => sum + i.amount_cents, 0),
+    [filtered]
+  );
+
+  const feeAmount = useMemo(
+    () => filtered.filter((i) => i.type === "fee").reduce((sum, i) => sum + i.amount_cents, 0),
     [filtered]
   );
 
@@ -277,16 +313,12 @@ export function ExpenseTable({ items }: Props) {
               <User className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
             </div>
           );
-        } else if (item.type === "subscription" && item.icon_url) {
-          const src = `${item.icon_url.replace(/\/$/, "")}/favicon.ico`;
+        } else if (item.type === "subscription") {
+          icon = <SubIcon name={item.name} iconUrl={item.icon_url ?? null} />;
+        } else if (item.type === "fee") {
           icon = (
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border bg-white">
-              <img
-                src={src}
-                alt=""
-                className="h-4 w-4 object-contain"
-                onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
-              />
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-teal-200 bg-teal-50 dark:border-teal-800 dark:bg-teal-900/30">
+              <ArrowLeftRight className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
             </div>
           );
         } else {
@@ -296,10 +328,19 @@ export function ExpenseTable({ items }: Props) {
             </div>
           );
         }
+        const note = item.notes ?? item.adjustment_note ?? null;
         return (
           <div className="flex items-center gap-2">
             {icon}
             {item.name}
+            {note && (
+              <span
+                className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-muted text-muted-foreground shrink-0"
+                title={note}
+              >
+                <FileText className="h-2.5 w-2.5" />
+              </span>
+            )}
           </div>
         );
       },
@@ -309,8 +350,10 @@ export function ExpenseTable({ items }: Props) {
       header: "Type",
       cell: ({ row }) => {
         const t = row.original.type;
-        const cls = "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
-        const label = t === "salary" ? "Salary" : t === "other" ? "Other" : "Subscription";
+        const cls = t === "fee"
+          ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800"
+          : "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+        const label = t === "salary" ? "Salary" : t === "other" ? "Other" : t === "fee" ? "Fee" : "Subscription";
         return <Badge variant="outline" className={cls}>{label}</Badge>;
       },
     },
@@ -321,14 +364,6 @@ export function ExpenseTable({ items }: Props) {
         row.original.category
           ? CATEGORY_LABELS[row.original.category] ?? row.original.category
           : "—",
-    },
-    {
-      accessorKey: "period_key",
-      header: "Period",
-      cell: ({ row }) =>
-        row.original.period_key
-          ? formatPeriodKey(row.original.period_key)
-          : <span className="text-muted-foreground">—</span>,
     },
     {
       accessorKey: "paid_at",
@@ -433,6 +468,7 @@ export function ExpenseTable({ items }: Props) {
             <SelectItem value="subscription">Subscription</SelectItem>
             <SelectItem value="salary">Salary</SelectItem>
             <SelectItem value="other">Other</SelectItem>
+            <SelectItem value="fee">Fee</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -456,9 +492,14 @@ export function ExpenseTable({ items }: Props) {
             <X className="mr-1 h-3 w-3" /> Clear
           </Button>
         )}
-        <Button className="w-full sm:ml-auto sm:w-auto sm:shrink-0" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Add expense
-        </Button>
+        <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
+          <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setCreateFeeOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add fee
+          </Button>
+          <Button className="flex-1 sm:flex-none" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add expense
+          </Button>
+        </div>
       </div>
 
       {/* Totals */}
@@ -468,6 +509,13 @@ export function ExpenseTable({ items }: Props) {
             <span className="text-muted-foreground">Total </span>
             <span className="font-semibold tabular-nums">{formatCents(totalAmount)}</span>
           </div>
+          {feeAmount > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground">Fees </span>
+              <span className="font-semibold tabular-nums text-teal-700 dark:text-teal-400">{formatCents(feeAmount)}</span>
+              <span className="text-xs text-muted-foreground">(pass-through)</span>
+            </div>
+          )}
           <span className="ml-auto text-muted-foreground">
             {filtered.length} records
           </span>
@@ -564,12 +612,6 @@ export function ExpenseTable({ items }: Props) {
                     </div>
                   )}
                 <div>
-                  <dt className="text-muted-foreground">Period</dt>
-                  <dd className="font-medium">
-                    {detail.period_key ? formatPeriodKey(detail.period_key) : "—"}
-                  </dd>
-                </div>
-                <div>
                   <dt className="text-muted-foreground">Date</dt>
                   <dd className="font-medium">{formatDate(detail.paid_at)}</dd>
                 </div>
@@ -587,10 +629,16 @@ export function ExpenseTable({ items }: Props) {
                     <dd className="font-medium">{detail.adjustment_note}</dd>
                   </div>
                 )}
-                {detail.type === "other" && detail.notes && (
+                {(detail.type === "other" || detail.type === "fee") && detail.notes && (
                   <div className="col-span-2">
                     <dt className="text-muted-foreground">Notes</dt>
                     <dd className="font-medium">{detail.notes}</dd>
+                  </div>
+                )}
+                {detail.type === "fee" && (
+                  <div className="col-span-2">
+                    <dt className="text-muted-foreground">Note</dt>
+                    <dd className="text-xs text-teal-700 dark:text-teal-400">Pass-through — not subtracted from net income</dd>
                   </div>
                 )}
               </dl>
@@ -686,6 +734,42 @@ export function ExpenseTable({ items }: Props) {
                         />
                       </div>
                     </div>
+                    <div className="space-y-1.5">
+                      <Label>Amount (USD)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={editValues.amount}
+                        onChange={(e) =>
+                          setEditValues((v) => ({ ...v, amount: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Notes</Label>
+                      <Input
+                        value={editValues.notes}
+                        placeholder="Optional"
+                        onChange={(e) =>
+                          setEditValues((v) => ({ ...v, notes: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+
+                {detail.type === "fee" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>Name</Label>
+                      <Input
+                        value={editValues.name}
+                        onChange={(e) =>
+                          setEditValues((v) => ({ ...v, name: e.target.value }))
+                        }
+                      />
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>Amount (USD)</Label>
@@ -700,15 +784,12 @@ export function ExpenseTable({ items }: Props) {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label>
-                          Period{" "}
-                          <span className="text-muted-foreground font-normal">(optional)</span>
-                        </Label>
+                        <Label>Date</Label>
                         <Input
-                          type="month"
-                          value={editValues.period_key}
+                          type="date"
+                          value={editValues.paid_at}
                           onChange={(e) =>
-                            setEditValues((v) => ({ ...v, period_key: e.target.value }))
+                            setEditValues((v) => ({ ...v, paid_at: e.target.value }))
                           }
                         />
                       </div>
@@ -826,6 +907,22 @@ export function ExpenseTable({ items }: Props) {
               router.refresh();
             }}
             onCancel={() => setCreateOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Create fee dialog */}
+      <Dialog open={createFeeOpen} onOpenChange={setCreateFeeOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add fee</DialogTitle>
+          </DialogHeader>
+          <FeeExpenseForm
+            onSuccess={() => {
+              setCreateFeeOpen(false);
+              router.refresh();
+            }}
+            onCancel={() => setCreateFeeOpen(false)}
           />
         </DialogContent>
       </Dialog>

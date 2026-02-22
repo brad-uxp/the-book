@@ -50,7 +50,7 @@ const FormSchema = z.object({
   pay_month: z.number().int().min(1).max(12).nullable().optional(),
   category: z.enum(["work", "personal", "essential_service"]),
   payment_mode: z.enum(["auto", "manual"]),
-  status: z.enum(["active", "paused", "canceled"]),
+  status: z.enum(["active", "inactive"]),
   notes: z.string().nullable().optional(),
   icon_url: z.string().nullable().optional(),
 });
@@ -303,8 +303,7 @@ export function SubscriptionForm({
                 </FormControl>
                 <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="paused">Paused</SelectItem>
-                  <SelectItem value="canceled">Canceled</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage />

@@ -4,13 +4,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { parseToCents } from "@/lib/currency";
 import { toast } from "sonner";
 
@@ -19,9 +12,8 @@ interface Props {
   onCancel: () => void;
 }
 
-export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
+export function FeeExpenseForm({ onSuccess, onCancel }: Props) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
   const [paidAt, setPaidAt] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
@@ -29,7 +21,7 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !category || !paidAt || !amount) return;
+    if (!name.trim() || !paidAt || !amount) return;
 
     const amount_cents = parseToCents(amount);
     if (amount_cents <= 0) {
@@ -39,22 +31,21 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/other-expenses", {
+      const res = await fetch("/api/fee-payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          category,
           paid_at: paidAt,
           amount_cents,
           notes: notes.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error("Failed to create expense");
-      toast.success("Expense added");
+      if (!res.ok) throw new Error("Failed to create fee");
+      toast.success("Fee added");
       onSuccess();
     } catch {
-      toast.error("Failed to add expense");
+      toast.error("Failed to add fee");
     } finally {
       setLoading(false);
     }
@@ -63,10 +54,10 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="oe-name">Name</Label>
+        <Label htmlFor="fee-name">Name</Label>
         <Input
-          id="oe-name"
-          placeholder="e.g. Office supplies"
+          id="fee-name"
+          placeholder="e.g. Platform fee"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -75,23 +66,22 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label htmlFor="oe-category">Category</Label>
-          <Select value={category} onValueChange={setCategory} required>
-            <SelectTrigger id="oe-category">
-              <SelectValue placeholder="Select category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="work">Work</SelectItem>
-              <SelectItem value="personal">Personal</SelectItem>
-              <SelectItem value="essential_service">Essential</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="oe-date">Date</Label>
+          <Label htmlFor="fee-amount">Amount (USD)</Label>
           <Input
-            id="oe-date"
+            id="fee-amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="fee-date">Date</Label>
+          <Input
+            id="fee-date"
             type="date"
             value={paidAt}
             onChange={(e) => setPaidAt(e.target.value)}
@@ -101,23 +91,9 @@ export function OtherExpenseForm({ onSuccess, onCancel }: Props) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="oe-amount">Amount (USD)</Label>
+        <Label htmlFor="fee-notes">Notes</Label>
         <Input
-          id="oe-amount"
-          type="number"
-          step="0.01"
-          min="0.01"
-          placeholder="0.00"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          required
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="oe-notes">Notes</Label>
-        <Input
-          id="oe-notes"
+          id="fee-notes"
           placeholder="Optional"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}

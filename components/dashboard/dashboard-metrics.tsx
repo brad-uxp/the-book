@@ -6,6 +6,7 @@ import { ArrowUpRight } from "lucide-react";
 import { formatCents } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import { DashboardChart } from "./dashboard-chart";
+import { CorporateChart } from "./corporate-chart";
 
 type Preset = "ytd" | "last12" | "all";
 
@@ -24,7 +25,12 @@ export interface MonthData {
   income: number;
   salary: number;
   subscriptions: number;
+  subsPersonal: number;
+  subsWork: number;
+  subsEssential: number;
   other: number;
+  otherWork: number;
+  otherPersonal: number;
 }
 
 interface Props {
@@ -58,13 +64,38 @@ export function DashboardMetrics({ monthlyData, sentTotal, sentCount }: Props) {
   const totals = useMemo(() => {
     const salary        = filtered.reduce((s, d) => s + d.salary, 0);
     const subscriptions = filtered.reduce((s, d) => s + d.subscriptions, 0);
+    const subsPersonal  = filtered.reduce((s, d) => s + d.subsPersonal, 0);
+    const subsWork      = filtered.reduce((s, d) => s + d.subsWork, 0);
+    const subsEssential = filtered.reduce((s, d) => s + d.subsEssential, 0);
     const income        = filtered.reduce((s, d) => s + d.income, 0);
     const expenses      = filtered.reduce((s, d) => s + d.salary + d.subscriptions + d.other, 0);
-    return { salary, subscriptions, net: income - expenses };
+    const net           = income - expenses;
+    const n             = filtered.length || 1;
+    return {
+      salary, subscriptions, net,
+      avgSalary:        salary / n,
+      avgSubsPersonal:  subsPersonal / n,
+      avgSubsWork:      subsWork / n,
+      avgSubsEssential: subsEssential / n,
+      avgNet:           net / n,
+      avgExpenses:      expenses / n,
+    };
   }, [filtered]);
 
   const chartData = useMemo(
-    () => filtered.map((d) => ({ month: d.month, income: d.income, expenses: d.salary + d.subscriptions + d.other })),
+    () => filtered.map((d) => {
+      const expenses = d.salary + d.subscriptions + d.other;
+      const workExpenses = d.salary + d.subsWork + d.otherWork;
+      return {
+        month: d.month,
+        income: d.income,
+        expenses,
+        workExpenses,
+        personalExpenses: d.subsPersonal + d.otherPersonal,
+        net: d.income - expenses,
+        corporateNet: d.income - workExpenses,
+      };
+    }),
     [filtered]
   );
 
@@ -133,8 +164,56 @@ export function DashboardMetrics({ monthlyData, sentTotal, sentCount }: Props) {
         </div>
       </div>
 
+      {/* Average metrics */}
+      <div>
+        <p className="text-xs font-medium text-muted-foreground mb-2">
+          Monthly averages · {filtered.length} month{filtered.length !== 1 ? "s" : ""}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="rounded-lg border bg-card p-3 shadow-sm">
+            <p className="text-lg font-bold tabular-nums leading-none">
+              {formatCents(Math.round(totals.avgSalary))}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">avg salary</p>
+          </div>
+          <div className="rounded-lg border bg-card p-3 shadow-sm">
+            <p className="text-lg font-bold tabular-nums leading-none">
+              {formatCents(Math.round(totals.avgSubsPersonal))}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">avg personal subs</p>
+          </div>
+          <div className="rounded-lg border bg-card p-3 shadow-sm">
+            <p className="text-lg font-bold tabular-nums leading-none">
+              {formatCents(Math.round(totals.avgSubsWork))}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">avg work subs</p>
+          </div>
+          <div className="rounded-lg border bg-card p-3 shadow-sm">
+            <p className="text-lg font-bold tabular-nums leading-none">
+              {formatCents(Math.round(totals.avgSubsEssential))}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">avg essential subs</p>
+          </div>
+          <div className="rounded-lg border bg-card p-3 shadow-sm">
+            <p className="text-lg font-bold tabular-nums leading-none">
+              {formatCents(Math.round(totals.avgExpenses))}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">avg total expense</p>
+          </div>
+          <div className="rounded-lg border bg-card p-3 shadow-sm">
+            <p className={`text-lg font-bold tabular-nums leading-none ${totals.avgNet < 0 ? "text-destructive" : ""}`}>
+              {totals.avgNet < 0 ? "-" : ""}{formatCents(Math.round(Math.abs(totals.avgNet)))}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">avg net income</p>
+          </div>
+        </div>
+      </div>
+
       {/* Chart */}
       <DashboardChart data={chartData} />
+
+      {/* Corporate profitability chart */}
+      <CorporateChart data={chartData} />
     </div>
   );
 }

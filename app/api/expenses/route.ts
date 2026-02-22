@@ -28,7 +28,6 @@ export async function GET(req: NextRequest) {
         category: p.subscription.category,
         paid_at: p.paid_at,
         amount_cents: p.amount_cents_snapshot,
-        period_key: p.period_key,
         source_id: p.subscription_id,
       })),
       ...salaryPayments.map((p) => ({
@@ -38,7 +37,6 @@ export async function GET(req: NextRequest) {
         category: null,
         paid_at: p.paid_at,
         amount_cents: p.total_cents,
-        period_key: p.period_key,
         source_id: p.person_id,
       })),
     ].sort((a, b) => new Date(b.paid_at).getTime() - new Date(a.paid_at).getTime());

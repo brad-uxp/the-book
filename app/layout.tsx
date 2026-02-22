@@ -12,6 +12,7 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "AccountBook",
   description: "Personal accounting & invoice management",
+  robots: { index: false, follow: false },
 };
 
 export default async function RootLayout({

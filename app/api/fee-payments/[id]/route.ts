@@ -5,7 +5,6 @@ import { auditLog } from "@/lib/audit";
 
 const PatchSchema = z.object({
   name: z.string().min(1).optional(),
-  category: z.enum(["work", "personal", "essential_service"]).optional(),
   paid_at: z.string().optional(),
   amount_cents: z.number().int().min(1).optional(),
   notes: z.string().nullable().optional(),
@@ -22,32 +21,29 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const before = await prisma.otherExpense.findUnique({ where: { id } });
+  const before = await prisma.feePayment.findUnique({ where: { id } });
 
   const data: Record<string, unknown> = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
-  if (parsed.data.category !== undefined) data.category = parsed.data.category;
   if (parsed.data.paid_at !== undefined) data.paid_at = new Date(parsed.data.paid_at);
   if (parsed.data.amount_cents !== undefined) data.amount_cents = parsed.data.amount_cents;
   if (parsed.data.notes !== undefined) data.notes = parsed.data.notes;
 
-  const updated = await prisma.otherExpense.update({ where: { id }, data });
+  const updated = await prisma.feePayment.update({ where: { id }, data });
 
   auditLog({
-    entity_type: "other_expense",
+    entity_type: "fee_payment",
     entity_id: id,
     entity_name: updated.name,
     action: "update",
     before: before ? {
       name: before.name,
-      category: before.category,
       paid_at: before.paid_at,
       amount_cents: before.amount_cents,
       notes: before.notes,
     } : null,
     after: {
       name: updated.name,
-      category: updated.category,
       paid_at: updated.paid_at,
       amount_cents: updated.amount_cents,
       notes: updated.notes,
@@ -63,18 +59,17 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
-  const before = await prisma.otherExpense.findUnique({ where: { id } });
-  await prisma.otherExpense.delete({ where: { id } });
+  const before = await prisma.feePayment.findUnique({ where: { id } });
+  await prisma.feePayment.delete({ where: { id } });
 
   if (before) {
     auditLog({
-      entity_type: "other_expense",
+      entity_type: "fee_payment",
       entity_id: id,
       entity_name: before.name,
       action: "delete",
       before: {
         name: before.name,
-        category: before.category,
         paid_at: before.paid_at,
         amount_cents: before.amount_cents,
         notes: before.notes,

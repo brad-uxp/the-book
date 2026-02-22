@@ -1,19 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   useReactTable,
   getCoreRowModel,
-  getFilteredRowModel,
   getSortedRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
-  type ColumnFiltersState,
 } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -34,16 +39,51 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, FileText, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/currency";
-import { formatDate, formatPeriodKey } from "@/lib/dates";
+import { formatDate } from "@/lib/dates";
 import { SubscriptionForm } from "./subscription-form";
 import type { SubscriptionInput } from "@/lib/validations";
 
 function faviconSrc(iconUrl: string | null): string | null {
   if (!iconUrl) return null;
   return `${iconUrl.replace(/\/$/, "")}/favicon.ico`;
+}
+
+function SubscriptionIcon({
+  name,
+  iconUrl,
+  size = "sm",
+}: {
+  name: string;
+  iconUrl: string | null;
+  size?: "sm" | "md";
+}) {
+  const [imgError, setImgError] = useState(false);
+  const favicon = faviconSrc(iconUrl);
+  const showImg = favicon && !imgError;
+
+  const outer = size === "sm"
+    ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border"
+    : "flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border";
+
+  return (
+    <div className={`${outer} ${showImg ? "bg-white dark:bg-white/10" : "bg-muted text-muted-foreground"}`}>
+      {showImg ? (
+        <img
+          src={favicon}
+          alt=""
+          className={size === "sm" ? "h-4 w-4 object-contain" : "h-5 w-5 object-contain"}
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <span className={size === "sm" ? "text-[10px] font-semibold leading-none" : "text-xs font-semibold leading-none"}>
+          {name[0]?.toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
 }
 
 interface Subscription {
@@ -55,12 +95,13 @@ interface Subscription {
   pay_month: number | null;
   category: "work" | "personal" | "essential_service";
   payment_mode: "auto" | "manual";
-  status: "active" | "paused" | "canceled";
+  status: "active" | "inactive";
   notes: string | null;
   icon_url: string | null;
+  paid_current_period: boolean;
   payments: Array<{
     id: string;
-    period_key: string;
+    due_date: string;
     paid_at: string;
     amount_cents_snapshot: number;
   }>;
@@ -68,8 +109,7 @@ interface Subscription {
 
 const STATUS_CLASSES: Record<string, string> = {
   active:   "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800",
-  paused:   "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
-  canceled: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+  inactive: "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
 };
 
 const CATEGORY_LABELS = {
@@ -86,12 +126,47 @@ export function SubscriptionsTable({ initialData }: Props) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Filters
+  const [nameFilter, setNameFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [modeFilter, setModeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [unpaidThisMonth, setUnpaidThisMonth] = useState(false);
+
+  const currentMonth = useMemo(() => new Date().getMonth() + 1, []);
+
+  const hasActiveFilters = nameFilter || categoryFilter !== "all" || modeFilter !== "all" || statusFilter !== "all" || unpaidThisMonth;
+
+  const clearFilters = () => {
+    setNameFilter("");
+    setCategoryFilter("all");
+    setModeFilter("all");
+    setStatusFilter("all");
+    setUnpaidThisMonth(false);
+  };
+
+  const filtered = useMemo(() => {
+    let result = data;
+    if (nameFilter) result = result.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase()));
+    if (categoryFilter !== "all") result = result.filter((s) => s.category === categoryFilter);
+    if (modeFilter !== "all") result = result.filter((s) => s.payment_mode === modeFilter);
+    if (statusFilter !== "all") result = result.filter((s) => s.status === statusFilter);
+    if (unpaidThisMonth) {
+      result = result.filter((s) => {
+        if (s.status !== "active") return false;
+        const shouldPay = s.frequency === "monthly" || (s.frequency === "annual" && s.pay_month === currentMonth);
+        return shouldPay && !s.paid_current_period;
+      });
+    }
+    return result;
+  }, [data, nameFilter, categoryFilter, modeFilter, statusFilter, unpaidThisMonth, currentMonth]);
   const [editItem, setEditItem] = useState<Subscription | null>(null);
   const [detailItem, setDetailItem] = useState<Subscription | null>(null);
   const [paymentSub, setPaymentSub] = useState<Subscription | null>(null);
   const [paymentDate, setPaymentDate] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
   const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
@@ -144,7 +219,10 @@ export function SubscriptionsTable({ initialData }: Props) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ paid_at: paymentDate || new Date().toISOString().slice(0, 10) }),
+          body: JSON.stringify({
+            paid_at: paymentDate || new Date().toISOString().slice(0, 10),
+            amount_cents: paymentAmount ? Math.round(parseFloat(paymentAmount) * 100) : undefined,
+          }),
         }
       );
       if (!res.ok) {
@@ -155,6 +233,7 @@ export function SubscriptionsTable({ initialData }: Props) {
       await refresh();
       setPaymentSub(null);
       setPaymentDate("");
+      setPaymentAmount("");
     } finally {
       setLoading(false);
     }
@@ -184,20 +263,18 @@ export function SubscriptionsTable({ initialData }: Props) {
         );
       },
       cell: ({ row }) => {
-        const favicon = faviconSrc(row.original.icon_url);
         return (
           <div className="flex items-center gap-2">
-            {favicon && (
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border bg-white">
-                <img
-                  src={favicon}
-                  alt=""
-                  className="h-4 w-4 object-contain"
-                  onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
-                />
-              </div>
-            )}
+            <SubscriptionIcon name={row.original.name} iconUrl={row.original.icon_url} />
             {row.original.name}
+            {row.original.notes && (
+              <span
+                className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-muted text-muted-foreground shrink-0"
+                title={row.original.notes}
+              >
+                <FileText className="h-2.5 w-2.5" />
+              </span>
+            )}
           </div>
         );
       },
@@ -254,7 +331,7 @@ export function SubscriptionsTable({ initialData }: Props) {
         if (!last) return <span className="text-muted-foreground">—</span>;
         return (
           <span className="text-sm">
-            {formatPeriodKey(last.period_key)} · {formatDate(last.paid_at)}
+            {formatDate(last.paid_at)}
           </span>
         );
       },
@@ -280,7 +357,10 @@ export function SubscriptionsTable({ initialData }: Props) {
                 Edit
               </DropdownMenuItem>
               {sub.status === "active" && (
-                <DropdownMenuItem onClick={() => setPaymentSub(sub)}>
+                <DropdownMenuItem onClick={() => {
+                  setPaymentSub(sub);
+                  setPaymentAmount((sub.amount_cents / 100).toFixed(2));
+                }}>
                   Register payment
                 </DropdownMenuItem>
               )}
@@ -293,30 +373,70 @@ export function SubscriptionsTable({ initialData }: Props) {
   ];
 
   const table = useReactTable({
-    data,
+    data: filtered,
     columns,
-    state: { sorting, columnFilters },
+    state: { sorting },
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
     enableMultiSort: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   });
 
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <Input
           placeholder="Filter by name..."
-          value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-          onChange={(e) =>
-            table.getColumn("name")?.setFilterValue(e.target.value)
-          }
-          className="w-full sm:max-w-xs"
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          className="w-full sm:w-44"
         />
-        <Button className="w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-full sm:w-36">
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            <SelectItem value="work">Work</SelectItem>
+            <SelectItem value="personal">Personal</SelectItem>
+            <SelectItem value="essential_service">Essential</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={modeFilter} onValueChange={setModeFilter}>
+          <SelectTrigger className="w-full sm:w-32">
+            <SelectValue placeholder="All modes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All modes</SelectItem>
+            <SelectItem value="auto">Auto</SelectItem>
+            <SelectItem value="manual">Manual</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-full sm:w-32">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          variant={unpaidThisMonth ? "default" : "outline"}
+          size="sm"
+          className="w-full sm:w-auto h-9"
+          onClick={() => setUnpaidThisMonth((v) => !v)}
+        >
+          Unpaid this month
+        </Button>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-muted-foreground sm:w-auto">
+            <X className="mr-1 h-3 w-3" /> Clear
+          </Button>
+        )}
+        <Button className="w-full sm:ml-auto sm:w-auto sm:shrink-0" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> New Subscription
         </Button>
       </div>
@@ -408,7 +528,7 @@ export function SubscriptionsTable({ initialData }: Props) {
       <Dialog
         open={!!paymentSub}
         onOpenChange={(o) => {
-          if (!o) { setPaymentSub(null); setPaymentDate(""); }
+          if (!o) { setPaymentSub(null); setPaymentDate(""); setPaymentAmount(""); }
         }}
       >
         <DialogContent className="max-w-sm">
@@ -416,6 +536,17 @@ export function SubscriptionsTable({ initialData }: Props) {
             <DialogTitle>Register Payment — {paymentSub?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            <div>
+              <label className="text-sm font-medium">Amount (USD)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                className="mt-1"
+              />
+            </div>
             <div>
               <label className="text-sm font-medium">Payment Date</label>
               <Input
@@ -431,7 +562,7 @@ export function SubscriptionsTable({ initialData }: Props) {
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
-                onClick={() => { setPaymentSub(null); setPaymentDate(""); }}
+                onClick={() => { setPaymentSub(null); setPaymentDate(""); setPaymentAmount(""); }}
               >
                 Cancel
               </Button>
@@ -451,15 +582,8 @@ export function SubscriptionsTable({ initialData }: Props) {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {detailItem?.icon_url && (
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border bg-white">
-                  <img
-                    src={faviconSrc(detailItem.icon_url)!}
-                    alt=""
-                    className="h-5 w-5 object-contain"
-                    onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
-                  />
-                </div>
+              {detailItem && (
+                <SubscriptionIcon name={detailItem.name} iconUrl={detailItem.icon_url} size="md" />
               )}
               {detailItem?.name}
             </DialogTitle>

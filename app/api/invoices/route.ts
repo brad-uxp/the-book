@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
+import { auditLog } from "@/lib/audit";
 
 export async function GET() {
   const invoices = await prisma.invoice.findMany({
@@ -35,6 +36,24 @@ export async function POST(req: NextRequest) {
       file_url: parsed.data.file_url ?? null,
     },
     include: { client: true },
+  });
+
+  auditLog({
+    entity_type: "invoice",
+    entity_id: invoice.id,
+    entity_name: `${invoice.invoice_number ? `#${invoice.invoice_number} · ` : ""}${invoice.client.name}`,
+    action: "create",
+    after: {
+      invoice_number: invoice.invoice_number,
+      client_id: invoice.client_id,
+      amount_cents: invoice.amount_cents,
+      fee_cents: invoice.fee_cents,
+      status: invoice.status,
+      due_date: invoice.due_date,
+      reminder_date: invoice.reminder_date,
+      notes: invoice.notes,
+      file_url: invoice.file_url,
+    },
   });
 
   return NextResponse.json(invoice, { status: 201 });

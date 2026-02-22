@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
+import { auditLog } from "@/lib/audit";
 
 export async function GET(
   _req: NextRequest,
@@ -22,7 +23,6 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json();
 
-  // Allow partial update for status-only updates
   const parsed = InvoiceSchema.partial().safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -30,6 +30,11 @@ export async function PATCH(
       { status: 400 }
     );
   }
+
+  const before = await prisma.invoice.findUnique({
+    where: { id },
+    include: { client: true },
+  });
 
   const data: Record<string, unknown> = {};
   if (parsed.data.invoice_number !== undefined)
@@ -55,6 +60,36 @@ export async function PATCH(
     data,
     include: { client: true },
   });
+
+  auditLog({
+    entity_type: "invoice",
+    entity_id: id,
+    entity_name: `${invoice.invoice_number ? `#${invoice.invoice_number} · ` : ""}${invoice.client.name}`,
+    action: "update",
+    before: before ? {
+      invoice_number: before.invoice_number,
+      client_id: before.client_id,
+      amount_cents: before.amount_cents,
+      fee_cents: before.fee_cents,
+      status: before.status,
+      due_date: before.due_date,
+      reminder_date: before.reminder_date,
+      notes: before.notes,
+      file_url: before.file_url,
+    } : null,
+    after: {
+      invoice_number: invoice.invoice_number,
+      client_id: invoice.client_id,
+      amount_cents: invoice.amount_cents,
+      fee_cents: invoice.fee_cents,
+      status: invoice.status,
+      due_date: invoice.due_date,
+      reminder_date: invoice.reminder_date,
+      notes: invoice.notes,
+      file_url: invoice.file_url,
+    },
+  });
+
   return NextResponse.json(invoice);
 }
 
@@ -63,6 +98,33 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const before = await prisma.invoice.findUnique({
+    where: { id },
+    include: { client: true },
+  });
+
   await prisma.invoice.delete({ where: { id } });
+
+  if (before) {
+    auditLog({
+      entity_type: "invoice",
+      entity_id: id,
+      entity_name: `${before.invoice_number ? `#${before.invoice_number} · ` : ""}${before.client.name}`,
+      action: "delete",
+      before: {
+        invoice_number: before.invoice_number,
+        client_id: before.client_id,
+        amount_cents: before.amount_cents,
+        fee_cents: before.fee_cents,
+        status: before.status,
+        due_date: before.due_date,
+        reminder_date: before.reminder_date,
+        notes: before.notes,
+        file_url: before.file_url,
+      },
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }

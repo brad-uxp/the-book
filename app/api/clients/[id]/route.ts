@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ClientSchema } from "@/lib/validations";
+import { auditLog } from "@/lib/audit";
 
 export async function PATCH(
   req: NextRequest,
@@ -16,7 +17,18 @@ export async function PATCH(
     );
   }
 
+  const before = await prisma.client.findUnique({ where: { id } });
   const client = await prisma.client.update({ where: { id }, data: parsed.data });
+
+  auditLog({
+    entity_type: "client",
+    entity_id: id,
+    entity_name: client.name,
+    action: "update",
+    before: before ? { name: before.name, color_hex: before.color_hex } : null,
+    after: { name: client.name, color_hex: client.color_hex },
+  });
+
   return NextResponse.json(client);
 }
 
@@ -25,7 +37,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  // Check if client has invoices
   const count = await prisma.invoice.count({ where: { client_id: id } });
   if (count > 0) {
     return NextResponse.json(
@@ -33,6 +44,19 @@ export async function DELETE(
       { status: 409 }
     );
   }
+
+  const before = await prisma.client.findUnique({ where: { id } });
   await prisma.client.delete({ where: { id } });
+
+  if (before) {
+    auditLog({
+      entity_type: "client",
+      entity_id: id,
+      entity_name: before.name,
+      action: "delete",
+      before: { name: before.name, color_hex: before.color_hex },
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }

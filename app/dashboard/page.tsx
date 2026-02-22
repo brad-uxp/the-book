@@ -5,8 +5,6 @@ import {
   getTodayInTZ,
   addDaysUTC,
   clampDay,
-  monthlyPeriodKey,
-  annualPeriodKey,
 } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +31,10 @@ export default async function DashboardPage() {
   const nextYear  = nextMonthDate.getUTCFullYear();
   const nextMonth = nextMonthDate.getUTCMonth() + 1;
 
-  const currentMonthKey = monthlyPeriodKey(todayYear, todayMonth);
-  const nextMonthKey    = monthlyPeriodKey(nextYear, nextMonth);
-  const currentYearKey  = annualPeriodKey(todayYear);
+  const startOfCurrentYear  = new Date(Date.UTC(todayYear, 0, 1));
+  const startOfCurrentMonth = new Date(Date.UTC(todayYear, todayMonth - 1, 1));
+  const startOfNextMonth    = new Date(Date.UTC(nextYear, nextMonth - 1, 1));
+  const endOfNextMonth      = new Date(Date.UTC(nextYear, nextMonth, 0, 23, 59, 59, 999));
 
   // ── Chart / metrics data (36 months) ────────────────────────────────────────
   const months = getLast36Months();
@@ -56,7 +55,11 @@ export default async function DashboardPage() {
   const [subPayments, salaryPayments, invoices, otherExpenses] = await Promise.all([
     prisma.subscriptionPayment.findMany({
       where: { deleted_at: null, paid_at: { gte: fromDate, lte: toDate } },
-      select: { paid_at: true, amount_cents_snapshot: true },
+      select: {
+        paid_at: true,
+        amount_cents_snapshot: true,
+        subscription: { select: { category: true } },
+      },
     }),
     prisma.salaryPayment.findMany({
       where: { paid_at: { gte: fromDate, lte: toDate } },
@@ -68,7 +71,7 @@ export default async function DashboardPage() {
     }),
     prisma.otherExpense.findMany({
       where: { paid_at: { gte: fromDate, lte: toDate } },
-      select: { paid_at: true, amount_cents: true },
+      select: { paid_at: true, amount_cents: true, category: true },
     }),
   ]);
 
@@ -78,19 +81,22 @@ export default async function DashboardPage() {
       .filter((p) => toPeriodKey(p.paid_at) === month)
       .reduce((s, p) => s + p.total_cents, 0);
 
-    const subscriptions = subPayments
-      .filter((p) => toPeriodKey(p.paid_at) === month)
-      .reduce((s, p) => s + p.amount_cents_snapshot, 0);
+    const monthSubs = subPayments.filter((p) => toPeriodKey(p.paid_at) === month);
+    const subscriptions = monthSubs.reduce((s, p) => s + p.amount_cents_snapshot, 0);
+    const subsPersonal  = monthSubs.filter((p) => p.subscription.category === "personal").reduce((s, p) => s + p.amount_cents_snapshot, 0);
+    const subsWork      = monthSubs.filter((p) => p.subscription.category === "work").reduce((s, p) => s + p.amount_cents_snapshot, 0);
+    const subsEssential = monthSubs.filter((p) => p.subscription.category === "essential_service").reduce((s, p) => s + p.amount_cents_snapshot, 0);
 
-    const other = otherExpenses
-      .filter((p) => toPeriodKey(p.paid_at) === month)
-      .reduce((s, p) => s + p.amount_cents, 0);
+    const monthOther    = otherExpenses.filter((p) => toPeriodKey(p.paid_at) === month);
+    const other         = monthOther.reduce((s, p) => s + p.amount_cents, 0);
+    const otherWork     = monthOther.filter((p) => p.category === "work").reduce((s, p) => s + p.amount_cents, 0);
+    const otherPersonal = monthOther.filter((p) => p.category === "personal").reduce((s, p) => s + p.amount_cents, 0);
 
     const income = invoices
       .filter((inv) => toPeriodKey(inv.due_date) === month)
       .reduce((s, inv) => s + inv.amount_cents + inv.fee_cents, 0);
 
-    return { month, income, salary, subscriptions, other };
+    return { month, income, salary, subscriptions, subsPersonal, subsWork, subsEssential, other, otherWork, otherPersonal };
   });
 
   // ── Upcoming data ───────────────────────────────────────────────────────────
@@ -101,8 +107,8 @@ export default async function DashboardPage() {
         id: true, name: true, amount_cents: true,
         frequency: true, pay_day: true, pay_month: true,
         payments: {
-          where: { deleted_at: null, period_key: { in: [currentMonthKey, nextMonthKey, currentYearKey] } },
-          select: { period_key: true },
+          where: { deleted_at: null, due_date: { gte: startOfCurrentYear, lte: endOfNextMonth } },
+          select: { due_date: true },
         },
       },
     }),
@@ -112,8 +118,8 @@ export default async function DashboardPage() {
         id: true, name: true, payday_day: true,
         salary_base: { select: { base_salary_cents: true } },
         salary_payments: {
-          where: { period_key: { in: [currentMonthKey, nextMonthKey] } },
-          select: { period_key: true },
+          where: { due_date: { gte: startOfCurrentMonth, lte: endOfNextMonth } },
+          select: { due_date: true },
         },
       },
     }),
@@ -125,6 +131,7 @@ export default async function DashboardPage() {
   ]);
 
   const upcomingSubPayments = activeSubscriptions.flatMap((sub) => {
+    const paidDueDates = new Set(sub.payments.map((p) => p.due_date.toISOString()));
     for (let i = 0; i <= 5; i++) {
       const checkDate = addDaysUTC(today, i);
       const y = checkDate.getUTCFullYear();
@@ -132,19 +139,18 @@ export default async function DashboardPage() {
       const d = checkDate.getUTCDate();
 
       let isDue = false;
-      let periodKey = "";
+      let dueDate: Date | null = null;
 
       if (sub.frequency === "monthly") {
         isDue = clampDay(y, m, sub.pay_day) === d;
-        periodKey = monthlyPeriodKey(y, m);
+        if (isDue) dueDate = new Date(Date.UTC(y, m - 1, clampDay(y, m, sub.pay_day)));
       } else {
         isDue = sub.pay_month === m && clampDay(y, m, sub.pay_day) === d;
-        periodKey = annualPeriodKey(y);
+        if (isDue) dueDate = new Date(Date.UTC(y, m - 1, clampDay(y, m, sub.pay_day)));
       }
 
-      if (isDue) {
-        const alreadyPaid = sub.payments.some((p) => p.period_key === periodKey);
-        if (!alreadyPaid) {
+      if (isDue && dueDate) {
+        if (!paidDueDates.has(dueDate.toISOString())) {
           return [{ id: sub.id, type: "subscription" as const, name: sub.name, amount_cents: sub.amount_cents, due_date: checkDate.toISOString() }];
         }
         break;
@@ -154,6 +160,7 @@ export default async function DashboardPage() {
   });
 
   const upcomingSalaryPayments = activePeople.flatMap((person) => {
+    const paidDueDates = new Set(person.salary_payments.map((p) => p.due_date.toISOString()));
     for (let i = 0; i <= 5; i++) {
       const checkDate = addDaysUTC(today, i);
       const y = checkDate.getUTCFullYear();
@@ -161,9 +168,8 @@ export default async function DashboardPage() {
       const d = checkDate.getUTCDate();
 
       if (clampDay(y, m, person.payday_day) === d) {
-        const periodKey = monthlyPeriodKey(y, m);
-        const alreadyPaid = person.salary_payments.some((p) => p.period_key === periodKey);
-        if (!alreadyPaid) {
+        const dueDate = new Date(Date.UTC(y, m - 1, clampDay(y, m, person.payday_day)));
+        if (!paidDueDates.has(dueDate.toISOString())) {
           return [{ id: person.id, type: "salary" as const, name: person.name, amount_cents: person.salary_base?.base_salary_cents ?? 0, due_date: checkDate.toISOString() }];
         }
         break;

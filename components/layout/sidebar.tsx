@@ -13,6 +13,7 @@ import {
   Receipt,
   Settings,
   LogOut,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -88,6 +89,13 @@ export function Sidebar({ user }: Props) {
           <Link href="/notifications" className={linkClass("/notifications")}>
             <Bell className="h-4 w-4 shrink-0" />
             Notifications
+          </Link>
+        </div>
+
+        <div className="pt-3">
+          <Link href="/admin-logs" className={linkClass("/admin-logs")}>
+            <ClipboardList className="h-4 w-4 shrink-0" />
+            Admin Logs
           </Link>
         </div>
 

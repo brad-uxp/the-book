@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
     return NextResponse.json(
-      { error: "GMAIL_USER and GMAIL_APP_PASSWORD are not configured in .env" },
+      { error: "Email is not configured on the server." },
       { status: 500 }
     );
   }
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[test-email]", err);
+    return NextResponse.json({ error: "Failed to send email. Check server logs." }, { status: 500 });
   }
 }

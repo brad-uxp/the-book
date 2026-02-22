@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -73,31 +74,37 @@ function CustomTooltip({
 }
 
 export function ExpenseCharts({ chartData }: Props) {
-  const barData = chartData.map((d) => ({
-    period: formatPeriodKey(d.period),
-    Subscriptions: d.subscriptions,
-    Salaries: d.salaries,
-  }));
+  const barData = useMemo(
+    () => chartData.map((d) => ({
+      period: formatPeriodKey(d.period),
+      Subscriptions: d.subscriptions,
+      Salaries: d.salaries,
+    })),
+    [chartData]
+  );
 
-  // Aggregate categories across all months
-  const categoryTotals: Record<string, number> = {};
-  for (const d of chartData) {
-    for (const [cat, val] of Object.entries(d.byCategory)) {
-      categoryTotals[cat] = (categoryTotals[cat] ?? 0) + val;
+  const pieData = useMemo(() => {
+    const categoryTotals: Record<string, number> = {};
+    for (const d of chartData) {
+      for (const [cat, val] of Object.entries(d.byCategory)) {
+        categoryTotals[cat] = (categoryTotals[cat] ?? 0) + val;
+      }
     }
-  }
-  const pieData = Object.entries(categoryTotals)
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => ({
-      name: CATEGORY_LABELS[k as keyof typeof CATEGORY_LABELS] ?? k,
-      value: v,
-      color: CATEGORY_COLORS[k as keyof typeof CATEGORY_COLORS] ?? "#94a3b8",
-    }));
+    return Object.entries(categoryTotals)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => ({
+        name: CATEGORY_LABELS[k as keyof typeof CATEGORY_LABELS] ?? k,
+        value: v,
+        color: CATEGORY_COLORS[k as keyof typeof CATEGORY_COLORS] ?? "#94a3b8",
+      }));
+  }, [chartData]);
 
-  // KPIs
-  const totalSpend = chartData.reduce((a, b) => a + b.total, 0);
-  const lastMonth = chartData[chartData.length - 1];
-  const prevMonth = chartData[chartData.length - 2];
+  const { totalSpend, lastMonth, prevMonth } = useMemo(() => ({
+    totalSpend: chartData.reduce((a, b) => a + b.total, 0),
+    lastMonth: chartData[chartData.length - 1],
+    prevMonth: chartData[chartData.length - 2],
+  }), [chartData]);
+
   const momChange = prevMonth && prevMonth.total > 0
     ? ((lastMonth?.total ?? 0) - prevMonth.total) / prevMonth.total * 100
     : null;

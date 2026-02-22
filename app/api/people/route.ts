@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { PersonSchema } from "@/lib/validations";
+import { auditLog } from "@/lib/audit";
 
 export async function GET() {
   const people = await prisma.person.findMany({
@@ -49,6 +50,23 @@ export async function POST(req: NextRequest) {
       include: { role: true, salary_base: true },
     });
   });
+
+  if (person) {
+    auditLog({
+      entity_type: "person",
+      entity_id: person.id,
+      entity_name: person.name,
+      action: "create",
+      after: {
+        name: person.name,
+        payday_day: person.payday_day,
+        status: person.status,
+        role_id: person.role_id,
+        notes: person.notes,
+        base_salary_cents: person.salary_base?.base_salary_cents,
+      },
+    });
+  }
 
   return NextResponse.json(person, { status: 201 });
 }

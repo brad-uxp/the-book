@@ -10,7 +10,7 @@ export const SubscriptionBaseSchema = z.object({
   pay_month: z.number().int().min(1).max(12).nullable().optional(),
   category: z.enum(["work", "personal", "essential_service"]),
   payment_mode: z.enum(["auto", "manual"]),
-  status: z.enum(["active", "paused", "canceled"]).default("active"),
+  status: z.enum(["active", "inactive"]).default("active"),
   notes: z.string().nullable().optional(),
   icon_url: z.string().nullable().optional(),
 });
@@ -48,9 +48,6 @@ export const PersonSchema = z.object({
 export type PersonInput = z.infer<typeof PersonSchema>;
 
 export const SalaryPaymentSchema = z.object({
-  period_key: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/, "Period must be in YYYY-MM format"),
   paid_at: z.string().min(1, "Payment date is required"),
   adjustment_cents: z.number().int().default(0),
   adjustment_note: z.string().nullable().optional(),

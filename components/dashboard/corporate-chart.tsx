@@ -14,11 +14,9 @@ import { formatCents } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 const LINES = [
-  { key: "income",           label: "Income",            color: "#3b82f6" },
-  { key: "expenses",         label: "Expenses",          color: "#94a3b8" },
-  { key: "workExpenses",     label: "Work expenses",     color: "#f97316" },
-  { key: "personalExpenses", label: "Personal expenses", color: "#a855f7" },
-  { key: "net",              label: "Net",               color: "#10b981" },
+  { key: "income",       label: "Income",        color: "#3b82f6" },
+  { key: "workExpenses", label: "Work expenses",  color: "#f97316" },
+  { key: "corporateNet", label: "Corporate net",  color: "#10b981" },
 ] as const;
 
 type LineKey = (typeof LINES)[number]["key"];
@@ -46,19 +44,6 @@ function CustomTooltip({ active, payload, label }: any) {
           </p>
         );
       })}
-      {(() => {
-        const inc = payload.find((p: { dataKey: string }) => p.dataKey === "income");
-        const exp = payload.find((p: { dataKey: string }) => p.dataKey === "expenses");
-        if (!inc || !exp) return null;
-        return (
-          <p className="mt-1 border-t pt-1 text-muted-foreground">
-            Net:{" "}
-            <span className="font-semibold text-foreground">
-              {formatCents(inc.value - exp.value)}
-            </span>
-          </p>
-        );
-      })()}
     </div>
   );
 }
@@ -66,22 +51,19 @@ function CustomTooltip({ active, payload, label }: any) {
 interface MonthData {
   month: string;
   income: number;
-  expenses: number;
   workExpenses: number;
-  personalExpenses: number;
-  net: number;
+  corporateNet: number;
 }
 
 interface Props {
   data: MonthData[];
 }
 
-export function DashboardChart({ data }: Props) {
+export function CorporateChart({ data }: Props) {
   const [visible, setVisible] = useState<Record<LineKey, boolean>>({
     income: true,
-    expenses: true,
     workExpenses: true,
-    personalExpenses: true,
+    corporateNet: true,
   });
 
   const toggle = (key: LineKey) =>
@@ -95,7 +77,10 @@ export function DashboardChart({ data }: Props) {
   return (
     <div className="rounded-md border bg-card p-4 sm:p-6 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h2 className="text-sm font-semibold">Income vs Expenses</h2>
+        <div>
+          <h2 className="text-sm font-semibold">Corporate profitability</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Income vs work expenses (salaries + work subscriptions &amp; costs)</p>
+        </div>
         <div className="flex flex-wrap gap-2">
           {LINES.map(({ key, label, color }) => (
             <button

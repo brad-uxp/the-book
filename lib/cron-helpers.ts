@@ -5,8 +5,6 @@
 import {
   calcMonthlyDueDate,
   calcAnnualDueDate,
-  monthlyPeriodKey,
-  annualPeriodKey,
   isSameDay,
   addDaysUTC,
 } from "./dates";
@@ -24,7 +22,6 @@ export interface SubscriptionForCron {
 }
 
 export interface CronPeriodResult {
-  periodKey: string;
   dueDate: Date;
   isToday: boolean;
   isDaysBefore: boolean;
@@ -44,22 +41,18 @@ export function getSubscriptionPeriod(
   const month = today.getUTCMonth() + 1;
 
   let dueDate: Date;
-  let periodKey: string;
 
   if (sub.frequency === "monthly") {
     dueDate = calcMonthlyDueDate(year, month, sub.pay_day);
-    periodKey = monthlyPeriodKey(year, month);
   } else {
     // annual
     const payMonth = sub.pay_month ?? 1; // fallback; UI validates this
     dueDate = calcAnnualDueDate(year, payMonth, sub.pay_day);
-    periodKey = annualPeriodKey(year);
   }
 
   const notifyDate = addDaysUTC(dueDate, -daysBefore);
 
   return {
-    periodKey,
     dueDate,
     isToday: isSameDay(today, dueDate),
     isDaysBefore: isSameDay(today, notifyDate),

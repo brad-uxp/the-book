@@ -5,8 +5,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const filter = searchParams.get("filter") ?? "unread"; // "unread" | "all"
   const type = searchParams.get("type"); // optional filter by type
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = parseInt(searchParams.get("limit") ?? "50");
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "50") || 50));
 
   const where: Record<string, unknown> = {};
   if (filter === "unread") where.read_at = null;

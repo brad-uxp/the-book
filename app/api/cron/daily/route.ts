@@ -25,7 +25,7 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -50,6 +50,13 @@ export async function GET(req: NextRequest) {
       where: { created_at: { lt: sevenDaysAgo } },
     });
     log.push(`  [cleanup] Deleted ${purged.count} notifications older than 7 days`);
+
+    // Purge audit logs older than 12 months
+    const twelveMonthsAgo = new Date(today.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const purgedLogs = await prisma.auditLog.deleteMany({
+      where: { created_at: { lt: twelveMonthsAgo } },
+    });
+    log.push(`  [cleanup] Deleted ${purgedLogs.count} audit logs older than 12 months`);
 
     await runSubscriptions(today, daysSub, log);
     await runSalaries(today, daysSalary, log);
@@ -112,7 +119,7 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
   });
 
   for (const sub of subscriptions) {
-    const { periodKey, dueDate, isToday, isDaysBefore } =
+    const { dueDate, isToday, isDaysBefore } =
       getSubscriptionPeriod(sub, today, daysBefore);
 
     if (sub.payment_mode === "auto") {
@@ -137,7 +144,7 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
         const existing = await prisma.subscriptionPayment.findFirst({
           where: {
             subscription_id: sub.id,
-            period_key: periodKey,
+            due_date: dueDate,
             deleted_at: null,
           },
         });
@@ -146,13 +153,12 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
           await prisma.subscriptionPayment.create({
             data: {
               subscription_id: sub.id,
-              period_key: periodKey,
               due_date: dueDate,
               paid_at: dueDate,
               amount_cents_snapshot: sub.amount_cents,
             },
           });
-          log.push(`  [auto paid] Created payment: ${sub.name} ${periodKey}`);
+          log.push(`  [auto paid] Created payment: ${sub.name} ${dueDate.toISOString().slice(0, 7)}`);
         }
 
         await upsertNotification(

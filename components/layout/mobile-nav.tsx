@@ -16,6 +16,7 @@ import {
   Bell,
   Settings,
   LogOut,
+  ClipboardList,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,13 @@ export function MobileNav() {
             <Link href="/notifications" className={linkClass("/notifications")}>
               <Bell className="h-4 w-4 shrink-0" />
               Notifications
+            </Link>
+          </div>
+
+          <div className="pt-3">
+            <Link href="/admin-logs" className={linkClass("/admin-logs")}>
+              <ClipboardList className="h-4 w-4 shrink-0" />
+              Admin Logs
             </Link>
           </div>
 

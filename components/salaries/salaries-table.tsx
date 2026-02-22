@@ -34,10 +34,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
-import { formatDate, formatPeriodKey } from "@/lib/dates";
+import { formatDate } from "@/lib/dates";
 import { PersonForm } from "./person-form";
 import { RoleManager } from "./role-manager";
 import type { PersonInput } from "@/lib/validations";
@@ -51,7 +51,7 @@ interface SalaryReminder {
 
 interface SalaryPayment {
   id: string;
-  period_key: string;
+  due_date: string;
   paid_at: string;
   total_cents: number;
   base_salary_cents_snapshot: number;
@@ -105,7 +105,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [loading, setLoading] = useState(false);
 
   // Payment form state
-  const [periodKey, setPeriodKey] = useState("");
   const [paidAt, setPaidAt] = useState("");
   const [adjustmentDollars, setAdjustmentDollars] = useState("0");
   const [adjustmentNote, setAdjustmentNote] = useState("");
@@ -165,12 +164,10 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
     setLoading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const defaultPeriod = today.slice(0, 7);
       const res = await fetch(`/api/people/${paymentPerson.id}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          period_key: periodKey || defaultPeriod,
           paid_at: paidAt || today,
           adjustment_cents: parseToCents(adjustmentDollars || "0"),
           adjustment_note: adjustmentNote || null,
@@ -183,7 +180,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
       }
       await refresh();
       setPaymentPerson(null);
-      setPeriodKey("");
       setPaidAt("");
       setAdjustmentDollars("0");
       setAdjustmentNote("");
@@ -251,7 +247,17 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             <User className="h-3.5 w-3.5" />
           </div>
           <div>
-            <span>{row.original.name}</span>
+            <div className="flex items-center gap-1.5">
+              <span>{row.original.name}</span>
+              {row.original.notes && (
+                <span
+                  className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-muted text-muted-foreground shrink-0"
+                  title={row.original.notes}
+                >
+                  <FileText className="h-2.5 w-2.5" />
+                </span>
+              )}
+            </div>
             {row.original.role && (
               <p className="text-xs text-muted-foreground leading-tight">
                 {row.original.role.name}
@@ -311,7 +317,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         if (!last) return <span className="text-muted-foreground">—</span>;
         return (
           <span className="text-sm">
-            {formatPeriodKey(last.period_key)} · {formatCents(last.total_cents)}
+            {new Date(last.due_date).toLocaleString("en", { month: "short", year: "numeric" })} · {formatCents(last.total_cents)}
           </span>
         );
       },
@@ -489,15 +495,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             <DialogTitle>Register Salary — {paymentPerson?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div>
-              <label className="text-sm font-medium">Period (YYYY-MM)</label>
-              <Input
-                placeholder={new Date().toISOString().slice(0, 7)}
-                value={periodKey}
-                onChange={(e) => setPeriodKey(e.target.value)}
-                className="mt-1"
-              />
-            </div>
             <div>
               <label className="text-sm font-medium">Paid At</label>
               <Input
