@@ -127,4 +127,9 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
   }
+  .recharts-wrapper,
+  .recharts-surface {
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+  }
 }
