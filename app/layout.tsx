@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { auth } from "@/auth";
 import { SessionProvider } from "next-auth/react";
 import NextTopLoader from "nextjs-toploader";
-import { InactivityGuard } from "@/components/auth/inactivity-guard";
+import { NotificationProvider, UnreadDot } from "@/components/layout/notification-context";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,8 +30,7 @@ export default async function RootLayout({
         <NextTopLoader color="#18181b" showSpinner={false} height={2} shadow={false} />
         <SessionProvider session={session}>
         {session ? (
-          <>
-          <InactivityGuard />
+          <NotificationProvider>
           <div className="flex min-h-screen">
             <Sidebar user={session.user ?? null} />
             <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
@@ -40,6 +39,7 @@ export default async function RootLayout({
                 <div className="flex items-center gap-2">
                   <img src="/logo.svg" alt="AccountBook logo" className="h-5 w-auto shrink-0" />
                   <span className="text-base font-semibold tracking-tight">AccountBook</span>
+                  <UnreadDot />
                 </div>
                 <MobileNav />
               </header>
@@ -47,7 +47,7 @@ export default async function RootLayout({
               <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
             </div>
           </div>
-          </>
+          </NotificationProvider>
         ) : (
           children
         )}

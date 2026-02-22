@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useUnreadNotifications } from "@/components/layout/notification-context";
 
 interface Props {
   user: {
@@ -30,6 +31,7 @@ interface Props {
 export function Sidebar({ user }: Props) {
   const pathname = usePathname();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const { unreadCount } = useUnreadNotifications();
 
   const firstName = user?.name?.split(" ")[0] ?? "User";
   const initial = firstName[0]?.toUpperCase() ?? "U";
@@ -89,6 +91,7 @@ export function Sidebar({ user }: Props) {
           <Link href="/notifications" className={linkClass("/notifications")}>
             <Bell className="h-4 w-4 shrink-0" />
             Notifications
+            {unreadCount > 0 && <span className="ml-auto h-2 w-2 rounded-full bg-orange-500" />}
           </Link>
         </div>
 

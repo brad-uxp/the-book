@@ -33,13 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, FileText, X } from "lucide-react";
+import { Plus, ArrowUpDown, ArrowUp, ArrowDown, History, FileText, X, CreditCard, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
@@ -336,40 +330,6 @@ export function SubscriptionsTable({ initialData }: Props) {
         );
       },
     },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => {
-        const sub = row.original;
-        return (
-          <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-5 w-5">
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setDetailItem(sub)}>
-                View details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setEditItem(sub)}>
-                Edit
-              </DropdownMenuItem>
-              {sub.status === "active" && (
-                <DropdownMenuItem onClick={() => {
-                  setPaymentSub(sub);
-                  setPaymentAmount((sub.amount_cents / 100).toFixed(2));
-                }}>
-                  Register payment
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          </div>
-        );
-      },
-    },
   ];
 
   const table = useReactTable({
@@ -579,13 +539,23 @@ export function SubscriptionsTable({ initialData }: Props) {
         open={!!detailItem}
         onOpenChange={(o) => !o && setDetailItem(null)}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {detailItem && (
-                <SubscriptionIcon name={detailItem.name} iconUrl={detailItem.icon_url} size="md" />
+                <>
+                  <SubscriptionIcon name={detailItem.name} iconUrl={detailItem.icon_url} size="md" />
+                  <span>{detailItem.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setDetailItem(null); setEditItem(detailItem); }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </>
               )}
-              {detailItem?.name}
             </DialogTitle>
           </DialogHeader>
           {detailItem && (
@@ -632,10 +602,11 @@ export function SubscriptionsTable({ initialData }: Props) {
               </dl>
 
               <div className="border-t" />
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Button
                   variant="outline"
                   size="sm"
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     setDetailItem(null);
                     router.push(
@@ -646,18 +617,30 @@ export function SubscriptionsTable({ initialData }: Props) {
                   <History className="mr-2 h-4 w-4" />
                   Payment history
                 </Button>
-                <div className="flex gap-2">
+                {detailItem.status === "active" && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => { setDetailItem(null); setEditItem(detailItem); }}
+                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      setDetailItem(null);
+                      setPaymentSub(detailItem);
+                      setPaymentAmount((detailItem.amount_cents / 100).toFixed(2));
+                    }}
                   >
-                    Edit
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Register payment
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setDetailItem(null)}>
-                    Close
-                  </Button>
-                </div>
+                )}
+                <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={() => setDetailItem(null)}
+                >
+                  Close
+                </Button>
               </div>
             </div>
           )}

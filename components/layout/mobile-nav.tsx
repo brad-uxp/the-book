@@ -21,6 +21,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useUnreadNotifications } from "@/components/layout/notification-context";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -33,6 +34,7 @@ export function MobileNav() {
     setConfirmSignOut(false);
   }, [pathname]);
 
+  const { unreadCount } = useUnreadNotifications();
   const user = session?.user;
   const firstName = user?.name?.split(" ")[0] ?? "User";
   const initial = firstName[0]?.toUpperCase() ?? "U";
@@ -95,6 +97,7 @@ export function MobileNav() {
             <Link href="/notifications" className={linkClass("/notifications")}>
               <Bell className="h-4 w-4 shrink-0" />
               Notifications
+              {unreadCount > 0 && <span className="ml-auto h-2 w-2 rounded-full bg-orange-500" />}
             </Link>
           </div>
 

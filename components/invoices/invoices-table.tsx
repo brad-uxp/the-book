@@ -31,7 +31,6 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -42,7 +41,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DatePresetFilter, type DatePreset } from "@/components/ui/date-preset-filter";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, ChevronDown } from "lucide-react";
+import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, ChevronDown, Pencil, Link } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
@@ -109,6 +109,8 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   const [detailItem, setDetailItem] = useState<Invoice | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [addingFile, setAddingFile] = useState(false);
+  const [fileUrl, setFileUrl] = useState("");
 
   const refresh = async () => {
     const [invRes, cliRes] = await Promise.all([
@@ -179,6 +181,31 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   const closeDetail = () => {
     setDetailItem(null);
     setIsEditMode(false);
+    setAddingFile(false);
+    setFileUrl("");
+  };
+
+  const handleSaveFileUrl = async () => {
+    if (!detailItem || !fileUrl.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${detailItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_url: fileUrl.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error ?? "Error saving file URL");
+        return;
+      }
+      setDetailItem({ ...detailItem, file_url: fileUrl.trim() });
+      setAddingFile(false);
+      setFileUrl("");
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const hasActiveFilters =
@@ -358,39 +385,6 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
       sortingFn: (a, b) =>
         new Date(a.original.due_date).getTime() -
         new Date(b.original.due_date).getTime(),
-    },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => {
-        const inv = row.original;
-        return (
-          <div onClick={(e) => e.stopPropagation()}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-5 w-5">
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => openDetail(inv)}>
-                  View details
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openEdit(inv)}>
-                  Edit
-                </DropdownMenuItem>
-                {inv.file_url && (
-                  <DropdownMenuItem asChild>
-                    <a href={inv.file_url} target="_blank" rel="noopener noreferrer">
-                      View file
-                    </a>
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        );
-      },
     },
   ];
 
@@ -577,12 +571,27 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
 
       {/* Detail / Edit dialog — single Dialog to avoid Radix focus conflicts */}
       <Dialog open={!!detailItem} onOpenChange={(o) => !o && closeDetail()}>
-        <DialogContent className={isEditMode ? "max-w-lg" : "max-w-md"}>
+        <DialogContent
+          className={isEditMode ? "max-w-lg" : "max-w-md"}
+          showCloseButton={isEditMode}
+        >
           <DialogHeader>
-            <DialogTitle>
-              {isEditMode
-                ? "Edit Invoice"
-                : `Invoice${detailItem?.invoice_number ? ` #${detailItem.invoice_number}` : ""}`}
+            <DialogTitle className="flex items-center gap-2">
+              {isEditMode ? (
+                "Edit Invoice"
+              ) : (
+                <>
+                  <span>{`Invoice${detailItem?.invoice_number ? ` #${detailItem.invoice_number}` : ""}`}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onClick={() => setIsEditMode(true)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
             </DialogTitle>
           </DialogHeader>
 
@@ -682,26 +691,64 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
               </dl>
 
               <div className="border-t" />
-              <div className="flex items-center justify-between">
-                {detailItem.file_url ? (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={detailItem.file_url} target="_blank" rel="noopener noreferrer">
-                      <FileText className="mr-1.5 h-4 w-4" />
-                      View file
-                    </a>
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setIsEditMode(true)}>
-                    Edit
-                  </Button>
-                  <Button variant="outline" onClick={closeDetail}>
+              {addingFile ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    placeholder="https://..."
+                    value={fileUrl}
+                    onChange={(e) => setFileUrl(e.target.value)}
+                    className="flex-1"
+                    autoFocus
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveFileUrl()}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setAddingFile(false); setFileUrl(""); }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveFileUrl}
+                      disabled={loading || !fileUrl.trim()}
+                    >
+                      {loading ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  {detailItem.file_url ? (
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
+                      <a href={detailItem.file_url} target="_blank" rel="noopener noreferrer">
+                        <FileText className="mr-2 h-4 w-4" />
+                        View file
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto border-dashed text-muted-foreground"
+                      onClick={() => setAddingFile(true)}
+                    >
+                      <Link className="mr-2 h-4 w-4" />
+                      Add file
+                    </Button>
+                  )}
+                  <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={closeDetail}
+                  >
                     Close
                   </Button>
                 </div>
-              </div>
+              )}
             </div>
           ) : null}
         </DialogContent>

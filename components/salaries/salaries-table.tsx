@@ -127,6 +127,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   // Reminder form state
   const [reminderDate, setReminderDate] = useState("");
   const [reminderAmount, setReminderAmount] = useState("");
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
 
   const refresh = async () => {
     const [peopleRes, rolesRes] = await Promise.all([
@@ -203,53 +204,52 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
     }
   };
 
-  const handleCreateReminder = async () => {
+  const closeReminder = () => {
+    setReminderPerson(null);
+    setReminderDate("");
+    setReminderAmount("");
+    setEditingReminderId(null);
+  };
+
+  const handleSubmitReminder = async () => {
     if (!reminderPerson) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/people/${reminderPerson.id}/reminders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          effective_date: reminderDate,
-          suggested_new_base_cents: parseToCents(reminderAmount),
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error ?? "Error creating reminder");
-        return;
+      if (editingReminderId) {
+        const res = await fetch(`/api/people/${reminderPerson.id}/reminders`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reminderId: editingReminderId,
+            action: "reschedule",
+            new_effective_date: reminderDate,
+            new_suggested_base_cents: parseToCents(reminderAmount),
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(err.error ?? "Error updating reminder");
+          return;
+        }
+      } else {
+        const res = await fetch(`/api/people/${reminderPerson.id}/reminders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            effective_date: reminderDate,
+            suggested_new_base_cents: parseToCents(reminderAmount),
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(err.error ?? "Error creating reminder");
+          return;
+        }
       }
       await refresh();
-      setReminderPerson(null);
-      setReminderDate("");
-      setReminderAmount("");
+      closeReminder();
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleReminderAction = async (
-    personId: string,
-    reminderId: string,
-    action: "apply" | "ignore" | "reschedule",
-    extra?: { new_effective_date?: string; new_suggested_base_cents?: number }
-  ) => {
-    const res = await fetch(`/api/people/${personId}/reminders`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reminderId, action, ...extra }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error ?? "Error updating reminder");
-      return;
-    }
-    await refresh();
-    // Refresh detail view
-    if (detailPerson?.id === personId) {
-      const refreshedRes = await fetch(`/api/people/${personId}`);
-      if (refreshedRes.ok) setDetailPerson(await refreshedRes.json());
     }
   };
 
@@ -426,49 +426,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         );
       },
     },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => {
-        const person = row.original;
-        return (
-          <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-5 w-5">
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setDetailPerson(person)}>
-                View details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setEditItem(person)}>
-                Edit
-              </DropdownMenuItem>
-              {person.status === "active" && (
-                <>
-                  <DropdownMenuItem onClick={() => setPaymentPerson(person)}>
-                    Register salary payment
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setReminderPerson(person)}>
-                    Add raise reminder
-                  </DropdownMenuItem>
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() => handleDelete(person.id)}
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          </div>
-        );
-      },
-    },
   ];
 
   const table = useReactTable({
@@ -619,21 +576,36 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
 
                   <div className="flex items-center justify-between py-2.5">
                     <span className="text-muted-foreground text-xs">Raise reminder</span>
-                    {p.increase_reminders[0] ? (
-                      <button
-                        onClick={() => setReminderPerson(p)}
-                        className="text-sm font-medium text-amber-600 dark:text-amber-400 underline-offset-2 hover:underline transition-colors text-right"
-                      >
-                        {formatDate(p.increase_reminders[0].effective_date)} → {formatCents(p.increase_reminders[0].suggested_new_base_cents)}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setReminderPerson(p)}
-                        className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
-                      >
-                        + Set reminder
-                      </button>
-                    )}
+                    {(() => {
+                      const reminder = p.increase_reminders.find((r) => r.status === "scheduled");
+                      return reminder ? (
+                        <button
+                          onClick={() => {
+                            setEditingReminderId(reminder.id);
+                            setReminderDate(reminder.effective_date);
+                            setReminderAmount(centsToDecimalString(reminder.suggested_new_base_cents));
+                            setReminderPerson(p);
+                          }}
+                          className="text-sm font-medium text-amber-600 dark:text-amber-400 underline-offset-2 hover:underline transition-colors text-right"
+                        >
+                          {formatDate(reminder.effective_date)} → {formatCents(reminder.suggested_new_base_cents)}
+                        </button>
+                      ) : p.status === "active" ? (
+                        <button
+                          onClick={() => {
+                            setEditingReminderId(null);
+                            setReminderDate("");
+                            setReminderAmount("");
+                            setReminderPerson(p);
+                          }}
+                          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
+                        >
+                          + Set reminder
+                        </button>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      );
+                    })()}
                   </div>
 
                   {p.notes && (
@@ -838,14 +810,16 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Add raise reminder dialog */}
+      {/* Raise reminder dialog (create / edit) */}
       <Dialog
         open={!!reminderPerson}
-        onOpenChange={(o) => !o && setReminderPerson(null)}
+        onOpenChange={(o) => !o && closeReminder()}
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Raise Reminder — {reminderPerson?.name}</DialogTitle>
+            <DialogTitle>
+              {editingReminderId ? "Edit" : "New"} Raise Reminder — {reminderPerson?.name}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
@@ -870,14 +844,11 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setReminderPerson(null)}
-              >
+              <Button variant="outline" onClick={closeReminder}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateReminder} disabled={loading}>
-                {loading ? "Saving..." : "Create Reminder"}
+              <Button onClick={handleSubmitReminder} disabled={loading}>
+                {loading ? "Saving..." : editingReminderId ? "Save" : "Create"}
               </Button>
             </div>
           </div>
@@ -1034,18 +1005,30 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         open={!!detailPerson}
         onOpenChange={(o) => !o && setDetailPerson(null)}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${AVATAR_CLASSES[detailPerson?.status ?? ""] ?? "bg-muted text-muted-foreground"}`}>
-                <User className="h-4 w-4" />
-              </div>
-              {detailPerson?.name}
+              {detailPerson && (
+                <>
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${AVATAR_CLASSES[detailPerson.status] ?? "bg-muted text-muted-foreground"}`}>
+                    <User className="h-4 w-4" />
+                  </div>
+                  <span>{detailPerson.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setDetailPerson(null); setEditItem(detailPerson); }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
             </DialogTitle>
           </DialogHeader>
           {detailPerson && (
             <div className="space-y-5">
-              <dl className="grid grid-cols-3 gap-3 text-sm">
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-muted-foreground">Base Salary</dt>
                   <dd className="font-medium">
@@ -1073,84 +1056,63 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                   </div>
                 )}
                 {detailPerson.notes && (
-                  <div className="col-span-3">
+                  <div className="col-span-2 sm:col-span-3">
                     <dt className="text-muted-foreground">Notes</dt>
                     <dd>{detailPerson.notes}</dd>
                   </div>
                 )}
               </dl>
 
-              {/* Raise reminders */}
-              {detailPerson.increase_reminders.length > 0 && (
-                <div>
-                  <h4 className="mb-2 text-sm font-semibold">Raise Reminders</h4>
-                  <div className="space-y-2">
-                    {detailPerson.increase_reminders.map((r) => (
-                      <div
-                        key={r.id}
-                        className="flex items-center justify-between rounded border px-3 py-2 text-sm"
+              {/* Raise reminder */}
+              {(() => {
+                const reminder = detailPerson.increase_reminders.find((r) => r.status === "scheduled");
+                return (
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold">Raise Reminder</h4>
+                    {reminder ? (
+                      <button
+                        className="w-full flex items-center justify-between rounded border px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left"
+                        onClick={() => {
+                          setEditingReminderId(reminder.id);
+                          setReminderDate(reminder.effective_date);
+                          setReminderAmount(centsToDecimalString(reminder.suggested_new_base_cents));
+                          setDetailPerson(null);
+                          setReminderPerson(detailPerson);
+                        }}
                       >
                         <div>
-                          <span className="font-medium">
-                            {formatDate(r.effective_date)}
-                          </span>{" "}
-                          → {formatCents(r.suggested_new_base_cents)}
-                          <Badge
-                            variant={
-                              r.status === "scheduled"
-                                ? "default"
-                                : r.status === "done"
-                                ? "secondary"
-                                : "outline"
-                            }
-                            className="ml-2 text-[10px]"
-                          >
-                            {r.status}
-                          </Badge>
+                          <span className="font-medium">{formatDate(reminder.effective_date)}</span>
+                          {" → "}
+                          {formatCents(reminder.suggested_new_base_cents)}
                         </div>
-                        {r.status === "scheduled" && (
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() =>
-                                handleReminderAction(
-                                  detailPerson.id,
-                                  r.id,
-                                  "apply"
-                                )
-                              }
-                            >
-                              Apply
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() =>
-                                handleReminderAction(
-                                  detailPerson.id,
-                                  r.id,
-                                  "ignore"
-                                )
-                              }
-                            >
-                              Ignore
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    ) : detailPerson.status === "active" ? (
+                      <button
+                        className="w-full rounded border border-dashed px-3 py-3 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                        onClick={() => {
+                          setEditingReminderId(null);
+                          setReminderDate("");
+                          setReminderAmount("");
+                          setDetailPerson(null);
+                          setReminderPerson(detailPerson);
+                        }}
+                      >
+                        + Set a raise reminder
+                      </button>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No reminder set</p>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               <div className="border-t" />
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Button
                   variant="outline"
                   size="sm"
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     setDetailPerson(null);
                     router.push(
@@ -1161,25 +1123,29 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                   <History className="mr-2 h-4 w-4" />
                   Payment history
                 </Button>
-                <div className="flex gap-2">
+                {detailPerson.status === "active" && (
                   <Button
                     variant="outline"
                     size="sm"
+                    className="w-full sm:w-auto"
                     onClick={() => {
                       setDetailPerson(null);
-                      setEditItem(detailPerson);
+                      setPaymentPerson(detailPerson);
                     }}
                   >
-                    Edit
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    Register payment
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDetailPerson(null)}
-                  >
-                    Close
-                  </Button>
-                </div>
+                )}
+                <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={() => setDetailPerson(null)}
+                >
+                  Close
+                </Button>
               </div>
             </div>
           )}
