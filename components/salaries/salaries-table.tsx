@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -34,7 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users, ClipboardList } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
@@ -104,8 +104,67 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [paymentPerson, setPaymentPerson] = useState<Person | null>(null);
   const [reminderPerson, setReminderPerson] = useState<Person | null>(null);
   const [loading, setLoading] = useState(false);
-  const [view, setView] = useState<"table" | "cards">("table");
+  const [view, setView] = useState<"table" | "cards" | "report">("table");
   const [rolesOpen, setRolesOpen] = useState(false);
+
+  // Unpaid this month filter
+  const [unpaidThisMonth, setUnpaidThisMonth] = useState(false);
+
+  const isPaidThisMonth = (p: Person) => {
+    const last = p.salary_payments[0];
+    if (!last) return false;
+    const d = new Date(last.due_date);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  };
+
+  const filteredData = useMemo(() => {
+    if (!unpaidThisMonth) return data;
+    return data.filter((p) => p.status === "active" && !isPaidThisMonth(p));
+  }, [data, unpaidThisMonth]);
+
+  // Report state
+  const [reportSelected, setReportSelected] = useState<Set<string>>(new Set());
+  const [reportAdj, setReportAdj] = useState<Record<string, string>>({});
+
+  const setReportAdjFor = (id: string, val: string) =>
+    setReportAdj((prev) => ({ ...prev, [id]: val }));
+
+  const getReportTotal = (p: Person) => {
+    const base = p.salary_base?.base_salary_cents ?? 0;
+    const adj = parseToCents(reportAdj[p.id] || "0");
+    return base + adj;
+  };
+
+  const toggleReportAll = () => {
+    const active = data.filter((p) => p.status === "active");
+    if (active.every((p) => reportSelected.has(p.id))) {
+      setReportSelected(new Set());
+      setReportAdj({});
+    } else {
+      setReportSelected(new Set(active.map((p) => p.id)));
+    }
+  };
+
+  const toggleReportOne = (id: string) =>
+    setReportSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+        setReportAdj((a) => { const n = { ...a }; delete n[id]; return n; });
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+
+  const applyReportPreset = (preset: "unpaid") => {
+    if (preset === "unpaid") {
+      const unpaid = data.filter((p) => p.status === "active" && !isPaidThisMonth(p));
+      setReportSelected(new Set(unpaid.map((p) => p.id)));
+      setReportAdj({});
+    }
+  };
 
   // Bulk payment state
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -429,7 +488,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   ];
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -456,11 +515,20 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
           <Button
             variant={view === "cards" ? "secondary" : "ghost"}
             size="icon"
-            className="h-9 w-9 rounded-none"
+            className="h-9 w-9 rounded-none border-r"
             onClick={() => setView("cards")}
             title="Cards view"
           >
             <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={view === "report" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-9 w-9 rounded-none"
+            onClick={() => { setView("report"); setReportSelected(new Set()); setReportAdj({}); }}
+            title="Report view"
+          >
+            <ClipboardList className="h-4 w-4" />
           </Button>
         </div>
 
@@ -468,6 +536,13 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         <div className="flex items-center gap-2">
           {/* Desktop-only buttons */}
           <div className="hidden sm:flex items-center gap-2">
+            <Button
+              variant={unpaidThisMonth ? "default" : "outline"}
+              className="h-9"
+              onClick={() => setUnpaidThisMonth((v) => !v)}
+            >
+              Unpaid this month
+            </Button>
             <RoleManager roles={roles} onRefresh={refresh} open={rolesOpen} onOpenChange={setRolesOpen} />
             <Button variant="outline" className="h-9" onClick={() => setBulkOpen(true)}>
               <Users className="mr-2 h-4 w-4" /> Bulk Pay
@@ -485,6 +560,10 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setUnpaidThisMonth((v) => !v)}>
+                {unpaidThisMonth ? "Show all" : "Unpaid this month"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setCreateOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" /> New Person
               </DropdownMenuItem>
@@ -503,12 +582,12 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
       {/* ── Cards view ─────────────────────────────────────────────────── */}
       {view === "cards" && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {data.length === 0 ? (
+          {filteredData.length === 0 ? (
             <p className="col-span-full text-center text-muted-foreground py-12">
-              No people found. Add one to get started.
+              {unpaidThisMonth ? "All salaries paid this month." : "No people found. Add one to get started."}
             </p>
           ) : (
-            data.map((p) => (
+            filteredData.map((p) => (
               <div
                 key={p.id}
                 className="flex flex-col rounded-xl border bg-card shadow-sm overflow-hidden"
@@ -659,6 +738,146 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         </div>
       )}
 
+      {/* ── Report view ────────────────────────────────────────────────── */}
+      {view === "report" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
+          {/* Left — selection */}
+          <div className="rounded-xl border bg-card p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Select people</h3>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {reportSelected.size}/{activePeople.length}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-full"
+                onClick={() => applyReportPreset("unpaid")}
+              >
+                Unpaid this month
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-full"
+                onClick={() => toggleReportAll()}
+              >
+                {activePeople.length > 0 && activePeople.every((p) => reportSelected.has(p.id)) ? "Deselect all" : "Select all"}
+              </Button>
+              {reportSelected.size > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs rounded-full"
+                  onClick={() => { setReportSelected(new Set()); setReportAdj({}); }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              {activePeople.map((p) => {
+                const isSelected = reportSelected.has(p.id);
+                const adjVal = reportAdj[p.id] || "0";
+                const adjCents = parseToCents(adjVal);
+                return (
+                  <div
+                    key={p.id}
+                    className={`rounded-lg border px-3 py-2 transition-colors ${
+                      isSelected
+                        ? "border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20"
+                        : "border-transparent hover:bg-muted/50"
+                    }`}
+                  >
+                    <div
+                      className="flex items-center gap-2.5 cursor-pointer"
+                      onClick={() => toggleReportOne(p.id)}
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleReportOne(p.id)}
+                      />
+                      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{p.name}</span>
+                        <span className="shrink-0 text-sm tabular-nums">
+                          {p.salary_base ? formatCents(p.salary_base.base_salary_cents) : "—"}
+                          {isSelected && adjCents !== 0 && (
+                            <span className={`ml-1 text-xs ${adjCents < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                              ({adjCents > 0 ? "+" : ""}{formatCents(adjCents)})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div className="mt-2 ml-7 flex items-center gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={adjVal === "0" ? "" : adjVal}
+                          onChange={(e) => setReportAdjFor(p.id, e.target.value || "0")}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-7 w-32 text-xs"
+                          placeholder="Adjustment"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right — report output */}
+          <div className="rounded-xl border bg-muted/30 p-4 sm:p-5 space-y-3">
+            <h3 className="text-sm font-semibold">Report</h3>
+
+            {reportSelected.size === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <p className="text-sm text-muted-foreground">Select people to generate a report.</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border bg-card overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activePeople
+                      .filter((p) => reportSelected.has(p.id))
+                      .map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="py-2.5 font-medium">{p.name}</TableCell>
+                          <TableCell className="py-2.5 text-right tabular-nums">
+                            {formatCents(getReportTotal(p))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+                <div className="flex items-center justify-between border-t bg-card px-4 py-3">
+                  <span className="text-sm font-semibold">Total</span>
+                  <span className="text-sm font-bold tabular-nums">
+                    {formatCents(
+                      activePeople
+                        .filter((p) => reportSelected.has(p.id))
+                        .reduce((sum, p) => sum + getReportTotal(p), 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Table view ─────────────────────────────────────────────────── */}
       {view === "table" && (
       <div className="rounded-md border">
@@ -686,7 +905,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                   colSpan={columns.length}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  No people found. Add one to get started.
+                  {unpaidThisMonth ? "All salaries paid this month." : "No people found. Add one to get started."}
                 </TableCell>
               </TableRow>
             ) : (
