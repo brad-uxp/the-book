@@ -1,7 +1,8 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
+import { verifyToken } from "@/lib/jwt";
 
-export default auth((req) => {
+export default auth(async (req) => {
   const { pathname } = req.nextUrl;
 
   // Always allow: login page, auth endpoints, cron
@@ -13,9 +14,19 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  // Authenticated — allow through
+  // Authenticated via NextAuth session (web) — allow through
   if (req.auth) {
     return NextResponse.next();
+  }
+
+  // Check Bearer token (mobile)
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const payload = await verifyToken(token);
+    if (payload) {
+      return NextResponse.next();
+    }
   }
 
   // Not authenticated

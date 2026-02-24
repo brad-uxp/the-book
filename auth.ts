@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 
-const ALLOWED_EMAILS: string[] = [
+export const ALLOWED_EMAILS: string[] = [
   "bradlyls95@gmail.com",
   "brad@uxprogramming.com",
 ];
