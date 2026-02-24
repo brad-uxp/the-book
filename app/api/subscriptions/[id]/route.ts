@@ -35,15 +35,26 @@ export async function PATCH(
     );
   }
 
+  // Use raw body keys — Zod .default() fills in values even with .partial()
+  const sent = new Set(Object.keys(body));
+
   const before = await prisma.subscription.findUnique({ where: { id } });
+
+  const data: Record<string, unknown> = {};
+  if (sent.has("name")) data.name = parsed.data.name;
+  if (sent.has("amount_cents")) data.amount_cents = parsed.data.amount_cents;
+  if (sent.has("frequency")) data.frequency = parsed.data.frequency;
+  if (sent.has("pay_day")) data.pay_day = parsed.data.pay_day;
+  if (sent.has("pay_month")) data.pay_month = parsed.data.pay_month ?? null;
+  if (sent.has("category")) data.category = parsed.data.category;
+  if (sent.has("payment_mode")) data.payment_mode = parsed.data.payment_mode;
+  if (sent.has("status")) data.status = parsed.data.status;
+  if (sent.has("notes")) data.notes = parsed.data.notes ?? null;
+  if (sent.has("icon_url")) data.icon_url = parsed.data.icon_url ?? null;
 
   const sub = await prisma.subscription.update({
     where: { id },
-    data: {
-      ...parsed.data,
-      pay_month: parsed.data.pay_month ?? null,
-      notes: parsed.data.notes ?? null,
-    },
+    data,
   });
 
   auditLog({

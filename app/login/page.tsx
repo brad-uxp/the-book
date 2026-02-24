@@ -11,10 +11,10 @@ export default function LoginPage() {
         {/* Brand mark */}
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center justify-center rounded-2xl bg-white border shadow-sm p-3.5">
-            <img src="/logo.svg" alt="AccountBook logo" className="h-11 w-auto" />
+            <img src="/logo.svg" alt="TheBook logo" className="h-11 w-auto" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">AccountBook</h1>
+            <h1 className="text-2xl font-bold tracking-tight">TheBook</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Personal accounting &amp; invoice management
             </p>
@@ -76,7 +76,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground">
-          © {year} AccountBook · Private access only
+          © {year} TheBook · Private access only
         </p>
       </div>
     </div>

@@ -17,6 +17,7 @@ import {
   Settings,
   LogOut,
   ClipboardList,
+  CheckSquare,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -56,14 +57,21 @@ export function MobileNav() {
       </SheetTrigger>
       <SheetContent side="left" className="w-60 p-0 sm:max-w-60 flex flex-col">
         <div className="flex h-16 items-center border-b px-6 gap-2.5 shrink-0">
-          <img src="/logo.svg" alt="AccountBook logo" className="h-6 w-auto shrink-0" />
-          <span className="text-lg font-semibold tracking-tight">AccountBook</span>
+          <img src="/logo.svg" alt="TheBook logo" className="h-6 w-auto shrink-0" />
+          <span className="text-lg font-semibold tracking-tight">TheBook</span>
         </div>
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
           <Link href="/dashboard" className={linkClass("/dashboard")}>
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             Dashboard
           </Link>
+
+          <div className="pt-3">
+            <Link href="/issues" className={linkClass("/issues")}>
+              <CheckSquare className="h-4 w-4 shrink-0" />
+              Issues
+            </Link>
+          </div>
 
           <div className="pt-3">
             <Link href="/invoices" className={linkClass("/invoices")}>
@@ -146,7 +154,7 @@ export function MobileNav() {
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Sign out of AccountBook?</p>
+              <p className="text-xs text-muted-foreground">Sign out of TheBook?</p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"

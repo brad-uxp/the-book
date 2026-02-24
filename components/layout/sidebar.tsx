@@ -14,6 +14,7 @@ import {
   Settings,
   LogOut,
   ClipboardList,
+  CheckSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -48,8 +49,8 @@ export function Sidebar({ user }: Props) {
     <aside className="hidden lg:flex fixed inset-y-0 left-0 z-50 w-60 flex-col border-r bg-card">
       {/* Brand */}
       <div className="flex h-16 items-center border-b px-6 gap-2.5">
-        <img src="/logo.svg" alt="AccountBook logo" className="h-6 w-auto shrink-0" />
-        <span className="text-lg font-semibold tracking-tight">AccountBook</span>
+        <img src="/logo.svg" alt="TheBook logo" className="h-6 w-auto shrink-0" />
+        <span className="text-lg font-semibold tracking-tight">TheBook</span>
       </div>
 
       {/* Navigation */}
@@ -58,6 +59,13 @@ export function Sidebar({ user }: Props) {
           <LayoutDashboard className="h-4 w-4 shrink-0" />
           Dashboard
         </Link>
+
+        <div className="pt-3">
+          <Link href="/issues" className={linkClass("/issues")}>
+            <CheckSquare className="h-4 w-4 shrink-0" />
+            Issues
+          </Link>
+        </div>
 
         <div className="pt-3">
           <Link href="/invoices" className={linkClass("/invoices")}>
@@ -140,7 +148,7 @@ export function Sidebar({ user }: Props) {
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Sign out of AccountBook?</p>
+            <p className="text-xs text-muted-foreground">Sign out of TheBook?</p>
             <div className="flex gap-2">
               <Button
                 variant="outline"

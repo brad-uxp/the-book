@@ -19,12 +19,12 @@ export async function POST(req: NextRequest) {
   try {
     await sendEmail(
       parsed.data.recipient,
-      "[AccountBook] Test de correo",
+      "[TheBook] Test de correo",
       `
         <div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #111;">
           <h2 style="margin: 0 0 12px;">¡El correo funciona! ✓</h2>
           <p style="color: #374151;">
-            Las notificaciones de AccountBook están correctamente configuradas.
+            Las notificaciones de TheBook están correctamente configuradas.
           </p>
         </div>
       `

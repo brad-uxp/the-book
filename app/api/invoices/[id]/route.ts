@@ -51,24 +51,22 @@ export async function PATCH(
     include: { client: true },
   });
 
+  // Use raw body keys — Zod .default() fills in values even with .partial()
+  const sent = new Set(Object.keys(body));
   const data: Record<string, unknown> = {};
-  if (parsed.data.invoice_number !== undefined)
+  if (sent.has("invoice_number"))
     data.invoice_number = parsed.data.invoice_number ?? null;
-  if (parsed.data.client_id !== undefined)
-    data.client_id = parsed.data.client_id;
-  if (parsed.data.amount_cents !== undefined)
-    data.amount_cents = parsed.data.amount_cents;
-  if (parsed.data.fee_cents !== undefined)
-    data.fee_cents = parsed.data.fee_cents;
-  if (parsed.data.status !== undefined) data.status = parsed.data.status;
-  if (parsed.data.due_date !== undefined)
-    data.due_date = new Date(parsed.data.due_date);
-  if (parsed.data.reminder_date !== undefined)
+  if (sent.has("client_id")) data.client_id = parsed.data.client_id;
+  if (sent.has("amount_cents")) data.amount_cents = parsed.data.amount_cents;
+  if (sent.has("fee_cents")) data.fee_cents = parsed.data.fee_cents;
+  if (sent.has("status")) data.status = parsed.data.status;
+  if (sent.has("due_date")) data.due_date = new Date(parsed.data.due_date!);
+  if (sent.has("reminder_date"))
     data.reminder_date = parsed.data.reminder_date
       ? new Date(parsed.data.reminder_date)
       : null;
-  if (parsed.data.notes !== undefined) data.notes = parsed.data.notes ?? null;
-  if (parsed.data.file_url !== undefined) data.file_url = parsed.data.file_url ?? null;
+  if (sent.has("notes")) data.notes = parsed.data.notes ?? null;
+  if (sent.has("file_url")) data.file_url = parsed.data.file_url ?? null;
 
   const invoice = await prisma.invoice.update({
     where: { id },

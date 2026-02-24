@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Pencil, Trash2, Building2 } from "lucide-react";
 
 interface Client {
   id: string;
@@ -91,7 +91,7 @@ export function ClientManager({ clients, onRefresh }: ClientManagerProps) {
   return (
     <>
       <Button variant="outline" onClick={openCreate}>
-        <Plus className="mr-2 h-4 w-4" /> Manage Clients
+        <Building2 className="mr-2 h-4 w-4" /> Manage Clients
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

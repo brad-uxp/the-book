@@ -34,14 +34,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users, ClipboardList } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users, ClipboardList, Link2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
 import { PersonForm } from "./person-form";
 import { RoleManager } from "./role-manager";
+import { SalaryChart } from "./salary-chart";
 import type { PersonInput } from "@/lib/validations";
+import { LinkedIssues } from "@/components/issues/linked-issues";
 
 interface SalaryReminder {
   id: string;
@@ -95,6 +97,7 @@ const AVATAR_CLASSES: Record<string, string> = {
 
 export function SalariesTable({ initialData, initialRoles }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [roles, setRoles] = useState(initialRoles);
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
@@ -106,6 +109,27 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<"table" | "cards" | "report">("table");
   const [rolesOpen, setRolesOpen] = useState(false);
+
+  // Deep-link: open person detail from ?person=<id> (e.g. from task @mentions)
+  useEffect(() => {
+    const personId = searchParams.get("person");
+    if (personId) {
+      const person = data.find((p) => p.id === personId);
+      if (person) setDetailPerson(person);
+      router.replace("/salaries", { scroll: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Linked issue counts for table/card indicator
+  const [linkedIssueCounts, setLinkedIssueCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetch("/api/issues/linked-counts?type=person")
+      .then((r) => r.json())
+      .then(setLinkedIssueCounts)
+      .catch(() => {});
+  }, []);
 
   // Unpaid this month filter
   const [unpaidThisMonth, setUnpaidThisMonth] = useState(false);
@@ -407,6 +431,14 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                   <FileText className="h-2.5 w-2.5" />
                 </span>
               )}
+              {(linkedIssueCounts[row.original.id] ?? 0) > 0 && (
+                <span
+                  className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 shrink-0"
+                  title={`${linkedIssueCounts[row.original.id]} linked issue(s)`}
+                >
+                  <Link2 className="h-2.5 w-2.5" />
+                </span>
+              )}
             </div>
             {row.original.role && (
               <p className="text-xs text-muted-foreground leading-tight">
@@ -536,6 +568,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         <div className="flex items-center gap-2">
           {/* Desktop-only buttons */}
           <div className="hidden sm:flex items-center gap-2">
+            {view !== "report" && (
             <Button
               variant={unpaidThisMonth ? "default" : "outline"}
               className="h-9"
@@ -543,6 +576,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             >
               Unpaid this month
             </Button>
+            )}
             <RoleManager roles={roles} onRefresh={refresh} open={rolesOpen} onOpenChange={setRolesOpen} />
             <Button variant="outline" className="h-9" onClick={() => setBulkOpen(true)}>
               <Users className="mr-2 h-4 w-4" /> Bulk Pay
@@ -560,10 +594,14 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {view !== "report" && (
+              <>
               <DropdownMenuItem onClick={() => setUnpaidThisMonth((v) => !v)}>
                 {unpaidThisMonth ? "Show all" : "Unpaid this month"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              </>
+              )}
               <DropdownMenuItem onClick={() => setCreateOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" /> New Person
               </DropdownMenuItem>
@@ -608,6 +646,14 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                         </Badge>
                         {p.role && (
                           <span className="text-xs text-muted-foreground truncate">{p.role.name}</span>
+                        )}
+                        {(linkedIssueCounts[p.id] ?? 0) > 0 && (
+                          <span
+                            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 shrink-0"
+                            title={`${linkedIssueCounts[p.id]} linked issue(s)`}
+                          >
+                            <Link2 className="h-2.5 w-2.5" />
+                          </span>
                         )}
                       </div>
                     </div>
@@ -740,6 +786,8 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
 
       {/* ── Report view ────────────────────────────────────────────────── */}
       {view === "report" && (
+        <>
+        <SalaryChart data={data} />
         <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
           {/* Left — selection */}
           <div className="rounded-xl border bg-card p-4 sm:p-5 space-y-3">
@@ -876,6 +924,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             )}
           </div>
         </div>
+        </>
       )}
 
       {/* ── Table view ─────────────────────────────────────────────────── */}
@@ -1325,6 +1374,8 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                   </div>
                 );
               })()}
+
+              <LinkedIssues personId={detailPerson.id} />
 
               <div className="border-t" />
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

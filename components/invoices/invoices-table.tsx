@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useReactTable,
   getCoreRowModel,
@@ -41,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DatePresetFilter, type DatePreset } from "@/components/ui/date-preset-filter";
-import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, ChevronDown, Pencil, Link } from "lucide-react";
+import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link, Link2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
@@ -49,6 +49,7 @@ import { formatDate } from "@/lib/dates";
 import { InvoiceForm } from "./invoice-form";
 import { ClientManager } from "./client-manager";
 import type { InvoiceInput } from "@/lib/validations";
+import { LinkedIssues } from "@/components/issues/linked-issues";
 
 interface Client {
   id: string;
@@ -111,6 +112,32 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   const [loading, setLoading] = useState(false);
   const [addingFile, setAddingFile] = useState(false);
   const [fileUrl, setFileUrl] = useState("");
+
+  const router = useRouter();
+
+  // Deep-link: open invoice detail from ?invoice=<id>
+  useEffect(() => {
+    const invoiceId = searchParams.get("invoice");
+    if (invoiceId) {
+      const inv = data.find((i) => i.id === invoiceId);
+      if (inv) {
+        setIsEditMode(false);
+        setDetailItem(inv);
+      }
+      router.replace("/invoices", { scroll: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Linked issue counts for table indicator
+  const [linkedIssueCounts, setLinkedIssueCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetch("/api/issues/linked-counts?type=invoice")
+      .then((r) => r.json())
+      .then(setLinkedIssueCounts)
+      .catch(() => {});
+  }, []);
 
   const refresh = async () => {
     const [invRes, cliRes] = await Promise.all([
@@ -299,6 +326,22 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
               title={row.original.notes}
             >
               <FileText className="h-2.5 w-2.5" />
+            </span>
+          )}
+          {(linkedIssueCounts[row.original.id] ?? 0) > 0 && (
+            <span
+              className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 shrink-0"
+              title={`${linkedIssueCounts[row.original.id]} linked issue(s)`}
+            >
+              <Link2 className="h-2.5 w-2.5" />
+            </span>
+          )}
+          {!row.original.file_url && (
+            <span
+              className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 shrink-0"
+              title="No file attached"
+            >
+              <FileX2 className="h-2.5 w-2.5" />
             </span>
           )}
         </div>
@@ -689,6 +732,8 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
                   </div>
                 )}
               </dl>
+
+              <LinkedIssues invoiceId={detailItem.id} />
 
               <div className="border-t" />
               {addingFile ? (

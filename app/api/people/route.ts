@@ -9,7 +9,7 @@ export async function GET() {
     include: {
       role: true,
       salary_base: true,
-      salary_payments: { orderBy: { created_at: "desc" }, take: 1 },
+      salary_payments: { orderBy: { due_date: "desc" }, take: 12 },
       increase_reminders: {
         where: { status: "scheduled" },
         orderBy: { effective_date: "asc" },

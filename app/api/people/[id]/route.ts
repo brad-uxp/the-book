@@ -37,6 +37,9 @@ export async function PATCH(
 
   const { base_salary_cents, ...personData } = parsed.data;
 
+  // Use raw body keys — Zod .default() fills in values even with .partial()
+  const sent = new Set(Object.keys(body));
+
   const before = await prisma.person.findUnique({
     where: { id },
     include: { salary_base: true },
@@ -46,11 +49,11 @@ export async function PATCH(
     await tx.person.update({
       where: { id },
       data: {
-        ...(personData.name !== undefined && { name: personData.name }),
-        ...(personData.payday_day !== undefined && { payday_day: personData.payday_day }),
-        ...(personData.status !== undefined && { status: personData.status }),
-        ...(personData.role_id !== undefined && { role_id: personData.role_id ?? null }),
-        ...(personData.notes !== undefined && { notes: personData.notes ?? null }),
+        ...(sent.has("name") && { name: personData.name }),
+        ...(sent.has("payday_day") && { payday_day: personData.payday_day }),
+        ...(sent.has("status") && { status: personData.status }),
+        ...(sent.has("role_id") && { role_id: personData.role_id ?? null }),
+        ...(sent.has("notes") && { notes: personData.notes ?? null }),
       },
     });
 

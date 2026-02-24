@@ -17,8 +17,14 @@ export async function PATCH(
     );
   }
 
+  // Use raw body keys — Zod .default() fills in values even with .partial()
+  const sent = new Set(Object.keys(body));
+  const data: Record<string, unknown> = {};
+  if (sent.has("name")) data.name = parsed.data.name;
+  if (sent.has("color_hex")) data.color_hex = parsed.data.color_hex;
+
   const before = await prisma.client.findUnique({ where: { id } });
-  const client = await prisma.client.update({ where: { id }, data: parsed.data });
+  const client = await prisma.client.update({ where: { id }, data });
 
   auditLog({
     entity_type: "client",

@@ -96,3 +96,20 @@ export const InvoiceSchema = z.object({
 });
 
 export type InvoiceInput = z.infer<typeof InvoiceSchema>;
+
+// ─── Issues ──────────────────────────────────────────────────────────────────
+
+export const IssueSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  client_id: z.string().nullable().optional(),
+  category: z.enum(["task", "note"]).default("task"),
+  status: z
+    .enum(["pending", "in_progress", "blocked", "done"])
+    .default("pending"),
+  progress: z.number().int().min(0).max(100).default(0),
+  due_date: z.string().nullable().optional(),
+  description: z.string().default(""),
+  sort_order: z.number().int().default(0),
+});
+
+export type IssueInput = z.infer<typeof IssueSchema>;

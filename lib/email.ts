@@ -14,7 +14,7 @@ export async function sendEmail(
   html: string
 ): Promise<void> {
   await transporter.sendMail({
-    from: `"AccountBook" <${process.env.GMAIL_USER}>`,
+    from: `"TheBook" <${process.env.GMAIL_USER}>`,
     to,
     subject,
     html,
@@ -25,13 +25,13 @@ function wrap(body: string): string {
   return `
     <div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; color: #111;">
       <div style="background: #f8f8f8; border-bottom: 1px solid #e5e7eb; padding: 16px 24px;">
-        <span style="font-weight: 700; font-size: 16px; letter-spacing: -0.3px;">AccountBook</span>
+        <span style="font-weight: 700; font-size: 16px; letter-spacing: -0.3px;">TheBook</span>
       </div>
       <div style="padding: 24px;">
         ${body}
       </div>
       <div style="padding: 12px 24px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
-        Este es un mensaje automático generado por AccountBook.
+        Este es un mensaje automático generado por TheBook.
       </div>
     </div>
   `;
@@ -47,7 +47,7 @@ export function buildSubscriptionUpcomingEmail(params: {
 }): { subject: string; html: string } {
   const { name, amountCents, dueDate, daysBefore } = params;
   const amount = `$${(amountCents / 100).toFixed(2)}`;
-  const subject = `[AccountBook] Pago próximo en ${daysBefore} día${daysBefore !== 1 ? "s" : ""}: ${name}`;
+  const subject = `[TheBook] Pago próximo en ${daysBefore} día${daysBefore !== 1 ? "s" : ""}: ${name}`;
   const html = wrap(`
     <h2 style="margin: 0 0 12px; font-size: 18px;">Pago próximo: <strong>${name}</strong></h2>
     <p style="margin: 0 0 8px; color: #374151;">
@@ -65,7 +65,7 @@ export function buildSalaryGroupEmail(params: {
   daysBefore: number;
 }): { subject: string; html: string } {
   const { people, dueDate, daysBefore } = params;
-  const subject = `[AccountBook] Pago de salarios en ${daysBefore} día${daysBefore !== 1 ? "s" : ""}`;
+  const subject = `[TheBook] Pago de salarios en ${daysBefore} día${daysBefore !== 1 ? "s" : ""}`;
   const list = people.map((n) => `<li style="margin: 4px 0;">${n}</li>`).join("");
   const html = wrap(`
     <h2 style="margin: 0 0 12px; font-size: 18px;">Pago de salarios próximo</h2>
@@ -88,7 +88,7 @@ export function buildInvoiceDueEmail(params: {
   const { clientName, invoiceNumber, amountCents, feeCents, dueDate } = params;
   const amount = `$${((amountCents + feeCents) / 100).toFixed(2)}`;
   const inv = invoiceNumber ? ` #${invoiceNumber}` : "";
-  const subject = `[AccountBook] Factura vence hoy: ${clientName}`;
+  const subject = `[TheBook] Factura vence hoy: ${clientName}`;
   const html = wrap(`
     <h2 style="margin: 0 0 12px; font-size: 18px;">Factura vence hoy</h2>
     <p style="margin: 0 0 8px; color: #374151;">
@@ -109,7 +109,7 @@ export function buildInvoiceReminderEmail(params: {
   const { clientName, invoiceNumber, amountCents, feeCents, dueDate } = params;
   const amount = `$${((amountCents + feeCents) / 100).toFixed(2)}`;
   const inv = invoiceNumber ? ` #${invoiceNumber}` : "";
-  const subject = `[AccountBook] Recordatorio: Factura ${clientName}`;
+  const subject = `[TheBook] Recordatorio: Factura ${clientName}`;
   const html = wrap(`
     <h2 style="margin: 0 0 12px; font-size: 18px;">Recordatorio de factura</h2>
     <p style="margin: 0 0 8px; color: #374151;">
@@ -127,7 +127,7 @@ export function buildSalaryIncreaseEmail(params: {
 }): { subject: string; html: string } {
   const { personName, suggestedCents, effectiveDate } = params;
   const amount = `$${(suggestedCents / 100).toFixed(2)}`;
-  const subject = `[AccountBook] Ajuste salarial: ${personName}`;
+  const subject = `[TheBook] Ajuste salarial: ${personName}`;
   const html = wrap(`
     <h2 style="margin: 0 0 12px; font-size: 18px;">Recordatorio de ajuste salarial</h2>
     <p style="margin: 0 0 8px; color: #374151;">

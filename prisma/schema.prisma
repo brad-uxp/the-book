@@ -223,6 +223,7 @@ model Client {
   color_hex String @default("#6366f1")
 
   invoices Invoice[]
+  issues   Issue[]
 }
 
 model Invoice {
@@ -260,6 +261,45 @@ model FeePayment {
   updated_at   DateTime @updatedAt
 
   @@index([paid_at])
+}
+
+// ============================================================
+// Issues
+// ============================================================
+
+enum IssueStatus {
+  pending
+  in_progress
+  blocked
+  done
+
+  @@map("TaskStatus")
+}
+
+enum IssueCategory {
+  task
+  note
+}
+
+model Issue {
+  id          String        @id @default(uuid())
+  title       String
+  client_id   String?
+  category    IssueCategory @default(task)
+  status      IssueStatus   @default(pending)
+  progress    Int           @default(0)
+  due_date    DateTime?
+  description String        @default("") @db.Text
+  sort_order  Int           @default(0)
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+
+  client Client? @relation(fields: [client_id], references: [id], onDelete: SetNull)
+
+  @@map("Task")
+  @@index([status])
+  @@index([client_id])
+  @@index([category])
 }
 
 // ============================================================

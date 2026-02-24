@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Pencil, Trash2, UserCog } from "lucide-react";
 
 interface Role {
   id: string;
@@ -82,7 +82,7 @@ export function RoleManager({ roles, onRefresh, open: externalOpen, onOpenChange
   return (
     <>
       <Button variant="outline" className="hidden sm:inline-flex" onClick={openCreate}>
-        <Plus className="mr-2 h-4 w-4" /> Manage Roles
+        <UserCog className="mr-2 h-4 w-4" /> Manage Roles
       </Button>
 
       <Dialog open={open} onOpenChange={(o) => { if (!o) { setOpen(false); setEditRole(null); setName(""); } else setOpen(true); }}>
@@ -92,7 +92,7 @@ export function RoleManager({ roles, onRefresh, open: externalOpen, onOpenChange
           </DialogHeader>
 
           {!editRole && (
-            <div className="space-y-2 mb-4">
+            <div className="max-h-70 overflow-y-auto space-y-2 mb-4 pr-1">
               {roles.map((r) => (
                 <div
                   key={r.id}
