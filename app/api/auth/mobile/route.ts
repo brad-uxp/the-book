@@ -73,9 +73,9 @@ export async function POST(req: NextRequest) {
     const { access_token, expires_in } = await signToken(email);
 
     return NextResponse.json({ access_token, expires_in });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
-      { error: "Internal server error", detail: String(err) },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
