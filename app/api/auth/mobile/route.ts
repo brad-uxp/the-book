@@ -25,45 +25,58 @@ async function verifyGoogleIdToken(
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { email, secret, google_id_token } = body as {
-    email?: string;
-    secret?: string;
-    google_id_token?: string;
-  };
+  try {
+    const body = await req.json();
+    const { email, secret, google_id_token } = body as {
+      email?: string;
+      secret?: string;
+      google_id_token?: string;
+    };
 
-  // Google Sign-In flow
-  if (google_id_token) {
-    const googleUser = await verifyGoogleIdToken(google_id_token);
+    // Google Sign-In flow
+    if (google_id_token) {
+      const googleUser = await verifyGoogleIdToken(google_id_token);
 
-    if (!googleUser || !ALLOWED_EMAILS.includes(googleUser.email)) {
+      if (!googleUser || !ALLOWED_EMAILS.includes(googleUser.email)) {
+        return NextResponse.json(
+          { error: "Invalid credentials" },
+          { status: 401 }
+        );
+      }
+
+      const { access_token, expires_in } = await signToken(googleUser.email);
+      return NextResponse.json({ access_token, expires_in });
+    }
+
+    // Legacy secret flow
+    if (!email || !secret) {
+      return NextResponse.json(
+        { error: "email and secret are required, or provide google_id_token" },
+        { status: 400 }
+      );
+    }
+
+    if (secret !== process.env.MOBILE_AUTH_SECRET) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    const { access_token, expires_in } = await signToken(googleUser.email);
-    return NextResponse.json({ access_token, expires_in });
-  }
+    if (!ALLOWED_EMAILS.includes(email)) {
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 }
+      );
+    }
 
-  // Legacy secret flow
-  if (!email || !secret) {
+    const { access_token, expires_in } = await signToken(email);
+
+    return NextResponse.json({ access_token, expires_in });
+  } catch (err) {
     return NextResponse.json(
-      { error: "email and secret are required, or provide google_id_token" },
-      { status: 400 }
+      { error: "Internal server error", detail: String(err) },
+      { status: 500 }
     );
   }
-
-  if (secret !== process.env.MOBILE_AUTH_SECRET) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-  }
-
-  if (!ALLOWED_EMAILS.includes(email)) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-  }
-
-  const { access_token, expires_in } = await signToken(email);
-
-  return NextResponse.json({ access_token, expires_in });
 }
