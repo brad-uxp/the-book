@@ -73,12 +73,10 @@ export function SalaryChart({ data }: Props) {
   const { lines, chartData } = useMemo(() => {
     const yearStr = String(currentYear);
 
-    // Active people with at least one payment this year
-    const activePeople = data
-      .filter((p) => p.status === "active")
-      .filter((p) =>
-        p.salary_payments.some((sp) => sp.due_date.startsWith(yearStr))
-      );
+    // People with at least one payment this year (active or inactive)
+    const activePeople = data.filter((p) =>
+      p.salary_payments.some((sp) => sp.due_date.startsWith(yearStr))
+    );
 
     // Build person lines
     const personLines: LineConfig[] = activePeople.map((p, i) => ({
