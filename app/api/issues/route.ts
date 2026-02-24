@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { IssueSchema } from "@/lib/validations";
+import { auditLog } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -49,6 +50,21 @@ export async function POST(req: NextRequest) {
       ...(clientId ? { client: { connect: { id: clientId } } } : {}),
     },
     include: { client: true },
+  });
+
+  auditLog({
+    entity_type: "issue",
+    entity_id: issue.id,
+    entity_name: issue.title,
+    action: "create",
+    after: {
+      title: issue.title,
+      client_id: issue.client_id,
+      category: issue.category,
+      status: issue.status,
+      progress: issue.progress,
+      due_date: issue.due_date,
+    },
   });
 
   return NextResponse.json(issue, { status: 201 });

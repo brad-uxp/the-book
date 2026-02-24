@@ -1,7 +1,12 @@
 import { signIn } from "@/auth";
 import { Button } from "@/components/ui/button";
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   const year = new Date().getFullYear();
 
   return (
@@ -33,6 +38,12 @@ export default function LoginPage() {
                 Sign in to access your workspace
               </p>
             </div>
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
+                Your email is not authorized to access this app.
+              </div>
+            )}
 
             <form
               action={async () => {
