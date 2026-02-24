@@ -27,7 +27,17 @@ interface Props {
 }
 
 export function IssuesView({ clients, initialIssues }: Props) {
-  const [view, setView] = useState<"board" | "list">("board");
+  const [view, setViewState] = useState<"board" | "list">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("issues-view-mode");
+      if (saved === "board" || saved === "list") return saved;
+    }
+    return "board";
+  });
+  const setView = (v: "board" | "list") => {
+    setViewState(v);
+    localStorage.setItem("issues-view-mode", v);
+  };
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
@@ -128,7 +138,7 @@ export function IssuesView({ clients, initialIssues }: Props) {
 
         {view === "list" ? (
           <Button onClick={() => createIssue("pending", "note")}>
-            <Plus className="mr-2 h-4 w-4" /> New Note
+            <Plus className="mr-2 h-4 w-4" /> New Issue
           </Button>
         ) : (
           <Button onClick={() => createIssue("pending", "task")}>
