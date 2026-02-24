@@ -1,9 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { OAuth2Client } from "google-auth-library";
 import { ALLOWED_EMAILS } from "@/auth";
 import { signToken } from "@/lib/jwt";
 
-const googleClient = new OAuth2Client(process.env.AUTH_GOOGLE_ID);
+async function verifyGoogleIdToken(
+  idToken: string
+): Promise<{ email: string } | null> {
+  const res = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+  );
+  if (!res.ok) return null;
+
+  const payload = (await res.json()) as {
+    email?: string;
+    aud?: string;
+    email_verified?: string;
+  };
+
+  // Verify audience matches our web client ID
+  if (payload.aud !== process.env.AUTH_GOOGLE_ID) return null;
+  if (payload.email_verified !== "true") return null;
+  if (!payload.email) return null;
+
+  return { email: payload.email };
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -15,29 +34,17 @@ export async function POST(req: NextRequest) {
 
   // Google Sign-In flow
   if (google_id_token) {
-    try {
-      const ticket = await googleClient.verifyIdToken({
-        idToken: google_id_token,
-        audience: process.env.AUTH_GOOGLE_ID,
-      });
-      const payload = ticket.getPayload();
-      const googleEmail = payload?.email;
+    const googleUser = await verifyGoogleIdToken(google_id_token);
 
-      if (!googleEmail || !ALLOWED_EMAILS.includes(googleEmail)) {
-        return NextResponse.json(
-          { error: "Invalid credentials" },
-          { status: 401 }
-        );
-      }
-
-      const { access_token, expires_in } = await signToken(googleEmail);
-      return NextResponse.json({ access_token, expires_in });
-    } catch (err) {
+    if (!googleUser || !ALLOWED_EMAILS.includes(googleUser.email)) {
       return NextResponse.json(
-        { error: "Invalid Google token", detail: String(err) },
+        { error: "Invalid credentials" },
         { status: 401 }
       );
     }
+
+    const { access_token, expires_in } = await signToken(googleUser.email);
+    return NextResponse.json({ access_token, expires_in });
   }
 
   // Legacy secret flow
