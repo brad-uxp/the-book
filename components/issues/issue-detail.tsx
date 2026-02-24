@@ -783,10 +783,6 @@ export function IssueDetail({
                       onCommit={(title) => onUpdate(issue.id, { title })}
                     />
                   </div>
-                  <InlineCategory
-                    value={issue.category}
-                    onCommit={(category) => onUpdate(issue.id, { category })}
-                  />
                   <Button
                     variant="ghost"
                     size="icon"
@@ -798,6 +794,16 @@ export function IssueDetail({
                 </div>
 
                 <div className="space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground w-20 shrink-0">
+                      Type
+                    </span>
+                    <InlineCategory
+                      value={issue.category}
+                      onCommit={(category) => onUpdate(issue.id, { category })}
+                    />
+                  </div>
+
                   {issue.category === "task" && (
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground w-20 shrink-0">

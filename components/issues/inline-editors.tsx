@@ -325,9 +325,9 @@ export function InlineCategory({
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) onClose?.(); }}>
       <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <button className="flex items-center gap-1.5 text-sm hover:text-primary transition-colors cursor-pointer">
-          {current && <current.icon className="h-3.5 w-3.5" />}
+        <button className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors cursor-pointer">
           {current?.label}
+          <ChevronsUpDown className="h-3 w-3 opacity-50" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-36 p-1" align="start" onClick={(e) => e.stopPropagation()}>
@@ -337,7 +337,6 @@ export function InlineCategory({
             className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent transition-colors"
             onClick={() => { onCommit(opt.id); setOpen(false); }}
           >
-            <opt.icon className="h-3.5 w-3.5" />
             {opt.label}
             {opt.id === value && <Check className="ml-auto h-3.5 w-3.5" />}
           </button>
