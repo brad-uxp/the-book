@@ -32,9 +32,9 @@ export async function POST(req: NextRequest) {
 
       const { access_token, expires_in } = await signToken(googleEmail);
       return NextResponse.json({ access_token, expires_in });
-    } catch {
+    } catch (err) {
       return NextResponse.json(
-        { error: "Invalid Google token" },
+        { error: "Invalid Google token", detail: String(err) },
         { status: 401 }
       );
     }
