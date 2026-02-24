@@ -42,6 +42,7 @@ accounting-system/
 ├── app/
 │   ├── api/                          # 27 rutas API (REST)
 │   │   ├── auth/[...nextauth]/       # Autenticación NextAuth
+│   │   ├── auth/mobile/              # Login mobile (Google ID Token → JWT)
 │   │   ├── subscriptions/            # CRUD suscripciones + pagos
 │   │   ├── people/                   # CRUD personas + pagos salarios + reminders
 │   │   ├── invoices/                 # CRUD facturas
@@ -81,6 +82,7 @@ accounting-system/
 ├── hooks/
 │   └── use-toast.ts                  # Hook de notificaciones toast
 ├── lib/
+│   ├── jwt.ts                        # Utilidades JWT (sign/verify con jose)
 │   ├── db.ts                         # Singleton de Prisma Client
 │   ├── dates.ts                      # Utilidades de fechas (timezone Montevideo)
 │   ├── email.ts                      # Templates de email + envío
@@ -227,10 +229,19 @@ accounting-system/
 ### 9. Autenticación
 
 - **Google OAuth** via NextAuth 5
-- **Acceso single-user**: email autorizado hardcodeado (`bradlyls95@gmail.com`)
+- **Acceso single-user**: emails autorizados exportados desde `auth.ts` (`ALLOWED_EMAILS`)
 - **Middleware** protege todas las rutas excepto login, auth y cron
 - **Guard de inactividad**: aviso a los 55 min, logout automático a los 60 min
 - **Página de login** con branding personalizado
+
+### 10. Autenticación Mobile
+
+- **Google Sign-In** nativo desde la app Flutter
+- **Endpoint**: `POST /api/auth/mobile` acepta `{ google_id_token }` o `{ email, secret }` (legacy)
+- **Verificación**: el ID token se valida contra `oauth2.googleapis.com/tokeninfo`, se verifica que el audience coincida con `AUTH_GOOGLE_ID` y que el email esté en `ALLOWED_EMAILS`
+- **JWT**: se genera con `jose` (compatible con Edge Runtime), expiración 7 días, firmado con `JWT_SECRET`
+- **Middleware dual**: acepta cookies NextAuth (web) y Bearer JWT (mobile) — ambos flujos coexisten
+- **CORS**: headers configurados en `next.config.ts` para `/api/*` (`Access-Control-Allow-Origin: *`)
 
 ---
 
@@ -239,6 +250,7 @@ accounting-system/
 | Recurso              | Método          | Ruta                                   |
 | -------------------- | --------------- | -------------------------------------- |
 | Auth                 | GET/POST        | `/api/auth/[...nextauth]`             |
+| Auth Mobile          | POST            | `/api/auth/mobile`                     |
 | Subscriptions        | GET/POST        | `/api/subscriptions`                   |
 | Subscription         | GET/PATCH/DEL   | `/api/subscriptions/[id]`              |
 | Sub. Payments        | GET/POST        | `/api/subscriptions/[id]/payments`     |
@@ -317,6 +329,10 @@ AUTH_GOOGLE_SECRET=<from Google Cloud Console>
 CRON_SECRET=<random bearer token>
 GMAIL_USER=your-email@gmail.com
 GMAIL_APP_PASSWORD=<16-char Google App Password>
+
+# Autenticación mobile
+JWT_SECRET=<openssl rand -base64 64>
+MOBILE_AUTH_SECRET=<openssl rand -base64 32>
 ```
 
 ---
