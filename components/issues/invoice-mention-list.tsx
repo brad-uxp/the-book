@@ -10,6 +10,7 @@ import {
 } from "react";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
 import { FileText, Plus } from "lucide-react";
+import { formatCents } from "@/lib/currency";
 
 export interface MentionInvoice {
   id: string;
@@ -22,10 +23,10 @@ export interface MentionInvoice {
 export function formatInvoiceLabel(inv: {
   invoice_number: string | null;
   client: { name: string };
+  amount_cents: number;
 }) {
-  return inv.invoice_number
-    ? `Inv ${inv.invoice_number} \u2014 ${inv.client.name}`
-    : `Inv \u2014 ${inv.client.name}`;
+  const num = inv.invoice_number ?? "?";
+  return `Inv ${num}: ${inv.client.name} \u2014 ${formatCents(inv.amount_cents)}`;
 }
 
 export interface InvoiceMentionListRef {
