@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Calendar, Check, ChevronsUpDown, ClipboardList, StickyNote } from "lucide-react";
 import {
   Popover,
@@ -15,6 +15,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { formatDate } from "@/lib/dates";
+import { MiniCalendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 
 // ── Shared types ─────────────────────────────────────────────────────────────
@@ -129,17 +130,10 @@ export function InlineDate({
   status: IssueStatus;
   isDueSoon: boolean;
   isOverdue: boolean;
-  onCommit: (iso: string) => void;
+  onCommit: (iso: string | null) => void;
   onClose?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-
-  const openPicker = useCallback((el: HTMLInputElement | null) => {
-    if (!el) return;
-    requestAnimationFrame(() => {
-      try { el.showPicker(); } catch {}
-    });
-  }, []);
 
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) onClose?.(); }}>
@@ -167,21 +161,20 @@ export function InlineDate({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-0 h-0 p-0 border-none shadow-none bg-transparent overflow-visible"
+        className="w-auto p-3"
         align="start"
         onClick={(e) => e.stopPropagation()}
       >
-        <input
-          ref={openPicker}
-          type="date"
-          defaultValue={value?.slice(0, 10) ?? ""}
-          onChange={(e) => {
-            if (e.target.value) {
-              onCommit(new Date(e.target.value).toISOString());
-              setOpen(false);
-            }
+        <MiniCalendar
+          value={value?.slice(0, 10) ?? null}
+          onSelect={(dateStr) => {
+            onCommit(new Date(dateStr + "T00:00:00Z").toISOString());
+            setOpen(false);
           }}
-          className="sr-only"
+          onClear={() => {
+            onCommit(null);
+            setOpen(false);
+          }}
         />
       </PopoverContent>
     </Popover>
