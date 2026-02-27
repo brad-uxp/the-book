@@ -117,3 +117,32 @@ export async function PATCH(
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(req.url);
+  const reminderId = searchParams.get("reminderId");
+
+  if (!reminderId) {
+    return NextResponse.json(
+      { error: "reminderId query param is required" },
+      { status: 400 }
+    );
+  }
+
+  const reminder = await prisma.salaryIncreaseReminder.findFirst({
+    where: { id: reminderId, person_id: id },
+  });
+  if (!reminder) {
+    return NextResponse.json({ error: "Reminder not found" }, { status: 404 });
+  }
+
+  await prisma.salaryIncreaseReminder.delete({
+    where: { id: reminderId },
+  });
+
+  return NextResponse.json({ ok: true, action: "deleted" });
+}

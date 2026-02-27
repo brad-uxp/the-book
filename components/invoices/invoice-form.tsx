@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -50,12 +50,20 @@ import { Check, ChevronsUpDown, Trash2 } from "lucide-react";
 interface Client {
   id: string;
   name: string;
+  default_referrer_id?: string | null;
+}
+
+interface Referrer {
+  id: string;
+  name: string;
+  color_hex: string;
 }
 
 // UI form schema — all string fields for form inputs
 const FormSchema = z.object({
   invoice_number: z.string().optional(),
   client_id: z.string().min(1, "Client is required"),
+  referrer_id: z.string().optional(),
   amount_dollars: z.string().min(1, "Amount is required"),
   fee_dollars: z.string(),
   status: z.enum(["pending", "accounting", "sent", "paid"]),
@@ -69,6 +77,7 @@ type FormValues = z.infer<typeof FormSchema>;
 
 interface InvoiceFormProps {
   clients: Client[];
+  referrers: Referrer[];
   defaultValues?: Partial<InvoiceInput>;
   onSubmit: (data: InvoiceInput) => Promise<void>;
   onCancel: () => void;
@@ -78,6 +87,7 @@ interface InvoiceFormProps {
 
 export function InvoiceForm({
   clients,
+  referrers,
   defaultValues,
   onSubmit,
   onCancel,
@@ -85,12 +95,14 @@ export function InvoiceForm({
   loading,
 }: InvoiceFormProps) {
   const [clientOpen, setClientOpen] = useState(false);
+  const [referrerOpen, setReferrerOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       invoice_number: defaultValues?.invoice_number ?? "",
       client_id: defaultValues?.client_id ?? "",
+      referrer_id: defaultValues?.referrer_id ?? "",
       amount_dollars: defaultValues?.amount_cents != null
         ? centsToDecimalString(defaultValues.amount_cents)
         : "",
@@ -109,10 +121,23 @@ export function InvoiceForm({
     },
   });
 
+  // Auto-select referrer when client changes (only if referrer is currently empty)
+  const watchedClientId = form.watch("client_id");
+  useEffect(() => {
+    if (!watchedClientId) return;
+    const client = clients.find((c) => c.id === watchedClientId);
+    if (!client?.default_referrer_id) return;
+    const currentReferrer = form.getValues("referrer_id");
+    if (!currentReferrer) {
+      form.setValue("referrer_id", client.default_referrer_id);
+    }
+  }, [watchedClientId, clients, form]);
+
   const handleSubmit = async (data: FormValues) => {
     await onSubmit({
       invoice_number: data.invoice_number || null,
       client_id: data.client_id,
+      referrer_id: data.referrer_id || null,
       amount_cents: parseToCents(data.amount_dollars),
       fee_cents: parseToCents(data.fee_dollars || "0"),
       status: data.status,
@@ -229,6 +254,83 @@ export function InvoiceForm({
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="referrer_id"
+          render={({ field }) => (
+            <FormItem className="flex flex-col">
+              <FormLabel>Referrer (optional)</FormLabel>
+              <Popover open={referrerOpen} onOpenChange={setReferrerOpen}>
+                <PopoverTrigger asChild>
+                  <FormControl>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className={cn(
+                        "w-full justify-between font-normal",
+                        !field.value && "text-muted-foreground"
+                      )}
+                    >
+                      {field.value
+                        ? referrers.find((r) => r.id === field.value)?.name
+                        : "No referrer"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </FormControl>
+                </PopoverTrigger>
+                <PopoverContent className="p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search referrer..." />
+                    <CommandList>
+                      <CommandEmpty>No referrer found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="__none__"
+                          onSelect={() => {
+                            field.onChange("");
+                            setReferrerOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              !field.value ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <span className="text-muted-foreground">None</span>
+                        </CommandItem>
+                        {referrers.map((r) => (
+                          <CommandItem
+                            key={r.id}
+                            value={r.name}
+                            onSelect={() => {
+                              field.onChange(r.id);
+                              setReferrerOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                r.id === field.value ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <span
+                              className="mr-2 inline-block h-2.5 w-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: r.color_hex }}
+                            />
+                            {r.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <div className="grid grid-cols-2 gap-4">
           <FormField

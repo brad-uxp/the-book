@@ -4,12 +4,13 @@ import { InvoicesTable } from "@/components/invoices/invoices-table";
 export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage() {
-  const [invoices, clients] = await Promise.all([
+  const [invoices, clients, referrers] = await Promise.all([
     prisma.invoice.findMany({
       orderBy: { created_at: "desc" },
-      include: { client: true },
+      include: { client: true, referrer: true },
     }),
     prisma.client.findMany({ orderBy: { name: "asc" } }),
+    prisma.referrer.findMany({ orderBy: { name: "asc" } }),
   ]);
 
   const invoicesData = invoices.map((inv) => ({
@@ -30,7 +31,7 @@ export default async function InvoicesPage() {
         </p>
       </div>
 
-      <InvoicesTable initialData={invoicesData} initialClients={clients} />
+      <InvoicesTable initialData={invoicesData} initialClients={clients} initialReferrers={referrers} />
     </div>
   );
 }

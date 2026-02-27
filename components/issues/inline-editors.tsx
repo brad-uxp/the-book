@@ -24,6 +24,7 @@ export interface Client {
   id: string;
   name: string;
   color_hex: string;
+  default_referrer_id?: string | null;
 }
 
 export const STATUSES = ["pending", "in_progress", "blocked", "done"] as const;

@@ -6,7 +6,7 @@ import { auditLog } from "@/lib/audit";
 export async function GET() {
   const invoices = await prisma.invoice.findMany({
     orderBy: { created_at: "desc" },
-    include: { client: true },
+    include: { client: true, referrer: true },
   });
   return NextResponse.json(invoices);
 }
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     data: {
       invoice_number: parsed.data.invoice_number ?? null,
       client_id: parsed.data.client_id,
+      referrer_id: parsed.data.referrer_id ?? null,
       amount_cents: parsed.data.amount_cents,
       fee_cents: parsed.data.fee_cents ?? 0,
       status: parsed.data.status ?? "pending",
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
       notes: parsed.data.notes ?? null,
       file_url: parsed.data.file_url ?? null,
     },
-    include: { client: true },
+    include: { client: true, referrer: true },
   });
 
   auditLog({
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
     after: {
       invoice_number: invoice.invoice_number,
       client_id: invoice.client_id,
+      referrer_id: invoice.referrer_id,
       amount_cents: invoice.amount_cents,
       fee_cents: invoice.fee_cents,
       status: invoice.status,

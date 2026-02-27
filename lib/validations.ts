@@ -75,15 +75,29 @@ export const ClientSchema = z.object({
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color")
     .default("#6366f1"),
+  default_referrer_id: z.string().nullable().optional(),
 });
 
 export type ClientInput = z.infer<typeof ClientSchema>;
+
+// ─── Referrers ───────────────────────────────────────────────────────────────
+
+export const ReferrerSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  color_hex: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color")
+    .default("#6366f1"),
+});
+
+export type ReferrerInput = z.infer<typeof ReferrerSchema>;
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 export const InvoiceSchema = z.object({
   invoice_number: z.string().nullable().optional(),
   client_id: z.string().min(1, "Client is required"),
+  referrer_id: z.string().nullable().optional(),
   amount_cents: z.number().int().min(0, "Amount must be non-negative"),
   fee_cents: z.number().int().default(0),
   status: z

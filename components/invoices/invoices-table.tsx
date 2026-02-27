@@ -41,7 +41,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DatePresetFilter, type DatePreset } from "@/components/ui/date-preset-filter";
-import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link, Link2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link, Link2, Check, ChevronsUpDown, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
@@ -55,12 +64,20 @@ interface Client {
   id: string;
   name: string;
   color_hex: string;
+  default_referrer_id?: string | null;
+}
+
+interface Referrer {
+  id: string;
+  name: string;
+  color_hex: string;
 }
 
 interface Invoice {
   id: string;
   invoice_number: string | null;
   client_id: string;
+  referrer_id: string | null;
   amount_cents: number;
   fee_cents: number;
   status: "pending" | "accounting" | "sent" | "paid";
@@ -71,6 +88,7 @@ interface Invoice {
   created_at: string;
   updated_at: string;
   client: Client;
+  referrer: Referrer | null;
 }
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -90,12 +108,14 @@ const STATUS_LABELS: Record<string, string> = {
 interface Props {
   initialData: Invoice[];
   initialClients: Client[];
+  initialReferrers: Referrer[];
 }
 
-export function InvoicesTable({ initialData, initialClients }: Props) {
+export function InvoicesTable({ initialData, initialClients, initialReferrers }: Props) {
   const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [clients, setClients] = useState(initialClients);
+  const [referrers, setReferrers] = useState(initialReferrers);
   const [sorting, setSorting] = useState<SortingState>([
     { id: "invoice_number", desc: false },
   ]);
@@ -140,12 +160,14 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
   }, []);
 
   const refresh = async () => {
-    const [invRes, cliRes] = await Promise.all([
+    const [invRes, cliRes, refRes] = await Promise.all([
       fetch("/api/invoices"),
       fetch("/api/clients"),
+      fetch("/api/referrers"),
     ]);
     if (invRes.ok) setData(await invRes.json());
     if (cliRes.ok) setClients(await cliRes.json());
+    if (refRes.ok) setReferrers(await refRes.json());
   };
 
   const handleCreate = async (input: InvoiceInput) => {
@@ -334,6 +356,15 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
               title={`${linkedIssueCounts[row.original.id]} linked issue(s)`}
             >
               <Link2 className="h-2.5 w-2.5" />
+            </span>
+          )}
+          {row.original.referrer && (
+            <span
+              className="inline-flex items-center justify-center h-4 w-4 rounded-full shrink-0"
+              style={{ backgroundColor: `${row.original.referrer.color_hex}20`, color: row.original.referrer.color_hex }}
+              title={`Referrer: ${row.original.referrer.name}`}
+            >
+              <UserCheck className="h-2.5 w-2.5" />
             </span>
           )}
           {!row.original.file_url && (
@@ -605,6 +636,7 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
           </DialogHeader>
           <InvoiceForm
             clients={clients}
+            referrers={referrers}
             onSubmit={handleCreate}
             onCancel={() => setCreateOpen(false)}
             loading={loading}
@@ -642,6 +674,7 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
             <InvoiceForm
               key={detailItem.id}
               clients={clients}
+              referrers={referrers}
               defaultValues={{
                 ...detailItem,
                 due_date: detailItem.due_date.slice(0, 10),
@@ -705,6 +738,93 @@ export function InvoicesTable({ initialData, initialClients }: Props) {
                   <dt className="text-muted-foreground">Fee</dt>
                   <dd className="font-medium">
                     {formatCents(detailItem.fee_cents)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Referrer</dt>
+                  <dd>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            "h-7 w-44 justify-between text-xs font-normal",
+                            !detailItem.referrer && "text-muted-foreground"
+                          )}
+                        >
+                          {detailItem.referrer ? (
+                            <span className="flex items-center gap-1.5 truncate">
+                              <span
+                                className="inline-block h-2 w-2 rounded-full shrink-0"
+                                style={{ backgroundColor: detailItem.referrer.color_hex }}
+                              />
+                              {detailItem.referrer.name}
+                            </span>
+                          ) : (
+                            "None"
+                          )}
+                          <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="p-0 w-52" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search referrer..." />
+                          <CommandList>
+                            <CommandEmpty>No referrer found.</CommandEmpty>
+                            <CommandGroup>
+                              <CommandItem
+                                value="__none__"
+                                onSelect={async () => {
+                                  await fetch(`/api/invoices/${detailItem.id}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ referrer_id: null }),
+                                  });
+                                  setDetailItem({ ...detailItem, referrer_id: null, referrer: null });
+                                  await refresh();
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    !detailItem.referrer_id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <span className="text-muted-foreground">None</span>
+                              </CommandItem>
+                              {referrers.map((r) => (
+                                <CommandItem
+                                  key={r.id}
+                                  value={r.name}
+                                  onSelect={async () => {
+                                    await fetch(`/api/invoices/${detailItem.id}`, {
+                                      method: "PATCH",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ referrer_id: r.id }),
+                                    });
+                                    setDetailItem({ ...detailItem, referrer_id: r.id, referrer: r });
+                                    await refresh();
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      r.id === detailItem.referrer_id ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  <span
+                                    className="mr-2 inline-block h-2.5 w-2.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: r.color_hex }}
+                                  />
+                                  {r.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </dd>
                 </div>
                 <div>

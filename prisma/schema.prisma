@@ -218,12 +218,14 @@ enum InvoiceStatus {
 }
 
 model Client {
-  id        String @id @default(uuid())
-  name      String
-  color_hex String @default("#6366f1")
+  id                  String  @id @default(uuid())
+  name                String
+  color_hex           String  @default("#6366f1")
+  default_referrer_id String?
 
-  invoices Invoice[]
-  issues   Issue[]
+  default_referrer Referrer? @relation(fields: [default_referrer_id], references: [id], onDelete: SetNull)
+  invoices         Invoice[]
+  issues           Issue[]
 }
 
 model Invoice {
@@ -240,7 +242,9 @@ model Invoice {
   created_at     DateTime      @default(now())
   updated_at     DateTime      @updatedAt
 
-  client Client @relation(fields: [client_id], references: [id])
+  client      Client    @relation(fields: [client_id], references: [id])
+  referrer_id String?
+  referrer    Referrer? @relation(fields: [referrer_id], references: [id])
 
   @@index([status])
   @@index([due_date])
@@ -248,17 +252,34 @@ model Invoice {
 }
 
 // ============================================================
+// Referrers (intermediaries / facilitators who earn a % fee per invoice)
+// ============================================================
+
+model Referrer {
+  id         String   @id @default(uuid())
+  name       String
+  color_hex  String   @default("#6366f1")
+  created_at DateTime @default(now())
+
+  invoices        Invoice[]
+  fee_payments    FeePayment[]
+  default_clients Client[]
+}
+
+// ============================================================
 // Fee Payments (pass-through: recorded for visibility, excluded from net income)
 // ============================================================
 
 model FeePayment {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   name         String
   paid_at      DateTime
   amount_cents Int
   notes        String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  referrer_id  String?
+  referrer     Referrer? @relation(fields: [referrer_id], references: [id])
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
   @@index([paid_at])
 }

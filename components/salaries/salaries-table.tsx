@@ -28,13 +28,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users, ClipboardList, Link2 } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users, ClipboardList, Link2, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
@@ -211,6 +221,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [reminderDate, setReminderDate] = useState("");
   const [reminderAmount, setReminderAmount] = useState("");
   const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
+  const [deleteReminderOpen, setDeleteReminderOpen] = useState(false);
 
   const refresh = async () => {
     const [peopleRes, rolesRes] = await Promise.all([
@@ -330,6 +341,27 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         }
       }
       await refresh();
+      closeReminder();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteReminder = async () => {
+    if (!reminderPerson || !editingReminderId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/people/${reminderPerson.id}/reminders?reminderId=${editingReminderId}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error ?? "Error deleting reminder");
+        return;
+      }
+      await refresh();
+      setDeleteReminderOpen(false);
       closeReminder();
     } finally {
       setLoading(false);
@@ -1111,17 +1143,52 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                 className="mt-1"
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={closeReminder}>
-                Cancel
-              </Button>
-              <Button onClick={handleSubmitReminder} disabled={loading}>
-                {loading ? "Saving..." : editingReminderId ? "Save" : "Create"}
-              </Button>
+            <div className="flex items-center gap-2">
+              {editingReminderId && (
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() => setDeleteReminderOpen(true)}
+                  disabled={loading}
+                  title="Delete reminder"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="ml-auto flex gap-2">
+                <Button variant="outline" onClick={closeReminder}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSubmitReminder} disabled={loading}>
+                  {loading ? "Saving..." : editingReminderId ? "Save" : "Create"}
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete reminder confirmation */}
+      <AlertDialog open={deleteReminderOpen} onOpenChange={setDeleteReminderOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Reminder</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this raise reminder? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleDeleteReminder}
+              disabled={loading}
+            >
+              {loading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Bulk payment dialog */}
       <Dialog open={bulkOpen} onOpenChange={(o) => !o && closeBulk()}>

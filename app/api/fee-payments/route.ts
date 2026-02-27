@@ -8,6 +8,7 @@ const CreateSchema = z.object({
   paid_at: z.string().min(1),
   amount_cents: z.number().int().min(1),
   notes: z.string().nullable().optional(),
+  referrer_id: z.string().nullable().optional(),
 });
 
 export async function GET() {
@@ -30,7 +31,9 @@ export async function POST(req: NextRequest) {
       paid_at: new Date(parsed.data.paid_at),
       amount_cents: parsed.data.amount_cents,
       notes: parsed.data.notes ?? null,
+      referrer_id: parsed.data.referrer_id ?? null,
     },
+    include: { referrer: true },
   });
 
   auditLog({
@@ -43,6 +46,7 @@ export async function POST(req: NextRequest) {
       paid_at: fee.paid_at,
       amount_cents: fee.amount_cents,
       notes: fee.notes,
+      referrer_id: fee.referrer_id,
     },
   });
 

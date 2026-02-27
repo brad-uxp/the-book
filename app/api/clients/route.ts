@@ -5,7 +5,7 @@ import { auditLog } from "@/lib/audit";
 
 export async function GET() {
   const clients = await prisma.client.findMany({
-    select: { id: true, name: true, color_hex: true },
+    select: { id: true, name: true, color_hex: true, default_referrer_id: true },
     orderBy: { name: "asc" },
   });
   return NextResponse.json(clients);

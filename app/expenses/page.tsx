@@ -5,7 +5,7 @@ import { ExpenseTable } from "@/components/expenses/expense-table";
 export const dynamic = "force-dynamic";
 
 export default async function ExpensesPage() {
-  const [subPayments, salaryPayments, otherExpenses, feePayments] = await Promise.all([
+  const [subPayments, salaryPayments, otherExpenses, feePayments, referrers] = await Promise.all([
     prisma.subscriptionPayment.findMany({
       where: { deleted_at: null },
       select: {
@@ -47,8 +47,14 @@ export default async function ExpensesPage() {
         paid_at: true,
         amount_cents: true,
         notes: true,
+        referrer_id: true,
+        referrer: { select: { id: true, name: true, color_hex: true } },
       },
       orderBy: { paid_at: "desc" },
+    }),
+    prisma.referrer.findMany({
+      select: { id: true, name: true, color_hex: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -94,6 +100,8 @@ export default async function ExpensesPage() {
       amount_cents: p.amount_cents,
       source_id: p.id,
       notes: p.notes,
+      referrer_id: p.referrer_id,
+      referrer: p.referrer,
     })),
   ].sort(
     (a, b) => new Date(b.paid_at).getTime() - new Date(a.paid_at).getTime()
@@ -109,7 +117,7 @@ export default async function ExpensesPage() {
       </div>
 
       <Suspense>
-        <ExpenseTable items={items} />
+        <ExpenseTable items={items} referrers={referrers} />
       </Suspense>
     </div>
   );

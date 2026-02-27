@@ -35,7 +35,17 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DatePresetFilter, type DatePreset } from "@/components/ui/date-preset-filter";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Plus, Trash2, Pencil, User, Receipt, FileText, ArrowLeftRight } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Plus, Trash2, Pencil, User, Receipt, FileText, ArrowLeftRight, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -57,8 +67,17 @@ interface ExpenseItem {
   role?: string | null;
   // subscription-specific
   icon_url?: string | null;
-  // other-specific
+  // other & fee
   notes?: string | null;
+  // fee-specific
+  referrer_id?: string | null;
+  referrer?: { id: string; name: string; color_hex: string } | null;
+}
+
+interface Referrer {
+  id: string;
+  name: string;
+  color_hex: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -84,9 +103,10 @@ function SubIcon({ name, iconUrl }: { name: string; iconUrl: string | null }) {
 
 interface Props {
   items: ExpenseItem[];
+  referrers: Referrer[];
 }
 
-export function ExpenseTable({ items }: Props) {
+export function ExpenseTable({ items, referrers }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const sourceId = searchParams.get("source");
@@ -112,6 +132,7 @@ export function ExpenseTable({ items }: Props) {
     adjustment: "",
     adjustment_note: "",
     notes: "",
+    referrer_id: "",
   });
 
   // Filters
@@ -155,6 +176,7 @@ export function ExpenseTable({ items }: Props) {
         : "",
       adjustment_note: detail.adjustment_note ?? "",
       notes: detail.notes ?? "",
+      referrer_id: detail.referrer_id ?? "",
     });
     setEditing(true);
     setDeleteConfirm(false);
@@ -210,6 +232,7 @@ export function ExpenseTable({ items }: Props) {
             paid_at: editValues.paid_at,
             amount_cents,
             notes: editValues.notes.trim() || null,
+            referrer_id: editValues.referrer_id || null,
           }),
         });
         if (!res.ok) throw new Error();
@@ -659,6 +682,95 @@ export function ExpenseTable({ items }: Props) {
                   </div>
                 )}
                 {detail.type === "fee" && (
+                  <div>
+                    <dt className="text-muted-foreground">Referrer</dt>
+                    <dd>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className={cn(
+                              "h-7 w-44 justify-between text-xs font-normal",
+                              !detail.referrer && "text-muted-foreground"
+                            )}
+                          >
+                            {detail.referrer ? (
+                              <span className="flex items-center gap-1.5 truncate">
+                                <span
+                                  className="inline-block h-2 w-2 rounded-full shrink-0"
+                                  style={{ backgroundColor: detail.referrer.color_hex }}
+                                />
+                                {detail.referrer.name}
+                              </span>
+                            ) : (
+                              "None"
+                            )}
+                            <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0 w-52" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search referrer..." />
+                            <CommandList>
+                              <CommandEmpty>No referrer found.</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem
+                                  value="__none__"
+                                  onSelect={async () => {
+                                    await fetch(`/api/fee-payments/${detail.id}`, {
+                                      method: "PATCH",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ referrer_id: null }),
+                                    });
+                                    setDetail({ ...detail, referrer_id: null, referrer: null });
+                                    router.refresh();
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      !detail.referrer_id ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  <span className="text-muted-foreground">None</span>
+                                </CommandItem>
+                                {referrers.map((r) => (
+                                  <CommandItem
+                                    key={r.id}
+                                    value={r.name}
+                                    onSelect={async () => {
+                                      await fetch(`/api/fee-payments/${detail.id}`, {
+                                        method: "PATCH",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ referrer_id: r.id }),
+                                      });
+                                      setDetail({ ...detail, referrer_id: r.id, referrer: r });
+                                      router.refresh();
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        r.id === detail.referrer_id ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    <span
+                                      className="mr-2 inline-block h-2.5 w-2.5 rounded-full shrink-0"
+                                      style={{ backgroundColor: r.color_hex }}
+                                    />
+                                    {r.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </dd>
+                  </div>
+                )}
+                {detail.type === "fee" && (
                   <div className="col-span-2">
                     <dt className="text-muted-foreground">Note</dt>
                     <dd className="text-xs text-teal-700 dark:text-teal-400">Pass-through — not subtracted from net income</dd>
@@ -818,6 +930,27 @@ export function ExpenseTable({ items }: Props) {
                       </div>
                     </div>
                     <div className="space-y-1.5">
+                      <Label>Referrer</Label>
+                      <Select
+                        value={editValues.referrer_id || "__none__"}
+                        onValueChange={(v) =>
+                          setEditValues((e) => ({ ...e, referrer_id: v === "__none__" ? "" : v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {referrers.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
                       <Label>Notes</Label>
                       <Input
                         value={editValues.notes}
@@ -941,6 +1074,7 @@ export function ExpenseTable({ items }: Props) {
             <DialogTitle>Add fee</DialogTitle>
           </DialogHeader>
           <FeeExpenseForm
+            referrers={referrers}
             onSuccess={() => {
               setCreateFeeOpen(false);
               router.refresh();

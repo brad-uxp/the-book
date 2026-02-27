@@ -544,6 +544,7 @@ export function IssueDetail({
   // "Create new invoice" flow
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const [createInvoiceLoading, setCreateInvoiceLoading] = useState(false);
+  const [referrers, setReferrers] = useState<Array<{ id: string; name: string; color_hex: string }>>([]);
   const pendingInvoiceCommandRef = useRef<
     ((attrs: { id: string; label: string }) => void) | null
   >(null);
@@ -553,6 +554,7 @@ export function IssueDetail({
       pendingInvoiceCommandRef.current = invoiceSuggestion.command;
       setInvoiceSuggestion(null);
     }
+    fetch("/api/referrers").then((r) => r.json()).then(setReferrers).catch(() => {});
     setCreateInvoiceOpen(true);
   };
 
@@ -968,6 +970,7 @@ export function IssueDetail({
         </DialogHeader>
         <InvoiceForm
           clients={clients}
+          referrers={referrers}
           onSubmit={handleInvoiceCreateSubmit}
           onCancel={() => {
             setCreateInvoiceOpen(false);

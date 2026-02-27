@@ -22,6 +22,7 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   if (sent.has("name")) data.name = parsed.data.name;
   if (sent.has("color_hex")) data.color_hex = parsed.data.color_hex;
+  if (sent.has("default_referrer_id")) data.default_referrer_id = parsed.data.default_referrer_id ?? null;
 
   const before = await prisma.client.findUnique({ where: { id } });
   const client = await prisma.client.update({ where: { id }, data });
@@ -31,8 +32,8 @@ export async function PATCH(
     entity_id: id,
     entity_name: client.name,
     action: "update",
-    before: before ? { name: before.name, color_hex: before.color_hex } : null,
-    after: { name: client.name, color_hex: client.color_hex },
+    before: before ? { name: before.name, color_hex: before.color_hex, default_referrer_id: before.default_referrer_id } : null,
+    after: { name: client.name, color_hex: client.color_hex, default_referrer_id: client.default_referrer_id },
   });
 
   return NextResponse.json(client);

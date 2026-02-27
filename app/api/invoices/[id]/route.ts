@@ -10,7 +10,7 @@ export async function GET(
   const { id } = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { id },
-    include: { client: true },
+    include: { client: true, referrer: true },
   });
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(invoice);
@@ -48,7 +48,7 @@ export async function PATCH(
 
   const before = await prisma.invoice.findUnique({
     where: { id },
-    include: { client: true },
+    include: { client: true, referrer: true },
   });
 
   // Use raw body keys — Zod .default() fills in values even with .partial()
@@ -67,11 +67,12 @@ export async function PATCH(
       : null;
   if (sent.has("notes")) data.notes = parsed.data.notes ?? null;
   if (sent.has("file_url")) data.file_url = parsed.data.file_url ?? null;
+  if (sent.has("referrer_id")) data.referrer_id = parsed.data.referrer_id ?? null;
 
   const invoice = await prisma.invoice.update({
     where: { id },
     data,
-    include: { client: true },
+    include: { client: true, referrer: true },
   });
 
   auditLog({
@@ -82,6 +83,7 @@ export async function PATCH(
     before: before ? {
       invoice_number: before.invoice_number,
       client_id: before.client_id,
+      referrer_id: before.referrer_id,
       amount_cents: before.amount_cents,
       fee_cents: before.fee_cents,
       status: before.status,
@@ -93,6 +95,7 @@ export async function PATCH(
     after: {
       invoice_number: invoice.invoice_number,
       client_id: invoice.client_id,
+      referrer_id: invoice.referrer_id,
       amount_cents: invoice.amount_cents,
       fee_cents: invoice.fee_cents,
       status: invoice.status,
@@ -114,7 +117,7 @@ export async function DELETE(
 
   const before = await prisma.invoice.findUnique({
     where: { id },
-    include: { client: true },
+    include: { client: true, referrer: true },
   });
 
   await prisma.invoice.delete({ where: { id } });

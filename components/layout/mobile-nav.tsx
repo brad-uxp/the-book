@@ -18,6 +18,7 @@ import {
   LogOut,
   ClipboardList,
   CheckSquare,
+  Banknote,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -73,11 +74,21 @@ export function MobileNav() {
             </Link>
           </div>
 
+          {/* Incomes group */}
           <div className="pt-3">
-            <Link href="/invoices" className={linkClass("/invoices")}>
-              <FileText className="h-4 w-4 shrink-0" />
-              Invoices
-            </Link>
+            <div className="rounded-lg bg-muted/40 shadow-[inset_0_1px_3px_rgba(0,0,0,0.04)] px-1 py-1.5 space-y-0.5">
+              <p className="px-2 pt-0.5 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/50">
+                Incomes
+              </p>
+              <Link href="/invoices" className={linkClass("/invoices")}>
+                <FileText className="h-4 w-4 shrink-0" />
+                Invoices
+              </Link>
+              <Link href="/fees" className={linkClass("/fees")}>
+                <Banknote className="h-4 w-4 shrink-0" />
+                Fees
+              </Link>
+            </div>
           </div>
 
           {/* Expenses group */}
