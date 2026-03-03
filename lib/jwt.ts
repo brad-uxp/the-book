@@ -9,13 +9,11 @@ interface TokenPayload {
 export async function signToken(
   email: string
 ): Promise<{ access_token: string; expires_in: number }> {
-  const expires_in = 60 * 60 * 24 * 7; // 7 days
   const access_token = await new SignJWT({ email } satisfies TokenPayload)
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(`${expires_in}s`)
     .setIssuedAt()
     .sign(secret);
-  return { access_token, expires_in };
+  return { access_token, expires_in: 0 };
 }
 
 export async function verifyToken(
