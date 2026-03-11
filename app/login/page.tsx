@@ -16,15 +16,12 @@ export default async function LoginPage({
 
         {/* Brand mark */}
         <div className="flex flex-col items-center gap-4">
-          <div className="flex items-center justify-center rounded-2xl bg-white border shadow-sm p-3.5">
-            <Image src="/logo.svg" alt="TheBook logo" width={44} height={44} className="h-11 w-auto" />
+          <div className="flex items-center justify-center rounded-2xl bg-white border shadow-sm px-5 py-3.5">
+            <Image src="/logo.svg" alt="BOK logo" width={132} height={45} className="h-11 w-auto" />
           </div>
-          <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">TheBook</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Personal accounting &amp; invoice management
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Personal accounting &amp; invoice management
+          </p>
         </div>
 
         {/* Card */}

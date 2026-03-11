@@ -57,9 +57,8 @@ export function MobileNav() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-60 p-0 sm:max-w-60 flex flex-col">
-        <div className="flex h-16 items-center border-b px-6 gap-2.5 shrink-0">
-          <Image src="/logo.svg" alt="TheBook logo" width={24} height={24} className="h-6 w-auto shrink-0" />
-          <span className="text-lg font-semibold tracking-tight">TheBook</span>
+        <div className="flex items-center justify-center border-b py-12 shrink-0">
+          <Image src="/logo.svg" alt="BOK logo" width={106} height={36} className="h-9 w-auto shrink-0" />
         </div>
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
           <Link href="/dashboard" className={linkClass("/dashboard")}>

@@ -17,6 +17,13 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // Static assets in /public — short cache + revalidate so deploys show changes fast
+        source: "/:path*.(svg|png|jpg|jpeg|ico|webp)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=60, stale-while-revalidate=300" },
+        ],
+      },
+      {
         source: "/(.*)",
         headers: [
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
