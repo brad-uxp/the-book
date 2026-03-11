@@ -4,7 +4,11 @@ import { SubscriptionSchema } from "@/lib/validations";
 import { auditLog } from "@/lib/audit";
 import { getTodayInTZ } from "@/lib/dates";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const pageParam = searchParams.get("page");
+  const limitParam = searchParams.get("limit");
+
   const today = getTodayInTZ();
   const y = today.getUTCFullYear();
   const m = today.getUTCMonth() + 1;
@@ -14,36 +18,63 @@ export async function GET() {
   const startOfMonth = new Date(Date.UTC(y, m - 1, 1));
   const endOfMonth   = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
 
-  const [subscriptions, yearPayments] = await Promise.all([
-    prisma.subscription.findMany({
-      orderBy: { created_at: "desc" },
-      include: {
-        payments: {
-          where: { deleted_at: null },
-          orderBy: { created_at: "desc" },
-          take: 1,
-        },
-      },
-    }),
-    prisma.subscriptionPayment.findMany({
-      where: {
-        deleted_at: null,
-        due_date: { gte: startOfYear, lte: endOfYear },
-      },
-      select: { subscription_id: true, due_date: true },
-    }),
-  ]);
+  const includePayments = {
+    payments: {
+      where: { deleted_at: null } as const,
+      orderBy: { created_at: "desc" } as const,
+      take: 1,
+    },
+  };
 
-  return NextResponse.json(
+  const enrichWithPaidStatus = (
+    subscriptions: Awaited<ReturnType<typeof prisma.subscription.findMany>>,
+    yearPayments: { subscription_id: string; due_date: Date }[]
+  ) =>
     subscriptions.map((s) => {
       const paid = yearPayments.some((p) => {
         if (p.subscription_id !== s.id) return false;
-        if (s.frequency === "annual") return true;
+        if ((s as any).frequency === "annual") return true;
         return p.due_date >= startOfMonth && p.due_date <= endOfMonth;
       });
       return { ...s, paid_current_period: paid };
-    })
-  );
+    });
+
+  const yearPayments = await prisma.subscriptionPayment.findMany({
+    where: {
+      deleted_at: null,
+      due_date: { gte: startOfYear, lte: endOfYear },
+    },
+    select: { subscription_id: true, due_date: true },
+  });
+
+  // Backward-compatible: no params = return all
+  if (!pageParam && !limitParam) {
+    const subscriptions = await prisma.subscription.findMany({
+      orderBy: { created_at: "desc" },
+      include: includePayments,
+    });
+    return NextResponse.json(enrichWithPaidStatus(subscriptions, yearPayments));
+  }
+
+  const page = Math.max(1, parseInt(pageParam ?? "1") || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitParam ?? "50") || 50));
+
+  const [subscriptions, total] = await Promise.all([
+    prisma.subscription.findMany({
+      orderBy: { created_at: "desc" },
+      include: includePayments,
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.subscription.count(),
+  ]);
+
+  return NextResponse.json({
+    data: enrichWithPaidStatus(subscriptions, yearPayments),
+    total,
+    page,
+    limit,
+  });
 }
 
 export async function POST(req: NextRequest) {

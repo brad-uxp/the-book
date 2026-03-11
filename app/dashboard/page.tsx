@@ -13,10 +13,14 @@ function toPeriodKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function getLast36Months(): string[] {
+/**
+ * Returns last 13 months (covers "This year" and "Last 12 months" presets).
+ * Previously fetched 36 months — reduced to minimize DB load and payload size.
+ */
+function getRecentMonths(): string[] {
   const now = new Date();
-  return Array.from({ length: 36 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (35 - i), 1);
+  return Array.from({ length: 13 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (12 - i), 1);
     return toPeriodKey(d);
   });
 }
@@ -36,8 +40,8 @@ export default async function DashboardPage() {
   const startOfNextMonth    = new Date(Date.UTC(nextYear, nextMonth - 1, 1));
   const endOfNextMonth      = new Date(Date.UTC(nextYear, nextMonth, 0, 23, 59, 59, 999));
 
-  // ── Chart / metrics data (36 months) ────────────────────────────────────────
-  const months = getLast36Months();
+  // ── Chart / metrics data (13 months) ────────────────────────────────────────
+  const months = getRecentMonths();
   const from = months[0];
   const to   = months[months.length - 1];
 
@@ -75,29 +79,38 @@ export default async function DashboardPage() {
     }),
   ]);
 
-  // Per-type monthly buckets (client component filters by preset)
-  const monthlyData = months.map((month) => {
-    const salary = salaryPayments
-      .filter((p) => toPeriodKey(p.paid_at) === month)
-      .reduce((s, p) => s + p.total_cents, 0);
+  // Per-type monthly buckets — pre-index by month key for O(n) instead of O(months*payments)
+  type Bucket = { income: number; salary: number; subscriptions: number; subsPersonal: number; subsWork: number; subsEssential: number; other: number; otherWork: number; otherPersonal: number };
+  const emptyBucket = (): Bucket => ({ income: 0, salary: 0, subscriptions: 0, subsPersonal: 0, subsWork: 0, subsEssential: 0, other: 0, otherWork: 0, otherPersonal: 0 });
+  const buckets = new Map<string, Bucket>(months.map((m) => [m, emptyBucket()]));
 
-    const monthSubs = subPayments.filter((p) => toPeriodKey(p.paid_at) === month);
-    const subscriptions = monthSubs.reduce((s, p) => s + p.amount_cents_snapshot, 0);
-    const subsPersonal  = monthSubs.filter((p) => p.subscription.category === "personal").reduce((s, p) => s + p.amount_cents_snapshot, 0);
-    const subsWork      = monthSubs.filter((p) => p.subscription.category === "work").reduce((s, p) => s + p.amount_cents_snapshot, 0);
-    const subsEssential = monthSubs.filter((p) => p.subscription.category === "essential_service").reduce((s, p) => s + p.amount_cents_snapshot, 0);
+  for (const p of salaryPayments) {
+    const b = buckets.get(toPeriodKey(p.paid_at));
+    if (b) b.salary += p.total_cents;
+  }
+  for (const p of subPayments) {
+    const b = buckets.get(toPeriodKey(p.paid_at));
+    if (b) {
+      b.subscriptions += p.amount_cents_snapshot;
+      if (p.subscription.category === "personal") b.subsPersonal += p.amount_cents_snapshot;
+      else if (p.subscription.category === "work") b.subsWork += p.amount_cents_snapshot;
+      else if (p.subscription.category === "essential_service") b.subsEssential += p.amount_cents_snapshot;
+    }
+  }
+  for (const p of otherExpenses) {
+    const b = buckets.get(toPeriodKey(p.paid_at));
+    if (b) {
+      b.other += p.amount_cents;
+      if (p.category === "work") b.otherWork += p.amount_cents;
+      else if (p.category === "personal") b.otherPersonal += p.amount_cents;
+    }
+  }
+  for (const inv of invoices) {
+    const b = buckets.get(toPeriodKey(inv.due_date));
+    if (b) b.income += inv.amount_cents + inv.fee_cents;
+  }
 
-    const monthOther    = otherExpenses.filter((p) => toPeriodKey(p.paid_at) === month);
-    const other         = monthOther.reduce((s, p) => s + p.amount_cents, 0);
-    const otherWork     = monthOther.filter((p) => p.category === "work").reduce((s, p) => s + p.amount_cents, 0);
-    const otherPersonal = monthOther.filter((p) => p.category === "personal").reduce((s, p) => s + p.amount_cents, 0);
-
-    const income = invoices
-      .filter((inv) => toPeriodKey(inv.due_date) === month)
-      .reduce((s, inv) => s + inv.amount_cents + inv.fee_cents, 0);
-
-    return { month, income, salary, subscriptions, subsPersonal, subsWork, subsEssential, other, otherWork, otherPersonal };
-  });
+  const monthlyData = months.map((month) => ({ month, ...buckets.get(month)! }));
 
   // ── Upcoming data ───────────────────────────────────────────────────────────
   const [activeSubscriptions, activePeople, upcomingInvoices] = await Promise.all([

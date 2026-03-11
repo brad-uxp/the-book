@@ -1,4 +1,5 @@
 import { signIn } from "@/auth";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
 export default async function LoginPage({
@@ -16,7 +17,7 @@ export default async function LoginPage({
         {/* Brand mark */}
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center justify-center rounded-2xl bg-white border shadow-sm p-3.5">
-            <img src="/logo.svg" alt="TheBook logo" className="h-11 w-auto" />
+            <Image src="/logo.svg" alt="TheBook logo" width={44} height={44} className="h-11 w-auto" />
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-bold tracking-tight">TheBook</h1>

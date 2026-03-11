@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { FeesClient } from "@/components/fees/fees-client";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export default async function FeesPage() {
   const referrers = await prisma.referrer.findMany({

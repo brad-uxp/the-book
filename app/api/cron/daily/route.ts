@@ -339,12 +339,41 @@ async function sendPendingEmails(
     }
   }
 
+  // Batch-fetch all entities needed for email building (avoids N+1 queries)
+  const subNotifs = otherNotifs.filter((n) =>
+    n.type === "subscription_auto_upcoming" || n.type === "subscription_manual_due"
+  );
+  const invoiceNotifs = otherNotifs.filter((n) =>
+    n.type === "invoice_due" || n.type === "invoice_reminder_due"
+  );
+  const increaseNotifs = otherNotifs.filter((n) => n.type === "salary_increase_due");
+
+  const [subsMap, invoicesMap, remindersMap] = await Promise.all([
+    subNotifs.length > 0
+      ? prisma.subscription.findMany({
+          where: { id: { in: subNotifs.map((n) => n.entity_id) } },
+        }).then((subs) => new Map(subs.map((s) => [s.id, s])))
+      : Promise.resolve(new Map()),
+    invoiceNotifs.length > 0
+      ? prisma.invoice.findMany({
+          where: { id: { in: invoiceNotifs.map((n) => n.entity_id) } },
+          include: { client: true },
+        }).then((invs) => new Map(invs.map((i) => [i.id, i])))
+      : Promise.resolve(new Map()),
+    increaseNotifs.length > 0
+      ? prisma.salaryIncreaseReminder.findMany({
+          where: { id: { in: increaseNotifs.map((n) => n.entity_id) } },
+          include: { person: true },
+        }).then((rems) => new Map(rems.map((r) => [r.id, r])))
+      : Promise.resolve(new Map()),
+  ]);
+
   // Send individual emails for the rest
   for (const notif of otherNotifs) {
     try {
-      const { subject, html } = await buildEmailForNotification(notif, daysSub, daysSalary);
-      if (!subject) continue; // auto_paid notifications don't get an email
-      await sendEmail(recipient, subject, html);
+      const result = buildEmailForNotification(notif, daysSub, subsMap, invoicesMap, remindersMap);
+      if (!result.subject) continue; // auto_paid notifications don't get an email
+      await sendEmail(recipient, result.subject, result.html);
       sentIds.push(notif.id);
       log.push(`  [email sent] ${notif.type}: ${notif.title}`);
     } catch (err) {
@@ -361,26 +390,18 @@ async function sendPendingEmails(
   }
 }
 
-async function buildEmailForNotification(
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function buildEmailForNotification(
   notif: { type: string; entity_id: string; entity_type: string },
   daysSub: number,
-  _daysSalary: number
-): Promise<{ subject: string; html: string } | { subject: null; html: null }> {
+  subsMap: Map<string, any>,
+  invoicesMap: Map<string, any>,
+  remindersMap: Map<string, any>,
+): { subject: string; html: string } | { subject: null; html: null } {
   const skip = { subject: null as null, html: null as null };
 
-  if (notif.type === "subscription_auto_upcoming") {
-    const sub = await prisma.subscription.findUnique({ where: { id: notif.entity_id } });
-    if (!sub) return skip;
-    return buildSubscriptionUpcomingEmail({
-      name: sub.name,
-      amountCents: sub.amount_cents,
-      dueDate: formatDate(addDaysUTC(new Date(), daysSub)),
-      daysBefore: daysSub,
-    });
-  }
-
-  if (notif.type === "subscription_manual_due") {
-    const sub = await prisma.subscription.findUnique({ where: { id: notif.entity_id } });
+  if (notif.type === "subscription_auto_upcoming" || notif.type === "subscription_manual_due") {
+    const sub = subsMap.get(notif.entity_id);
     if (!sub) return skip;
     return buildSubscriptionUpcomingEmail({
       name: sub.name,
@@ -391,15 +412,11 @@ async function buildEmailForNotification(
   }
 
   if (notif.type === "subscription_auto_paid") {
-    // No email for auto-paid confirmations
     return skip;
   }
 
   if (notif.type === "invoice_due") {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: notif.entity_id },
-      include: { client: true },
-    });
+    const invoice = invoicesMap.get(notif.entity_id);
     if (!invoice) return skip;
     return buildInvoiceDueEmail({
       clientName: invoice.client.name,
@@ -411,10 +428,7 @@ async function buildEmailForNotification(
   }
 
   if (notif.type === "invoice_reminder_due") {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: notif.entity_id },
-      include: { client: true },
-    });
+    const invoice = invoicesMap.get(notif.entity_id);
     if (!invoice) return skip;
     return buildInvoiceReminderEmail({
       clientName: invoice.client.name,
@@ -426,10 +440,7 @@ async function buildEmailForNotification(
   }
 
   if (notif.type === "salary_increase_due") {
-    const reminder = await prisma.salaryIncreaseReminder.findUnique({
-      where: { id: notif.entity_id },
-      include: { person: true },
-    });
+    const reminder = remindersMap.get(notif.entity_id);
     if (!reminder) return skip;
     return buildSalaryIncreaseEmail({
       personName: reminder.person.name,
@@ -440,3 +451,4 @@ async function buildEmailForNotification(
 
   return skip;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */

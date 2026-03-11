@@ -17,7 +17,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const fetchCount = useCallback(async () => {
     try {
-      const res = await fetch("/api/notifications?filter=unread&limit=1");
+      const res = await fetch("/api/notifications/count");
       if (res.ok) {
         const data = await res.json();
         setUnreadCount(data.unreadCount);

@@ -11,7 +11,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { IssueDetail } from "./issue-detail";
+import dynamic from "next/dynamic";
+
+const IssueDetail = dynamic(() => import("./issue-detail").then((m) => m.IssueDetail), { ssr: false });
 import { IssuesBoard } from "./issues-board";
 import { IssuesList } from "./issues-list";
 import {

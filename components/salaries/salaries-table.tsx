@@ -49,9 +49,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
 import { formatDate } from "@/lib/dates";
+import dynamic from "next/dynamic";
 import { PersonForm } from "./person-form";
 import { RoleManager } from "./role-manager";
-import { SalaryChart } from "./salary-chart";
+
+const SalaryChart = dynamic(() => import("./salary-chart").then((m) => m.SalaryChart), { ssr: false });
 import type { PersonInput } from "@/lib/validations";
 import { LinkedIssues } from "@/components/issues/linked-issues";
 

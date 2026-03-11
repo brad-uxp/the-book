@@ -3,12 +3,34 @@ import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
 import { auditLog } from "@/lib/audit";
 
-export async function GET() {
-  const invoices = await prisma.invoice.findMany({
-    orderBy: { created_at: "desc" },
-    include: { client: true, referrer: true },
-  });
-  return NextResponse.json(invoices);
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const pageParam = searchParams.get("page");
+  const limitParam = searchParams.get("limit");
+
+  const include = { client: true, referrer: true } as const;
+  const orderBy = { created_at: "desc" } as const;
+
+  // Backward-compatible: no params = return all (existing client components expect an array)
+  if (!pageParam && !limitParam) {
+    const invoices = await prisma.invoice.findMany({ orderBy, include });
+    return NextResponse.json(invoices);
+  }
+
+  const page = Math.max(1, parseInt(pageParam ?? "1") || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitParam ?? "50") || 50));
+
+  const [data, total] = await Promise.all([
+    prisma.invoice.findMany({
+      orderBy,
+      include,
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.invoice.count(),
+  ]);
+
+  return NextResponse.json({ data, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {

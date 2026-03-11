@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Image from "next/image";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
@@ -37,7 +38,7 @@ export default async function RootLayout({
               {/* Mobile-only top bar */}
               <header className="lg:hidden sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b bg-card px-4">
                 <div className="flex items-center gap-2">
-                  <img src="/logo.svg" alt="TheBook logo" className="h-5 w-auto shrink-0" />
+                  <Image src="/logo.svg" alt="TheBook logo" width={20} height={20} className="h-5 w-auto shrink-0" />
                   <span className="text-base font-semibold tracking-tight">TheBook</span>
                   <UnreadDot />
                 </div>

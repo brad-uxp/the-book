@@ -3,21 +3,43 @@ import { prisma } from "@/lib/db";
 import { PersonSchema } from "@/lib/validations";
 import { auditLog } from "@/lib/audit";
 
-export async function GET() {
-  const people = await prisma.person.findMany({
-    orderBy: { created_at: "desc" },
-    include: {
-      role: true,
-      salary_base: true,
-      salary_payments: { orderBy: { due_date: "desc" }, take: 12 },
-      increase_reminders: {
-        where: { status: "scheduled" },
-        orderBy: { effective_date: "asc" },
-        take: 1,
-      },
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const pageParam = searchParams.get("page");
+  const limitParam = searchParams.get("limit");
+
+  const include = {
+    role: true,
+    salary_base: true,
+    salary_payments: { orderBy: { due_date: "desc" } as const, take: 12 },
+    increase_reminders: {
+      where: { status: "scheduled" as const },
+      orderBy: { effective_date: "asc" } as const,
+      take: 1,
     },
-  });
-  return NextResponse.json(people);
+  };
+  const orderBy = { created_at: "desc" } as const;
+
+  // Backward-compatible: no params = return all
+  if (!pageParam && !limitParam) {
+    const people = await prisma.person.findMany({ orderBy, include });
+    return NextResponse.json(people);
+  }
+
+  const page = Math.max(1, parseInt(pageParam ?? "1") || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitParam ?? "50") || 50));
+
+  const [data, total] = await Promise.all([
+    prisma.person.findMany({
+      orderBy,
+      include,
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.person.count(),
+  ]);
+
+  return NextResponse.json({ data, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {

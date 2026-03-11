@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { formatCents } from "@/lib/currency";
 import { cn } from "@/lib/utils";
-import { DashboardChart } from "./dashboard-chart";
-import { CorporateChart } from "./corporate-chart";
+
+const DashboardChart = dynamic(() => import("./dashboard-chart").then((m) => m.DashboardChart), { ssr: false });
+const CorporateChart = dynamic(() => import("./corporate-chart").then((m) => m.CorporateChart), { ssr: false });
 
 type Preset = "ytd" | "last12" | "all";
 
