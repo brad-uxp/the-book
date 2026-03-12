@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { verifyToken } from "@/lib/jwt";
 
-export default auth(async (req) => {
+export const proxy = auth(async (req) => {
   const { pathname } = req.nextUrl;
 
   // Always allow: login page, auth endpoints, cron
