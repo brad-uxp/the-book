@@ -13,7 +13,7 @@ import { NotificationProvider, UnreadDot } from "@/components/layout/notificatio
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "TheBook",
+  title: "book",
   description: "Personal accounting & invoice management",
   robots: { index: false, follow: false },
 };
@@ -38,7 +38,7 @@ export default async function RootLayout({
               {/* Mobile-only top bar */}
               <header className="lg:hidden sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b bg-card px-4">
                 <div className="flex items-center gap-2">
-                  <Image src="/logo.svg" alt="BOK logo" width={88} height={30} className="h-7 w-auto shrink-0" />
+                  <Image src="/logo.svg" alt="book logo" width={96} height={28} className="h-7 w-auto shrink-0" />
                   <UnreadDot />
                 </div>
                 <MobileNav />

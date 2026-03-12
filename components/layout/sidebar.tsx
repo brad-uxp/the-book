@@ -50,7 +50,7 @@ export function Sidebar({ user }: Props) {
     <aside className="hidden lg:flex fixed inset-y-0 left-0 z-50 w-60 flex-col border-r bg-card">
       {/* Brand */}
       <div className="flex items-center justify-center border-b py-12">
-        <Image src="/logo.svg" alt="BOK logo" width={106} height={36} className="h-9 w-auto shrink-0" />
+        <Image src="/logo.svg" alt="book logo" width={123} height={36} className="h-9 w-auto shrink-0" />
       </div>
 
       {/* Navigation */}
