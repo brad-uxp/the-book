@@ -9,6 +9,7 @@ import { auth } from "@/auth";
 import { SessionProvider } from "next-auth/react";
 import NextTopLoader from "nextjs-toploader";
 import { NotificationProvider, UnreadDot } from "@/components/layout/notification-context";
+import { InstallBanner } from "@/components/layout/install-banner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -16,6 +17,16 @@ export const metadata: Metadata = {
   title: "book",
   description: "Personal accounting & invoice management",
   robots: { index: false, follow: false },
+  manifest: "/manifest.json",
+  themeColor: "#18181b",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "TheBook",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default async function RootLayout({
@@ -47,6 +58,7 @@ export default async function RootLayout({
               <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
             </div>
           </div>
+          <InstallBanner />
           </NotificationProvider>
         ) : (
           children
