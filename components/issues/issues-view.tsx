@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LayoutGrid, LayoutList, Plus, Search, X } from "lucide-react";
+import { Filter, LayoutGrid, LayoutList, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +19,11 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import dynamic from "next/dynamic";
 
 const IssueDetail = dynamic(() => import("./issue-detail").then((m) => m.IssueDetail), { ssr: false });
@@ -59,6 +64,17 @@ export function IssuesView({ clients, initialIssues }: Props) {
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // On mobile (<sm), always show list view
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 639px)");
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+  const effectiveView = isMobile ? "list" : view;
 
   const filteredIssues = useMemo(() => {
     let result = issues;
@@ -147,103 +163,163 @@ export function IssuesView({ clients, initialIssues }: Props) {
   return (
     <>
       {/* Header bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex overflow-hidden rounded-md border">
-            <Button
-              variant={view === "board" ? "secondary" : "ghost"}
-              size="icon"
-              className="h-8 w-8 rounded-none"
-              onClick={() => setView("board")}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === "list" ? "secondary" : "ghost"}
-              size="icon"
-              className="h-8 w-8 rounded-none"
-              onClick={() => setView("list")}
-            >
-              <LayoutList className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Search */}
-          <div className="relative flex-1 sm:flex-initial">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-full sm:w-48 pl-8 pr-7 text-sm"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Client filter */}
-          <Select value={filterClient} onValueChange={setFilterClient}>
-            <SelectTrigger className="h-8 w-auto min-w-28 text-sm">
-              <SelectValue placeholder="Client" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All clients</SelectItem>
-              <SelectItem value="none">No client</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="h-2 w-2 rounded-full shrink-0"
-                      style={{ backgroundColor: c.color_hex }}
-                    />
-                    {c.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Status filter */}
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="h-8 w-auto min-w-28 text-sm">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All status</SelectItem>
-              {COLUMNS.map((col) => (
-                <SelectItem key={col.id} value={col.id}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="h-2 w-2 rounded-full shrink-0"
-                      style={{ backgroundColor: col.color }}
-                    />
-                    {col.label}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div className="flex items-center gap-2">
+        {/* View switch — hidden on mobile (always list) */}
+        <div className="hidden sm:flex overflow-hidden rounded-md border">
+          <Button
+            variant={view === "board" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8 rounded-none"
+            onClick={() => setView("board")}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={view === "list" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8 rounded-none"
+            onClick={() => setView("list")}
+          >
+            <LayoutList className="h-4 w-4" />
+          </Button>
         </div>
 
-        {view === "list" ? (
-          <Button onClick={() => createIssue("pending", "note")}>
-            <Plus className="mr-2 h-4 w-4" /> New Issue
-          </Button>
-        ) : (
-          <Button onClick={() => createIssue("pending", "task")}>
-            <Plus className="mr-2 h-4 w-4" /> New Issue
-          </Button>
-        )}
+        {/* Search */}
+        <div className="relative flex-1 sm:flex-initial">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 w-full sm:w-48 pl-8 pr-7 text-sm"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Filters — popover on mobile, inline on desktop */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              className="sm:hidden h-8 w-8 shrink-0 relative"
+            >
+              <Filter className="h-4 w-4" />
+              {(filterClient !== "all" || filterStatus !== "all") && (
+                <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary" />
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-56 space-y-3 sm:hidden">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Client</label>
+              <Select value={filterClient} onValueChange={setFilterClient}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Client" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All clients</SelectItem>
+                  <SelectItem value="none">No client</SelectItem>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: c.color_hex }}
+                        />
+                        {c.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Status</label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  {COLUMNS.map((col) => (
+                    <SelectItem key={col.id} value={col.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: col.color }}
+                        />
+                        {col.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* Desktop inline filters */}
+        <Select value={filterClient} onValueChange={setFilterClient}>
+          <SelectTrigger className="hidden sm:flex h-8 w-auto min-w-28 text-sm">
+            <SelectValue placeholder="Client" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All clients</SelectItem>
+            <SelectItem value="none">No client</SelectItem>
+            {clients.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                <span className="flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: c.color_hex }}
+                  />
+                  {c.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="hidden sm:flex h-8 w-auto min-w-28 text-sm">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All status</SelectItem>
+            {COLUMNS.map((col) => (
+              <SelectItem key={col.id} value={col.id}>
+                <span className="flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: col.color }}
+                  />
+                  {col.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Button
+          className="shrink-0 sm:px-4"
+          size="icon"
+          onClick={() => createIssue("pending", effectiveView === "list" ? "note" : "task")}
+        >
+          <Plus className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">New Issue</span>
+        </Button>
       </div>
 
       {/* Views */}
-      {view === "board" && (
+      {effectiveView === "board" && (
         <IssuesBoard
           issues={filteredIssues}
           clients={clients}
@@ -256,7 +332,7 @@ export function IssuesView({ clients, initialIssues }: Props) {
         />
       )}
 
-      {view === "list" && (
+      {effectiveView === "list" && (
         <IssuesList
           issues={filteredIssues}
           clients={clients}
