@@ -163,7 +163,8 @@ export function IssuesView({ clients, initialIssues }: Props) {
   return (
     <>
       {/* Header bar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 justify-between">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
         {/* View switch — hidden on mobile (always list) */}
         <div className="hidden sm:flex overflow-hidden rounded-md border">
           <Button
@@ -308,9 +309,10 @@ export function IssuesView({ clients, initialIssues }: Props) {
           </SelectContent>
         </Select>
 
+        </div>
+
         <Button
-          className="shrink-0 sm:px-4"
-          size="icon"
+          className="h-8 w-8 shrink-0 sm:w-auto sm:px-3"
           onClick={() => createIssue("pending", effectiveView === "list" ? "note" : "task")}
         >
           <Plus className="h-4 w-4 sm:mr-2" />
