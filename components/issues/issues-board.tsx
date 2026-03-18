@@ -174,7 +174,7 @@ export function IssuesBoard({
                             {...prov.draggableProps}
                             {...prov.dragHandleProps}
                             style={{ ...prov.draggableProps.style, cursor: "pointer" }}
-                            className={`rounded-lg border bg-card p-3 space-y-2 transition-shadow group/card relative ${
+                            className={`rounded-lg border bg-card px-3 py-2 space-y-1 overflow-hidden transition-shadow group/card relative ${
                               snap.isDragging ? "shadow-lg ring-1 ring-primary/20" : "shadow-sm hover:shadow-md hover:border-primary/20"
                             }`}
                             onClick={() => {
@@ -207,41 +207,43 @@ export function IssuesBoard({
                               {issue.title}
                             </p>
 
-                            {/* Client — inline searchable select */}
-                            <InlineClient
-                              issue={issue}
-                              clients={clients}
-                              onCommit={(clientId) => {
-                                const c = clientId
-                                  ? clients.find((cl) => cl.id === clientId) ?? null
-                                  : null;
-                                onUpdateIssue(issue.id, {
-                                  client_id: clientId,
-                                  client: c
-                                    ? { id: c.id, name: c.name, color_hex: c.color_hex }
-                                    : null,
-                                });
-                              }}
-                              onClose={markPopoverClose}
-                            />
-
-                            {/* Due date — inline edit */}
-                            <InlineDate
-                              value={issue.due_date}
-                              status={issue.status}
-                              isDueSoon={isDueSoon(issue.due_date)}
-                              isOverdue={isOverdue(issue.due_date)}
-                              onCommit={(iso) => onUpdateIssue(issue.id, { due_date: iso })}
-                              onClose={markPopoverClose}
-                            />
-
-                            {/* Progress — inline edit */}
-                            <InlineProgress
-                              value={issue.progress}
-                              color={col.color}
-                              onCommit={(v) => onUpdateIssue(issue.id, { progress: v })}
-                              onClose={markPopoverClose}
-                            />
+                            {/* Client + Due date + Progress — compact row */}
+                            <div className="grid items-center gap-1.5 overflow-hidden" style={{ gridTemplateColumns: '1fr .75fr auto' }}>
+                              <div className="min-w-0 overflow-hidden">
+                                <InlineClient
+                                  issue={issue}
+                                  clients={clients}
+                                  onCommit={(clientId) => {
+                                    const c = clientId
+                                      ? clients.find((cl) => cl.id === clientId) ?? null
+                                      : null;
+                                    onUpdateIssue(issue.id, {
+                                      client_id: clientId,
+                                      client: c
+                                        ? { id: c.id, name: c.name, color_hex: c.color_hex }
+                                        : null,
+                                    });
+                                  }}
+                                  onClose={markPopoverClose}
+                                />
+                              </div>
+                              <div className="min-w-0 overflow-hidden">
+                                <InlineDate
+                                  value={issue.due_date}
+                                  status={issue.status}
+                                  isDueSoon={isDueSoon(issue.due_date)}
+                                  isOverdue={isOverdue(issue.due_date)}
+                                  onCommit={(iso) => onUpdateIssue(issue.id, { due_date: iso })}
+                                  onClose={markPopoverClose}
+                                />
+                              </div>
+                              <InlineProgress
+                                value={issue.progress}
+                                color={col.color}
+                                onCommit={(v) => onUpdateIssue(issue.id, { progress: v })}
+                                onClose={markPopoverClose}
+                              />
+                            </div>
                           </div>
                         )}
                       </Draggable>

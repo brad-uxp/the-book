@@ -77,6 +77,12 @@ export function annualPeriodKey(year: number): string {
  * Dates are stored as UTC midnight "date-only" values, so we read the UTC
  * components directly to avoid the Montevideo (UTC-3) offset shifting the day.
  */
+export function formatDateShort(date: Date | string): string {
+  const str = typeof date === "string" ? date : date.toISOString();
+  const [year, month, day] = str.slice(0, 10).split("-").map(Number);
+  return format(new Date(year, month - 1, day), "MMM dd");
+}
+
 export function formatDate(date: Date | string): string {
   const str = typeof date === "string" ? date : date.toISOString();
   const [year, month, day] = str.slice(0, 10).split("-").map(Number);

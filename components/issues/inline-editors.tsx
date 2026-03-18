@@ -14,7 +14,7 @@ import {
   CommandInput,
   CommandItem,
 } from "@/components/ui/command";
-import { formatDate } from "@/lib/dates";
+import { formatDateShort } from "@/lib/dates";
 import { MiniCalendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 
@@ -83,16 +83,22 @@ export function InlineProgress({
       }}
     >
       <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <button className="flex items-center gap-2 w-full group/progress cursor-pointer">
-          <span className="text-xs font-medium tabular-nums shrink-0 group-hover/progress:text-primary transition-colors">
+        <button className="inline-flex items-center gap-1 min-w-0 group/progress cursor-pointer">
+          <svg className="shrink-0" width="14" height="14" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted" />
+            <circle
+              cx="10" cy="10" r="8" fill="none"
+              stroke={color}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={`${(value / 100) * 2 * Math.PI * 8} ${2 * Math.PI * 8}`}
+              transform="rotate(-90 10 10)"
+              className="transition-all"
+            />
+          </svg>
+          <span className="text-[10px] leading-none font-medium tabular-nums shrink-0 text-muted-foreground group-hover/progress:text-primary transition-colors">
             {value}%
           </span>
-          <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${value}%`, backgroundColor: color }}
-            />
-          </div>
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-2" align="start" onClick={(e) => e.stopPropagation()}>
@@ -139,12 +145,12 @@ export function InlineDate({
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) onClose?.(); }}>
       <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <button className="flex items-center gap-1 group/date cursor-pointer">
+        <button className="flex items-center gap-1 min-w-0 group/date cursor-pointer">
           <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />
           {value ? (
             <span
               className={cn(
-                "text-xs group-hover/date:text-primary transition-colors",
+                "text-xs truncate group-hover/date:text-primary transition-colors",
                 status !== "done" && isOverdue
                   ? "text-red-600 font-medium"
                   : status !== "done" && isDueSoon
@@ -152,11 +158,11 @@ export function InlineDate({
                   : "text-muted-foreground"
               )}
             >
-              {formatDate(value)}
+              {formatDateShort(value)}
             </span>
           ) : (
-            <span className="text-xs text-muted-foreground/50 group-hover/date:text-primary transition-colors">
-              No due date
+            <span className="text-xs truncate text-muted-foreground/50 group-hover/date:text-primary transition-colors">
+              No date
             </span>
           )}
         </button>
@@ -202,7 +208,7 @@ export function InlineClient({
       <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
         {issue.client ? (
           <button
-            className="inline-flex items-center self-start rounded px-1.5 py-0.5 text-xs font-medium truncate hover:opacity-80 transition-opacity"
+            className="inline-flex items-center min-w-0 max-w-full rounded px-1.5 py-0.5 text-xs font-medium truncate hover:opacity-80 transition-opacity"
             style={{
               backgroundColor: issue.client.color_hex + "18",
               color: issue.client.color_hex,
