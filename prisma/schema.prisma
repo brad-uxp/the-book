@@ -177,6 +177,22 @@ model Notification {
 }
 
 // ============================================================
+// Push Subscriptions (Web Push)
+// ============================================================
+
+model PushSubscription {
+  id         String   @id @default(uuid())
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  user_email String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([user_email])
+}
+
+// ============================================================
 // Settings
 // ============================================================
 

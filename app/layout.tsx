@@ -10,6 +10,7 @@ import { SessionProvider } from "next-auth/react";
 import NextTopLoader from "nextjs-toploader";
 import { NotificationProvider, UnreadDot } from "@/components/layout/notification-context";
 import { InstallBanner } from "@/components/layout/install-banner";
+import { WebPushRegister } from "@/components/web-push-register";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -59,6 +60,7 @@ export default async function RootLayout({
             </div>
           </div>
           <InstallBanner />
+          <WebPushRegister />
           </NotificationProvider>
         ) : (
           children

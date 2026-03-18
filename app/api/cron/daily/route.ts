@@ -13,6 +13,7 @@ import {
   buildInvoiceReminderEmail,
   buildSalaryIncreaseEmail,
 } from "@/lib/email";
+import { sendWebPushToAll } from "@/lib/web-push";
 import type { NotificationType } from "@/app/generated/prisma/client";
 
 export const runtime = "nodejs";
@@ -69,6 +70,9 @@ export async function GET(req: NextRequest) {
     } else {
       log.push("  [email] Skipped — no recipient configured in Settings.");
     }
+
+    // Send web push for notifications created today
+    await sendPendingPush(today, log);
 
     log.push("[cron/daily] Done.");
     console.log(log.join("\n"));
@@ -452,3 +456,43 @@ function buildEmailForNotification(
   return skip;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+// ─── Web Push ────────────────────────────────────────────────────────────────
+
+async function sendPendingPush(today: Date, log: string[]) {
+  const unsent = await prisma.notification.findMany({
+    where: {
+      created_at: { gte: today },
+    },
+  });
+
+  if (unsent.length === 0) {
+    log.push("  [push] No new notifications to push.");
+    return;
+  }
+
+  // Send a single aggregated push if multiple, or individual if just one
+  try {
+    if (unsent.length === 1) {
+      await sendWebPushToAll({
+        title: unsent[0].title,
+        body: unsent[0].body,
+        data: {
+          entity_type: unsent[0].entity_type,
+          entity_id: unsent[0].entity_id,
+          url: `/${unsent[0].entity_type}s`,
+        },
+      });
+    } else {
+      await sendWebPushToAll({
+        title: `${unsent.length} nuevas notificaciones`,
+        body: unsent.map((n) => n.title).slice(0, 3).join(", ") +
+          (unsent.length > 3 ? "…" : ""),
+        data: { url: "/notifications" },
+      });
+    }
+    log.push(`  [push] Sent web push for ${unsent.length} notification(s).`);
+  } catch (err) {
+    log.push(`  [push error] ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
