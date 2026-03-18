@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LayoutGrid, LayoutList, Plus } from "lucide-react";
+import { LayoutGrid, LayoutList, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +29,7 @@ import {
   type Client,
   type IssueStatus,
   type IssueCategory,
+  COLUMNS,
 } from "./inline-editors";
 
 interface Props {
@@ -44,9 +53,29 @@ export function IssuesView({ clients, initialIssues }: Props) {
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
+  const [search, setSearch] = useState("");
+  const [filterClient, setFilterClient] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const filteredIssues = useMemo(() => {
+    let result = issues;
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((i) => i.title.toLowerCase().includes(q));
+    }
+    if (filterClient !== "all") {
+      result = result.filter((i) =>
+        filterClient === "none" ? !i.client_id : i.client_id === filterClient
+      );
+    }
+    if (filterStatus !== "all") {
+      result = result.filter((i) => i.status === filterStatus);
+    }
+    return result;
+  }, [issues, search, filterClient, filterStatus]);
 
   // Deep-link: open issue detail from ?issue=<id>
   useEffect(() => {
@@ -118,24 +147,88 @@ export function IssuesView({ clients, initialIssues }: Props) {
   return (
     <>
       {/* Header bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex overflow-hidden rounded-md border">
-          <Button
-            variant={view === "board" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8 rounded-none"
-            onClick={() => setView("board")}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={view === "list" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8 rounded-none"
-            onClick={() => setView("list")}
-          >
-            <LayoutList className="h-4 w-4" />
-          </Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex overflow-hidden rounded-md border">
+            <Button
+              variant={view === "board" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-8 w-8 rounded-none"
+              onClick={() => setView("board")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={view === "list" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-8 w-8 rounded-none"
+              onClick={() => setView("list")}
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Search */}
+          <div className="relative flex-1 sm:flex-initial">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 w-full sm:w-48 pl-8 pr-7 text-sm"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Client filter */}
+          <Select value={filterClient} onValueChange={setFilterClient}>
+            <SelectTrigger className="h-8 w-auto min-w-28 text-sm">
+              <SelectValue placeholder="Client" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All clients</SelectItem>
+              <SelectItem value="none">No client</SelectItem>
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ backgroundColor: c.color_hex }}
+                    />
+                    {c.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Status filter */}
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="h-8 w-auto min-w-28 text-sm">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              {COLUMNS.map((col) => (
+                <SelectItem key={col.id} value={col.id}>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ backgroundColor: col.color }}
+                    />
+                    {col.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {view === "list" ? (
@@ -152,7 +245,7 @@ export function IssuesView({ clients, initialIssues }: Props) {
       {/* Views */}
       {view === "board" && (
         <IssuesBoard
-          issues={issues}
+          issues={filteredIssues}
           clients={clients}
           setIssues={setIssues}
           onUpdateIssue={updateIssue}
@@ -165,7 +258,7 @@ export function IssuesView({ clients, initialIssues }: Props) {
 
       {view === "list" && (
         <IssuesList
-          issues={issues}
+          issues={filteredIssues}
           clients={clients}
           onSelectIssue={setEditIssue}
           onDeleteIssue={setDeleteIssue}
