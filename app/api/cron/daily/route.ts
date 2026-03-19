@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getTodayInTZ, isSameDay, addDaysUTC, clampDay, formatDate } from "@/lib/dates";
+import { getTodayInTZ, isSameDay, addDaysUTC, clampDay } from "@/lib/dates";
 import {
   getSubscriptionPeriod,
   buildSubscriptionNotification,
 } from "@/lib/cron-helpers";
-import {
-  sendEmail,
-  buildSubscriptionUpcomingEmail,
-  buildSalaryGroupEmail,
-  buildInvoiceDueEmail,
-  buildInvoiceReminderEmail,
-  buildSalaryIncreaseEmail,
-} from "@/lib/email";
 import { sendWebPushToAll } from "@/lib/web-push";
 import type { NotificationType } from "@/app/generated/prisma/client";
 
@@ -41,9 +33,8 @@ export async function GET(req: NextRequest) {
     const daysSub     = settings?.days_before_subscription ?? 2;
     const daysSalary  = settings?.days_before_salary ?? 4;
     const daysInvoice = settings?.days_before_invoice ?? 0;
-    const recipient   = settings?.email_recipient ?? null;
 
-    log.push(`  [settings] daysSub=${daysSub}, daysSalary=${daysSalary}, daysInvoice=${daysInvoice}, recipient=${recipient ?? "none"}`);
+    log.push(`  [settings] daysSub=${daysSub}, daysSalary=${daysSalary}, daysInvoice=${daysInvoice}`);
 
     // Purge notifications older than 7 days
     const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -63,13 +54,6 @@ export async function GET(req: NextRequest) {
     await runSalaries(today, daysSalary, log);
     await runIncreaseReminders(today, log);
     await runInvoices(today, daysInvoice, log);
-
-    // Send emails for any notifications created today that haven't been emailed yet
-    if (recipient) {
-      await sendPendingEmails(today, recipient, daysSub, daysSalary, log);
-    } else {
-      log.push("  [email] Skipped — no recipient configured in Settings.");
-    }
 
     // Send web push for notifications created today
     await sendPendingPush(today, log);
@@ -287,175 +271,6 @@ async function runInvoices(today: Date, daysBefore: number, log: string[]) {
     }
   }
 }
-
-// ─── Email sending ────────────────────────────────────────────────────────────
-
-async function sendPendingEmails(
-  today: Date,
-  recipient: string,
-  daysSub: number,
-  daysSalary: number,
-  log: string[]
-) {
-  // Find all notifications created today that haven't been emailed yet.
-  // "Today" for created_at purposes: from UTC midnight of today.
-  const unsent = await prisma.notification.findMany({
-    where: {
-      email_sent_at: null,
-      created_at: { gte: today },
-    },
-  });
-
-  if (unsent.length === 0) {
-    log.push("  [email] No new notifications to send.");
-    return;
-  }
-
-  const sentIds: string[] = [];
-
-  // Group salary notifications into a single email
-  const salaryNotifs = unsent.filter((n) => n.type === "salary_manual_due");
-  const otherNotifs  = unsent.filter((n) => n.type !== "salary_manual_due");
-
-  if (salaryNotifs.length > 0) {
-    // Resolve person names from entity_id
-    const people = await prisma.person.findMany({
-      where: { id: { in: salaryNotifs.map((n) => n.entity_id) } },
-      select: { id: true, name: true, payday_day: true },
-    });
-    const nameMap = Object.fromEntries(people.map((p) => [p.id, p.name]));
-    const names = salaryNotifs.map((n) => nameMap[n.entity_id] ?? n.entity_id);
-
-    // Compute the pay date (today + daysSalary)
-    const payDate = addDaysUTC(today, daysSalary);
-
-    try {
-      const { subject, html } = buildSalaryGroupEmail({
-        people: names,
-        dueDate: formatDate(payDate),
-        daysBefore: daysSalary,
-      });
-      await sendEmail(recipient, subject, html);
-      sentIds.push(...salaryNotifs.map((n) => n.id));
-      log.push(`  [email sent] salary group (${names.join(", ")})`);
-    } catch (err) {
-      log.push(`  [email error] salary group: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  // Batch-fetch all entities needed for email building (avoids N+1 queries)
-  const subNotifs = otherNotifs.filter((n) =>
-    n.type === "subscription_auto_upcoming" || n.type === "subscription_manual_due"
-  );
-  const invoiceNotifs = otherNotifs.filter((n) =>
-    n.type === "invoice_due" || n.type === "invoice_reminder_due"
-  );
-  const increaseNotifs = otherNotifs.filter((n) => n.type === "salary_increase_due");
-
-  const [subsMap, invoicesMap, remindersMap] = await Promise.all([
-    subNotifs.length > 0
-      ? prisma.subscription.findMany({
-          where: { id: { in: subNotifs.map((n) => n.entity_id) } },
-        }).then((subs) => new Map(subs.map((s) => [s.id, s])))
-      : Promise.resolve(new Map()),
-    invoiceNotifs.length > 0
-      ? prisma.invoice.findMany({
-          where: { id: { in: invoiceNotifs.map((n) => n.entity_id) } },
-          include: { client: true },
-        }).then((invs) => new Map(invs.map((i) => [i.id, i])))
-      : Promise.resolve(new Map()),
-    increaseNotifs.length > 0
-      ? prisma.salaryIncreaseReminder.findMany({
-          where: { id: { in: increaseNotifs.map((n) => n.entity_id) } },
-          include: { person: true },
-        }).then((rems) => new Map(rems.map((r) => [r.id, r])))
-      : Promise.resolve(new Map()),
-  ]);
-
-  // Send individual emails for the rest
-  for (const notif of otherNotifs) {
-    try {
-      const result = buildEmailForNotification(notif, daysSub, subsMap, invoicesMap, remindersMap);
-      if (!result.subject) continue; // auto_paid notifications don't get an email
-      await sendEmail(recipient, result.subject, result.html);
-      sentIds.push(notif.id);
-      log.push(`  [email sent] ${notif.type}: ${notif.title}`);
-    } catch (err) {
-      log.push(`  [email error] ${notif.type}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  // Mark all successfully sent notifications
-  if (sentIds.length > 0) {
-    await prisma.notification.updateMany({
-      where: { id: { in: sentIds } },
-      data: { email_sent_at: new Date() },
-    });
-  }
-}
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function buildEmailForNotification(
-  notif: { type: string; entity_id: string; entity_type: string },
-  daysSub: number,
-  subsMap: Map<string, any>,
-  invoicesMap: Map<string, any>,
-  remindersMap: Map<string, any>,
-): { subject: string; html: string } | { subject: null; html: null } {
-  const skip = { subject: null as null, html: null as null };
-
-  if (notif.type === "subscription_auto_upcoming" || notif.type === "subscription_manual_due") {
-    const sub = subsMap.get(notif.entity_id);
-    if (!sub) return skip;
-    return buildSubscriptionUpcomingEmail({
-      name: sub.name,
-      amountCents: sub.amount_cents,
-      dueDate: formatDate(addDaysUTC(new Date(), daysSub)),
-      daysBefore: daysSub,
-    });
-  }
-
-  if (notif.type === "subscription_auto_paid") {
-    return skip;
-  }
-
-  if (notif.type === "invoice_due") {
-    const invoice = invoicesMap.get(notif.entity_id);
-    if (!invoice) return skip;
-    return buildInvoiceDueEmail({
-      clientName: invoice.client.name,
-      invoiceNumber: invoice.invoice_number,
-      amountCents: invoice.amount_cents,
-      feeCents: invoice.fee_cents,
-      dueDate: formatDate(invoice.due_date),
-    });
-  }
-
-  if (notif.type === "invoice_reminder_due") {
-    const invoice = invoicesMap.get(notif.entity_id);
-    if (!invoice) return skip;
-    return buildInvoiceReminderEmail({
-      clientName: invoice.client.name,
-      invoiceNumber: invoice.invoice_number,
-      amountCents: invoice.amount_cents,
-      feeCents: invoice.fee_cents,
-      dueDate: formatDate(invoice.due_date),
-    });
-  }
-
-  if (notif.type === "salary_increase_due") {
-    const reminder = remindersMap.get(notif.entity_id);
-    if (!reminder) return skip;
-    return buildSalaryIncreaseEmail({
-      personName: reminder.person.name,
-      suggestedCents: reminder.suggested_new_base_cents,
-      effectiveDate: formatDate(reminder.effective_date),
-    });
-  }
-
-  return skip;
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ─── Web Push ────────────────────────────────────────────────────────────────
 

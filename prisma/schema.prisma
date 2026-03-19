@@ -169,7 +169,6 @@ model Notification {
   event_date     DateTime
   created_at     DateTime         @default(now())
   read_at        DateTime?
-  email_sent_at  DateTime?
 
   @@unique([type, entity_id, event_date])
   @@index([read_at, created_at])
@@ -198,7 +197,6 @@ model PushSubscription {
 
 model Settings {
   id                       String   @id @default("singleton")
-  email_recipient          String?
   days_before_subscription Int      @default(2)
   days_before_salary       Int      @default(4)
   days_before_invoice      Int      @default(0)

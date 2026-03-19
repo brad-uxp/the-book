@@ -7,7 +7,6 @@ export default async function SettingsPage() {
   const settings = await prisma.settings.findUnique({ where: { id: "singleton" } });
 
   const initial = {
-    email_recipient:          settings?.email_recipient ?? null,
     days_before_subscription: settings?.days_before_subscription ?? 2,
     days_before_salary:       settings?.days_before_salary ?? 4,
     days_before_invoice:      settings?.days_before_invoice ?? 0,
