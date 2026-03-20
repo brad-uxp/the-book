@@ -10,12 +10,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:seed": "npx ts-node --project tsconfig.json -e \"require('dotenv/config')\" prisma/seed.ts",
-    "db:seed-invoices": "npx ts-node --project tsconfig.json -e \"require('dotenv/config')\" prisma/seed-invoices.ts",
     "db:studio": "prisma studio"
-  },
-  "prisma": {
-    "seed": "npx ts-node --project tsconfig.json prisma/seed.ts"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
