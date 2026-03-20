@@ -42,7 +42,12 @@ import type { SubscriptionInput } from "@/lib/validations";
 
 function faviconSrc(iconUrl: string | null): string | null {
   if (!iconUrl) return null;
-  return `${iconUrl.replace(/\/$/, "")}/favicon.ico`;
+  try {
+    const domain = new URL(iconUrl).hostname;
+    return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  } catch {
+    return null;
+  }
 }
 
 function SubscriptionIcon({
