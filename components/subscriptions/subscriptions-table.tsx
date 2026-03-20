@@ -40,13 +40,16 @@ import { formatDate } from "@/lib/dates";
 import { SubscriptionForm } from "./subscription-form";
 import type { SubscriptionInput } from "@/lib/validations";
 
-function faviconSrc(iconUrl: string | null): string | null {
-  if (!iconUrl) return null;
+function faviconSources(iconUrl: string | null): string[] {
+  if (!iconUrl) return [];
   try {
     const domain = new URL(iconUrl).hostname;
-    return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    return [
+      `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+      `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+    ];
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -59,9 +62,10 @@ function SubscriptionIcon({
   iconUrl: string | null;
   size?: "sm" | "md";
 }) {
-  const [imgError, setImgError] = useState(false);
-  const favicon = faviconSrc(iconUrl);
-  const showImg = favicon && !imgError;
+  const sources = faviconSources(iconUrl);
+  const [srcIndex, setSrcIndex] = useState(0);
+  const favicon = sources[srcIndex] ?? null;
+  const showImg = !!favicon;
 
   const outer = size === "sm"
     ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border"
@@ -74,7 +78,7 @@ function SubscriptionIcon({
           src={favicon}
           alt=""
           className={size === "sm" ? "h-4 w-4 object-contain" : "h-5 w-5 object-contain"}
-          onError={() => setImgError(true)}
+          onError={() => setSrcIndex((i) => i + 1)}
         />
       ) : (
         <span className={size === "sm" ? "text-[10px] font-semibold leading-none" : "text-xs font-semibold leading-none"}>
