@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -45,8 +45,8 @@ function faviconSources(iconUrl: string | null): string[] {
   try {
     const domain = new URL(iconUrl).hostname;
     return [
-      `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
       `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+      `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
     ];
   } catch {
     return [];
@@ -64,6 +64,10 @@ function SubscriptionIcon({
 }) {
   const sources = faviconSources(iconUrl);
   const [srcIndex, setSrcIndex] = useState(0);
+
+  // Reset source index when the URL changes (e.g. component reuse)
+  useEffect(() => { setSrcIndex(0); }, [iconUrl]);
+
   const favicon = sources[srcIndex] ?? null;
   const showImg = !!favicon;
 
