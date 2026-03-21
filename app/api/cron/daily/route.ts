@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
     await runSalaries(today, daysSalary, log);
     await runIncreaseReminders(today, log);
     await runInvoices(today, daysInvoice, log);
+    await runIssues(today, log);
 
     // Send web push for notifications created today
     await sendPendingPush(today, log);
@@ -268,6 +269,50 @@ async function runInvoices(today: Date, daysBefore: number, log: string[]) {
         event_date: today,
       });
       log.push(`  [invoice due] ${invoice.client.name} (in ${daysBefore}d)`);
+    }
+  }
+}
+
+// ─── Issues ──────────────────────────────────────────────────────────────────
+
+async function runIssues(today: Date, log: string[]) {
+  const tomorrow = addDaysUTC(today, 1);
+
+  const issues = await prisma.issue.findMany({
+    where: {
+      category: "task",
+      status: { notIn: ["done"] },
+      due_date: { not: null },
+    },
+  });
+
+  for (const issue of issues) {
+    if (!issue.due_date) continue;
+
+    // Due tomorrow
+    if (isSameDay(tomorrow, issue.due_date)) {
+      await upsertNotification({
+        type: "issue_due_tomorrow" as NotificationType,
+        title: `Task due tomorrow: ${issue.title}`,
+        body: `"${issue.title}" is due tomorrow (${issue.due_date.toISOString().slice(0, 10)}).`,
+        entity_type: "issue",
+        entity_id: issue.id,
+        event_date: today,
+      });
+      log.push(`  [issue due tomorrow] ${issue.title}`);
+    }
+
+    // Due today
+    if (isSameDay(today, issue.due_date)) {
+      await upsertNotification({
+        type: "issue_due_today" as NotificationType,
+        title: `Task due today: ${issue.title}`,
+        body: `"${issue.title}" is due today.`,
+        entity_type: "issue",
+        entity_id: issue.id,
+        event_date: today,
+      });
+      log.push(`  [issue due today] ${issue.title}`);
     }
   }
 }

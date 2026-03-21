@@ -157,6 +157,8 @@ enum NotificationType {
   salary_increase_due
   invoice_reminder_due
   invoice_due
+  issue_due_tomorrow
+  issue_due_today
 }
 
 model Notification {
