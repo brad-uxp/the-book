@@ -15,12 +15,19 @@ interface Props {
   onPresetChange: (p: DatePreset) => void;
   onCustomFromChange: (v: string) => void;
   onCustomToChange: (v: string) => void;
+  /** "date" (default) uses day pickers; "month" uses month pickers */
+  mode?: "date" | "month";
   className?: string;
 }
 
 function fmtDateLabel(s: string) {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleString("en", { month: "short", day: "numeric" });
+}
+
+function fmtMonthLabel(s: string) {
+  const [y, m] = s.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en", { month: "short", year: "numeric" });
 }
 
 export function DatePresetFilter({
@@ -30,18 +37,21 @@ export function DatePresetFilter({
   onPresetChange,
   onCustomFromChange,
   onCustomToChange,
+  mode = "date",
   className,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const isMonth = mode === "month";
+  const fmtLabel = isMonth ? fmtMonthLabel : fmtDateLabel;
 
   const now = new Date();
   const label = (() => {
     if (preset === "year") return String(now.getFullYear());
     if (preset === "month") return now.toLocaleString("en", { month: "short", year: "numeric" });
     if (preset === "all") return "All time";
-    if (customFrom && customTo) return `${fmtDateLabel(customFrom)} – ${fmtDateLabel(customTo)}`;
-    if (customFrom) return `From ${fmtDateLabel(customFrom)}`;
-    if (customTo) return `To ${fmtDateLabel(customTo)}`;
+    if (customFrom && customTo) return `${fmtLabel(customFrom)} – ${fmtLabel(customTo)}`;
+    if (customFrom) return `From ${fmtLabel(customFrom)}`;
+    if (customTo) return `To ${fmtLabel(customTo)}`;
     return "Custom range";
   })();
 
@@ -85,7 +95,7 @@ export function DatePresetFilter({
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">From</p>
               <input
-                type="date"
+                type={isMonth ? "month" : "date"}
                 value={customFrom}
                 onChange={(e) => onCustomFromChange(e.target.value)}
                 className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
@@ -94,7 +104,7 @@ export function DatePresetFilter({
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">To</p>
               <input
-                type="date"
+                type={isMonth ? "month" : "date"}
                 value={customTo}
                 onChange={(e) => onCustomToChange(e.target.value)}
                 className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"

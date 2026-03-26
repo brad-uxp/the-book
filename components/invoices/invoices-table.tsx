@@ -50,11 +50,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link, Link2, Check, ChevronsUpDown, UserCheck } from "lucide-react";
+import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link, Link2, Check, ChevronsUpDown, UserCheck, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
-import { formatDate } from "@/lib/dates";
+import { formatDate, formatMonth } from "@/lib/dates";
 import { InvoiceForm } from "./invoice-form";
 import { ClientManager } from "./client-manager";
 import type { InvoiceInput } from "@/lib/validations";
@@ -257,6 +257,125 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
     }
   };
 
+  const handleExportPdf = async () => {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+
+    const doc = new jsPDF();
+    const fmt = (cents: number) =>
+      new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+
+    const primary: [number, number, number] = [15, 23, 42];
+    const muted: [number, number, number] = [100, 116, 139];
+    const bgLight: [number, number, number] = [248, 250, 252];
+
+    const statusColors: Record<string, { bg: [number, number, number]; text: [number, number, number]; border: [number, number, number] }> = {
+      pending:    { bg: [243, 244, 246], text: [75, 85, 99],   border: [229, 231, 235] },
+      accounting: { bg: [255, 237, 213], text: [194, 65, 12],  border: [254, 215, 170] },
+      sent:       { bg: [219, 234, 254], text: [29, 78, 216],  border: [191, 219, 254] },
+      paid:       { bg: [220, 252, 231], text: [22, 101, 52],  border: [134, 239, 172] },
+    };
+
+    const rows = table.getSortedRowModel().rows;
+    const invoices = rows.map((r) => r.original);
+    const STATUS_COL = 3;
+
+    // Totals
+    const totalCount = invoices.length;
+    const uniqueClients = new Set(invoices.map((i) => i.client_id)).size;
+    const totalAmount = invoices.reduce((s, i) => s + i.amount_cents, 0);
+    const uniqueMonths = new Set(invoices.map((i) => i.due_date.slice(0, 7))).size;
+    const statusCounts: Record<string, number> = {};
+    for (const inv of invoices) statusCounts[inv.status] = (statusCounts[inv.status] ?? 0) + 1;
+    const statusSummary = [
+      statusCounts.pending    ? `Pe: ${statusCounts.pending}`    : null,
+      statusCounts.accounting ? `Ac: ${statusCounts.accounting}` : null,
+      statusCounts.sent       ? `Se: ${statusCounts.sent}`       : null,
+      statusCounts.paid       ? `Pa: ${statusCounts.paid}`       : null,
+    ].filter(Boolean).join(" | ");
+
+    autoTable(doc, {
+      startY: 14,
+      head: [["#", "Client", "Amount", "Status", "Month"]],
+      body: invoices.map((inv) => [
+        inv.invoice_number ?? "—",
+        inv.client.name,
+        fmt(inv.amount_cents),
+        inv.status.charAt(0).toUpperCase() + inv.status.slice(1),
+        formatMonth(inv.due_date),
+      ]),
+      foot: [[
+        String(totalCount),
+        `${uniqueClients} client${uniqueClients !== 1 ? "s" : ""}`,
+        fmt(totalAmount),
+        statusSummary,
+        `${uniqueMonths} month${uniqueMonths !== 1 ? "s" : ""}`,
+      ]],
+      theme: "plain",
+      headStyles: {
+        fillColor: bgLight,
+        textColor: muted,
+        fontStyle: "bold",
+        fontSize: 8,
+        cellPadding: { top: 2, bottom: 2, left: 4, right: 4 },
+        lineWidth: { bottom: 0.3 },
+        lineColor: [226, 232, 240],
+      },
+      bodyStyles: {
+        textColor: primary,
+        fontSize: 9,
+        cellPadding: { top: 1.5, bottom: 1.5, left: 4, right: 4 },
+        lineWidth: { bottom: 0.2 },
+        lineColor: [226, 232, 240],
+      },
+      footStyles: {
+        fillColor: bgLight,
+        textColor: primary,
+        fontStyle: "bold",
+        fontSize: 8,
+        cellPadding: { top: 2, bottom: 2, left: 4, right: 4 },
+        lineWidth: { top: 0.3 },
+        lineColor: [226, 232, 240],
+      },
+      columnStyles: { 0: { cellWidth: 20 } },
+      didParseCell: (data: { column: { index: number }; cell: { styles: { halign: string } } }) => {
+        if (data.column.index === 2) data.cell.styles.halign = "right";
+      },
+      didDrawCell: (data: {
+        section: string;
+        column: { index: number };
+        cell: { x: number; y: number; height: number; text: string[] };
+      }) => {
+        if (data.section !== "body" || data.column.index !== STATUS_COL) return;
+        const label = data.cell.text[0] ?? "";
+        const status = label.toLowerCase();
+        const colors = statusColors[status];
+        if (!colors) return;
+
+        doc.setFontSize(7);
+        const textW = doc.getTextWidth(label);
+        const padX = 3.5;
+        const chipW = textW + padX * 2;
+        const chipH = 4.5;
+        const r = chipH / 2;
+        const chipX = data.cell.x + 4;
+        const chipY = data.cell.y + (data.cell.height - chipH) / 2;
+
+        doc.setFillColor(...colors.bg);
+        doc.setDrawColor(...colors.border);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(chipX, chipY, chipW, chipH, r, r, "FD");
+        doc.setTextColor(...colors.text);
+        doc.text(label, chipX + padX, chipY + chipH / 2 + 0.8);
+
+        data.cell.text = [];
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    doc.save("invoices.pdf");
+  };
+
   const hasActiveFilters =
     statusFilters.length > 0 || clientFilters.length > 0 || datePreset !== "year";
 
@@ -293,14 +412,19 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
       df = `${y}-${mStr}-01`;
       dt = `${y}-${mStr}-${String(lastDay).padStart(2, "0")}`;
     } else if (datePreset === "custom") {
-      df = customFrom;
-      dt = customTo;
+      // customFrom/customTo are "YYYY-MM" — expand to first/last day of month
+      if (customFrom) df = `${customFrom}-01`;
+      if (customTo) {
+        const [cy, cm] = customTo.split("-").map(Number);
+        const lastDay = new Date(cy, cm, 0).getDate();
+        dt = `${customTo}-${String(lastDay).padStart(2, "0")}`;
+      }
     }
     let result = data;
     if (statusFilters.length > 0) result = result.filter((i) => statusFilters.includes(i.status));
     if (clientFilters.length > 0) result = result.filter((i) => clientFilters.includes(i.client_id));
-    if (df) result = result.filter((i) => i.due_date >= df);
-    if (dt) result = result.filter((i) => i.due_date <= dt);
+    if (df) result = result.filter((i) => i.due_date.slice(0, 10) >= df);
+    if (dt) result = result.filter((i) => i.due_date.slice(0, 10) <= dt);
     return result;
   }, [data, statusFilters, clientFilters, datePreset, customFrom, customTo]);
 
@@ -444,7 +568,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
             className="-mx-2.5"
             onClick={() => column.toggleSorting(sorted === "asc")}
           >
-            Due Date{" "}
+            Month{" "}
             {sorted === "asc" ? (
               <ArrowUp className="ml-0.5 h-3 w-3 text-primary" />
             ) : sorted === "desc" ? (
@@ -455,7 +579,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
           </Button>
         );
       },
-      cell: ({ row }) => formatDate(row.original.due_date),
+      cell: ({ row }) => formatMonth(row.original.due_date),
       sortingFn: (a, b) =>
         new Date(a.original.due_date).getTime() -
         new Date(b.original.due_date).getTime(),
@@ -537,6 +661,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
             onPresetChange={setDatePreset}
             onCustomFromChange={setCustomFrom}
             onCustomToChange={setCustomTo}
+            mode="month"
           />
 
           {hasActiveFilters && (
@@ -544,6 +669,10 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
               <X className="mr-1 h-3 w-3" /> Clear
             </Button>
           )}
+
+          <Button variant="outline" size="sm" className="h-9 w-full sm:w-auto" onClick={handleExportPdf}>
+            <Download className="mr-1 h-3.5 w-3.5" /> Export
+          </Button>
         </div>
 
         <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-2">
@@ -677,7 +806,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
               referrers={referrers}
               defaultValues={{
                 ...detailItem,
-                due_date: detailItem.due_date.slice(0, 10),
+                due_date: detailItem.due_date.slice(0, 7),
                 reminder_date: detailItem.reminder_date?.slice(0, 10) ?? null,
               }}
               onSubmit={handleEdit}
@@ -834,8 +963,8 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Due Date</dt>
-                  <dd className="font-medium">{formatDate(detailItem.due_date)}</dd>
+                  <dt className="text-muted-foreground">Month</dt>
+                  <dd className="font-medium">{formatMonth(detailItem.due_date)}</dd>
                 </div>
                 {detailItem.reminder_date && (
                   <div>

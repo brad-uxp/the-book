@@ -130,6 +130,25 @@ export function lastNMonths(
   return result;
 }
 
+/**
+ * Given a "YYYY-MM" string, return a UTC Date for the last day of that month.
+ * Also handles "YYYY-MM-DD" gracefully (extracts year-month, ignores day).
+ */
+export function lastDayOfMonth(yearMonth: string): Date {
+  const [year, month] = yearMonth.slice(0, 7).split("-").map(Number);
+  const lastDay = getDaysInMonth(new Date(year, month - 1));
+  return new Date(Date.UTC(year, month - 1, lastDay));
+}
+
+/**
+ * Format a date as month + year for display: "Mar 2026"
+ */
+export function formatMonth(date: Date | string): string {
+  const str = typeof date === "string" ? date : date.toISOString();
+  const [year, month] = str.slice(0, 7).split("-").map(Number);
+  return format(new Date(year, month - 1, 1), "MMM yyyy");
+}
+
 /** Check if two Date objects refer to the same calendar day (UTC). */
 export function isSameDay(a: Date, b: Date): boolean {
   return (

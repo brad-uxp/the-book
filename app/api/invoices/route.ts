@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
+import { lastDayOfMonth } from "@/lib/dates";
 import { auditLog } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
       amount_cents: parsed.data.amount_cents,
       fee_cents: parsed.data.fee_cents ?? 0,
       status: parsed.data.status ?? "pending",
-      due_date: new Date(parsed.data.due_date),
+      due_date: lastDayOfMonth(parsed.data.due_date),
       reminder_date: parsed.data.reminder_date
         ? new Date(parsed.data.reminder_date)
         : null,

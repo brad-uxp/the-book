@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
+import { lastDayOfMonth } from "@/lib/dates";
 import { auditLog } from "@/lib/audit";
 
 export async function GET(
@@ -60,7 +61,7 @@ export async function PATCH(
   if (sent.has("amount_cents")) data.amount_cents = parsed.data.amount_cents;
   if (sent.has("fee_cents")) data.fee_cents = parsed.data.fee_cents;
   if (sent.has("status")) data.status = parsed.data.status;
-  if (sent.has("due_date")) data.due_date = new Date(parsed.data.due_date!);
+  if (sent.has("due_date")) data.due_date = lastDayOfMonth(parsed.data.due_date!);
   if (sent.has("reminder_date"))
     data.reminder_date = parsed.data.reminder_date
       ? new Date(parsed.data.reminder_date)

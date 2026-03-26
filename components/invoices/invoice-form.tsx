@@ -111,7 +111,7 @@ export function InvoiceForm({
         : "0",
       status: defaultValues?.status ?? "pending",
       due_date: defaultValues?.due_date
-        ? new Date(defaultValues.due_date).toISOString().slice(0, 10)
+        ? new Date(defaultValues.due_date).toISOString().slice(0, 7)
         : "",
       reminder_date: defaultValues?.reminder_date
         ? new Date(defaultValues.reminder_date).toISOString().slice(0, 10)
@@ -338,9 +338,9 @@ export function InvoiceForm({
             name="due_date"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Due Date</FormLabel>
+                <FormLabel>Month</FormLabel>
                 <FormControl>
-                  <Input type="date" {...field} />
+                  <Input type="month" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
