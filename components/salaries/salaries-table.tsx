@@ -1487,6 +1487,20 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                   </Button>
                 )}
                 <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                {detailPerson.salary_payments.length === 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      setDetailPerson(null);
+                      handleDelete(detailPerson.id);
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
