@@ -11,7 +11,7 @@ export default async function SalariesPage() {
         role: true,
         salary_base: true,
         salary_payments: { orderBy: { due_date: "desc" }, take: 12 },
-        increase_reminders: { orderBy: { effective_date: "asc" } },
+        increase_reminders: { where: { status: "scheduled" }, orderBy: { effective_date: "asc" } },
       },
     }),
     prisma.role.findMany({ orderBy: { name: "asc" } }),

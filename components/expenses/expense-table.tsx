@@ -213,6 +213,7 @@ export function ExpenseTable({ items, referrers }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             paid_at: editValues.paid_at,
+            due_date: editValues.paid_at,
             adjustment_cents,
             adjustment_note: editValues.adjustment_note.trim() || null,
           }),

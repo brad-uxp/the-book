@@ -542,7 +542,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
       id: "next_reminder",
       header: "Raise Reminder",
       cell: ({ row }) => {
-        const next = row.original.increase_reminders[0];
+        const next = row.original.increase_reminders.find((r) => r.status === "scheduled");
         if (!next) return <span className="text-muted-foreground">—</span>;
         return (
           <span className="text-sm text-amber-600">
@@ -809,6 +809,16 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                       }
                     >
                       <History className="mr-1.5 h-4 w-4" /> History
+                    </Button>
+                  )}
+                  {p.salary_payments.length === 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 text-sm text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => handleDelete(p.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
                 </div>

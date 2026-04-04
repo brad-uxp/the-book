@@ -5,6 +5,7 @@ import { auditLog } from "@/lib/audit";
 
 const PatchSchema = z.object({
   paid_at: z.string().optional(),
+  due_date: z.string().optional(),
   adjustment_cents: z.number().int().optional(),
   adjustment_note: z.string().nullable().optional(),
 });
@@ -28,6 +29,7 @@ export async function PATCH(
 
   const data: Record<string, unknown> = {};
   if (parsed.data.paid_at !== undefined) data.paid_at = new Date(parsed.data.paid_at);
+  if (parsed.data.due_date !== undefined) data.due_date = new Date(parsed.data.due_date);
   if (parsed.data.adjustment_cents !== undefined) {
     data.adjustment_cents = parsed.data.adjustment_cents;
     data.total_cents = before.base_salary_cents_snapshot + parsed.data.adjustment_cents;
