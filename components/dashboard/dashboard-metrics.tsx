@@ -45,15 +45,28 @@ export interface ClientInfo {
   color: string;
 }
 
+export interface WorkExpenseRow {
+  id: string;
+  name: string;
+  monthly: Record<string, number>;
+}
+
+export interface WorkExpensesByItem {
+  salaries: WorkExpenseRow[];
+  workSubs: WorkExpenseRow[];
+  workOther: WorkExpenseRow[];
+}
+
 interface Props {
   monthlyData: MonthData[];
   monthlyIncomeByClient: MonthIncomeByClient[];
   clientsIndex: Record<string, ClientInfo>;
+  workExpensesByItem: WorkExpensesByItem;
   sentTotal: number;
   sentCount: number;
 }
 
-export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, sentTotal, sentCount }: Props) {
+export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, workExpensesByItem, sentTotal, sentCount }: Props) {
   const [preset, setPreset] = useState<Preset>("ytd");
 
   const filtered = useMemo(() => {
@@ -239,6 +252,7 @@ export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIn
         data={chartData}
         incomeByClient={incomeByClientFiltered}
         clientsIndex={clientsIndex}
+        workExpensesByItem={workExpensesByItem}
       />
     </div>
   );

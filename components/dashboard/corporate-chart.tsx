@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Filter, X } from "lucide-react";
+import { Download, Filter, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,6 +33,133 @@ function shortMonth(periodKey: string) {
     month: "short",
     year: "2-digit",
   });
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = hex.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+  if (!m) return [0, 0, 0];
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+function compactCurrency(cents: number): string {
+  const v = cents / 100;
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}k`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
+type ChartPoint = {
+  month: string;
+  income: number;
+  workExpenses: number;
+  salary: number;
+  workSubs: number;
+  corporateNet: number;
+  label: string;
+};
+
+// Native vector chart drawn directly in jsPDF — avoids html2canvas/oklch issues.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function drawLineChart(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any,
+  area: { x: number; y: number; w: number; h: number },
+  chartData: ChartPoint[],
+  visible: Record<LineKey, boolean>
+) {
+  const { x, y, w, h } = area;
+  const padding = { top: 4, right: 8, bottom: 16, left: 22 };
+  const plotX = x + padding.left;
+  const plotY = y + padding.top;
+  const plotW = w - padding.left - padding.right;
+  const plotH = h - padding.top - padding.bottom;
+
+  const visibleLines = LINES.filter((L) => visible[L.key]);
+  if (visibleLines.length === 0 || chartData.length === 0) return;
+
+  // Compute y-axis range across visible lines
+  let minVal = 0;
+  let maxVal = 0;
+  for (const d of chartData) {
+    for (const L of visibleLines) {
+      const v = d[L.key];
+      if (v > maxVal) maxVal = v;
+      if (v < minVal) minVal = v;
+    }
+  }
+  // Pad slightly so peaks don't touch the top
+  const range = (maxVal - minVal) || 1;
+  maxVal = maxVal + range * 0.05;
+  minVal = minVal - range * 0.05;
+
+  const gridLines = 4;
+  const valToY = (v: number) => plotY + plotH - ((v - minVal) / (maxVal - minVal || 1)) * plotH;
+  const idxToX = (i: number) =>
+    plotX + (chartData.length === 1 ? plotW / 2 : (i / (chartData.length - 1)) * plotW);
+
+  // Horizontal gridlines
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.15);
+  for (let i = 0; i <= gridLines; i++) {
+    const py = plotY + plotH - (i / gridLines) * plotH;
+    doc.line(plotX, py, plotX + plotW, py);
+  }
+
+  // Y-axis labels
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  for (let i = 0; i <= gridLines; i++) {
+    const val = minVal + (i / gridLines) * (maxVal - minVal);
+    const py = plotY + plotH - (i / gridLines) * plotH;
+    doc.text(compactCurrency(val), plotX - 1.5, py + 1.2, { align: "right" });
+  }
+
+  // X-axis labels
+  for (let i = 0; i < chartData.length; i++) {
+    doc.text(chartData[i].label, idxToX(i), plotY + plotH + 4, { align: "center" });
+  }
+
+  // Zero line (slightly darker if min < 0 < max)
+  if (minVal < 0 && maxVal > 0) {
+    doc.setDrawColor(160, 174, 192);
+    doc.setLineWidth(0.25);
+    const zeroY = valToY(0);
+    doc.line(plotX, zeroY, plotX + plotW, zeroY);
+  }
+
+  // Lines + dots
+  for (const L of visibleLines) {
+    const [r, g, b] = hexToRgb(L.color);
+    doc.setDrawColor(r, g, b);
+    doc.setFillColor(r, g, b);
+    doc.setLineWidth(0.55);
+    for (let i = 0; i < chartData.length - 1; i++) {
+      doc.line(
+        idxToX(i),
+        valToY(chartData[i][L.key]),
+        idxToX(i + 1),
+        valToY(chartData[i + 1][L.key])
+      );
+    }
+    for (let i = 0; i < chartData.length; i++) {
+      doc.circle(idxToX(i), valToY(chartData[i][L.key]), 0.7, "F");
+    }
+  }
+
+  // Legend (below x-labels)
+  const legendY = y + h - 1;
+  let legendX = plotX;
+  doc.setFontSize(7);
+  for (const L of visibleLines) {
+    const [r, g, b] = hexToRgb(L.color);
+    doc.setFillColor(r, g, b);
+    doc.circle(legendX + 1, legendY - 1, 0.8, "F");
+    doc.setTextColor(60, 60, 60);
+    doc.text(L.label, legendX + 3, legendY);
+    legendX += doc.getTextWidth(L.label) + 8;
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,13 +200,26 @@ interface ClientInfo {
   color: string;
 }
 
+interface WorkExpenseRow {
+  id: string;
+  name: string;
+  monthly: Record<string, number>;
+}
+
+interface WorkExpensesByItem {
+  salaries: WorkExpenseRow[];
+  workSubs: WorkExpenseRow[];
+  workOther: WorkExpenseRow[];
+}
+
 interface Props {
   data: MonthData[];
   incomeByClient: MonthIncomeByClient[];
   clientsIndex: Record<string, ClientInfo>;
+  workExpensesByItem: WorkExpensesByItem;
 }
 
-export function CorporateChart({ data, incomeByClient, clientsIndex }: Props) {
+export function CorporateChart({ data, incomeByClient, clientsIndex, workExpensesByItem }: Props) {
   const [visible, setVisible] = useState<Record<LineKey, boolean>>({
     income: true,
     workExpenses: true,
@@ -89,6 +229,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex }: Props) {
   });
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const toggle = (key: LineKey) =>
     setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -151,6 +292,298 @@ export function CorporateChart({ data, incomeByClient, clientsIndex }: Props) {
   const excludedVisible = visibleClients.filter((c) => excluded.has(c.id));
   // Excluded clients NOT in visible window — still in the set but invisible to user; keep them excluded.
 
+  const handleExport = async () => {
+    if (chartData.length === 0 || exporting) return;
+    setExporting(true);
+    try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 12;
+
+      const primary: [number, number, number] = [15, 23, 42];
+      const muted: [number, number, number] = [100, 116, 139];
+      const bgLight: [number, number, number] = [248, 250, 252];
+
+      const months = chartData.map((d) => d.month);
+      const monthLabels = chartData.map((d) => d.label);
+
+      // Header bar
+      doc.setFillColor(...primary);
+      doc.rect(0, 0, pageW, 22, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.text("Corporate profitability report", margin, 10);
+      doc.setFontSize(8);
+      const periodLabel =
+        months.length === 0
+          ? "—"
+          : months.length === 1
+          ? shortMonth(months[0])
+          : `${shortMonth(months[0])} – ${shortMonth(months[months.length - 1])}`;
+      doc.text(`Period: ${periodLabel}`, margin, 16);
+      doc.text(
+        new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+        pageW - margin,
+        16,
+        { align: "right" }
+      );
+
+      let cursorY = 26;
+
+      // Excluded note
+      if (excluded.size > 0) {
+        const names = Array.from(excluded)
+          .map((id) => clientsIndex[id]?.name ?? "Unknown")
+          .join(", ");
+        doc.setTextColor(...muted);
+        doc.setFontSize(8);
+        doc.text(`Excluded clients: ${names}`, margin, cursorY);
+        cursorY += 4;
+      }
+
+      // Chart
+      const chartH = 70;
+      drawLineChart(
+        doc,
+        { x: margin, y: cursorY, w: pageW - margin * 2, h: chartH },
+        chartData,
+        visible
+      );
+      cursorY += chartH + 6;
+
+      // ── Income table ──────────────────────────────────────────────────────
+      const includedClients = visibleClients.filter((c) => !excluded.has(c.id));
+      const incomeRows = includedClients.map((c) => {
+        const monthAmounts = months.map((m) => {
+          const byClient = incomeByClient.find((x) => x.month === m)?.byClient ?? {};
+          return byClient[c.id] ?? 0;
+        });
+        const total = monthAmounts.reduce((s, v) => s + v, 0);
+        return { name: c.name, monthAmounts, total };
+      });
+      const incomeMonthTotals = months.map((_, i) =>
+        incomeRows.reduce((s, r) => s + r.monthAmounts[i], 0)
+      );
+      const incomeGrandTotal = incomeRows.reduce((s, r) => s + r.total, 0);
+
+      doc.setTextColor(...primary);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Income by client", margin, cursorY);
+      doc.setFont("helvetica", "normal");
+      cursorY += 3;
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [["Client", ...monthLabels, "Total"]],
+        body:
+          incomeRows.length === 0
+            ? [["No income in this period", ...monthLabels.map(() => ""), ""]]
+            : incomeRows.map((r) => [
+                r.name,
+                ...r.monthAmounts.map((v) => (v === 0 ? "—" : formatCents(v))),
+                formatCents(r.total),
+              ]),
+        foot:
+          incomeRows.length === 0
+            ? undefined
+            : [["Total", ...incomeMonthTotals.map((v) => formatCents(v)), formatCents(incomeGrandTotal)]],
+        theme: "plain",
+        headStyles: {
+          fillColor: bgLight,
+          textColor: muted,
+          fontStyle: "bold",
+          fontSize: 7,
+          cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
+          lineWidth: { bottom: 0.3 },
+          lineColor: [226, 232, 240],
+        },
+        bodyStyles: {
+          textColor: primary,
+          fontSize: 7,
+          cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
+          lineWidth: { bottom: 0.15 },
+          lineColor: [226, 232, 240],
+        },
+        footStyles: {
+          fillColor: bgLight,
+          textColor: primary,
+          fontStyle: "bold",
+          fontSize: 7,
+          cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
+          lineWidth: { top: 0.3 },
+          lineColor: [226, 232, 240],
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        didParseCell: (data: any) => {
+          if (data.column.index > 0) data.cell.styles.halign = "right";
+        },
+        margin: { left: margin, right: margin },
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cursorY = (doc as any).lastAutoTable.finalY + 6;
+
+      // ── Work expenses tables ─────────────────────────────────────────────
+      doc.setTextColor(...primary);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Work expenses by source", margin, cursorY);
+      doc.setFont("helvetica", "normal");
+      cursorY += 3;
+
+      type Section = { title: string; rows: WorkExpenseRow[] };
+      const sections: Section[] = [
+        { title: "Salaries", rows: workExpensesByItem.salaries },
+        { title: "Work subscriptions", rows: workExpensesByItem.workSubs },
+        { title: "Other work expenses", rows: workExpensesByItem.workOther },
+      ];
+
+      // Track grand totals per month across all work-expense sections
+      const grandMonthTotals = months.map(() => 0);
+      let workExpensesGrandTotal = 0;
+
+      for (const section of sections) {
+        // Filter row data to visible months only
+        const sectionRows = section.rows
+          .map((r) => {
+            const monthAmounts = months.map((m) => r.monthly[m] ?? 0);
+            const total = monthAmounts.reduce((s, v) => s + v, 0);
+            return { name: r.name, monthAmounts, total };
+          })
+          .filter((r) => r.total > 0)
+          .sort((a, b) => b.total - a.total);
+
+        if (sectionRows.length === 0) continue;
+
+        const sectionMonthTotals = months.map((_, i) =>
+          sectionRows.reduce((s, r) => s + r.monthAmounts[i], 0)
+        );
+        const sectionGrandTotal = sectionRows.reduce((s, r) => s + r.total, 0);
+
+        for (let i = 0; i < months.length; i++) grandMonthTotals[i] += sectionMonthTotals[i];
+        workExpensesGrandTotal += sectionGrandTotal;
+
+        // Page break if low on space
+        if (cursorY > pageH - 40) {
+          doc.addPage();
+          cursorY = margin + 4;
+        }
+
+        doc.setTextColor(...muted);
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text(section.title, margin, cursorY);
+        doc.setFont("helvetica", "normal");
+        cursorY += 2;
+
+        autoTable(doc, {
+          startY: cursorY,
+          head: [[section.title, ...monthLabels, "Total"]],
+          body: sectionRows.map((r) => [
+            r.name,
+            ...r.monthAmounts.map((v) => (v === 0 ? "—" : formatCents(v))),
+            formatCents(r.total),
+          ]),
+          foot: [
+            [
+              "Subtotal",
+              ...sectionMonthTotals.map((v) => formatCents(v)),
+              formatCents(sectionGrandTotal),
+            ],
+          ],
+          theme: "plain",
+          headStyles: {
+            fillColor: bgLight,
+            textColor: muted,
+            fontStyle: "bold",
+            fontSize: 7,
+            cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
+            lineWidth: { bottom: 0.3 },
+            lineColor: [226, 232, 240],
+          },
+          bodyStyles: {
+            textColor: primary,
+            fontSize: 7,
+            cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
+            lineWidth: { bottom: 0.15 },
+            lineColor: [226, 232, 240],
+          },
+          footStyles: {
+            fillColor: bgLight,
+            textColor: primary,
+            fontStyle: "bold",
+            fontSize: 7,
+            cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
+            lineWidth: { top: 0.3 },
+            lineColor: [226, 232, 240],
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          didParseCell: (data: any) => {
+            if (data.column.index > 0) data.cell.styles.halign = "right";
+          },
+          margin: { left: margin, right: margin },
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cursorY = (doc as any).lastAutoTable.finalY + 4;
+      }
+
+      // Grand total row across all work-expense sections
+      if (workExpensesGrandTotal > 0) {
+        if (cursorY > pageH - 18) {
+          doc.addPage();
+          cursorY = margin + 4;
+        }
+        autoTable(doc, {
+          startY: cursorY,
+          head: undefined,
+          body: [
+            [
+              "Total work expenses",
+              ...grandMonthTotals.map((v) => formatCents(v)),
+              formatCents(workExpensesGrandTotal),
+            ],
+          ],
+          theme: "plain",
+          bodyStyles: {
+            fillColor: primary,
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            fontSize: 7,
+            cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          didParseCell: (data: any) => {
+            if (data.column.index > 0) data.cell.styles.halign = "right";
+          },
+          margin: { left: margin, right: margin },
+          // The first column should match width of the table-data column 1 visually — autotable handles it.
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cursorY = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Footer with page numbers
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setTextColor(...muted);
+        doc.setFontSize(7);
+        doc.text(`Page ${p} of ${totalPages}`, pageW - margin, pageH - 4, { align: "right" });
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      doc.save(`corporate-profitability-${today}.pdf`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="rounded-md border bg-card p-4 sm:p-6 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -159,6 +592,17 @@ export function CorporateChart({ data, incomeByClient, clientsIndex }: Props) {
           <p className="text-xs text-muted-foreground mt-0.5">Income vs work expenses (salaries + work subscriptions &amp; costs)</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs font-normal"
+            disabled={chartData.length === 0 || exporting}
+            onClick={handleExport}
+          >
+            <Download className="h-3 w-3" />
+            {exporting ? "Exporting…" : "Export PDF"}
+          </Button>
+
           <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
             <PopoverTrigger asChild>
               <Button

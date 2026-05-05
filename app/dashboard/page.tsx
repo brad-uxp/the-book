@@ -62,12 +62,17 @@ export default async function DashboardPage() {
       select: {
         paid_at: true,
         amount_cents_snapshot: true,
-        subscription: { select: { category: true } },
+        subscription: { select: { id: true, name: true, category: true } },
       },
     }),
     prisma.salaryPayment.findMany({
       where: { paid_at: { gte: fromDate, lte: toDate } },
-      select: { paid_at: true, total_cents: true },
+      select: {
+        paid_at: true,
+        total_cents: true,
+        person_id: true,
+        person: { select: { name: true } },
+      },
     }),
     prisma.invoice.findMany({
       where: { status: "paid", due_date: { gte: fromDate, lte: toDate } },
@@ -81,7 +86,7 @@ export default async function DashboardPage() {
     }),
     prisma.otherExpense.findMany({
       where: { paid_at: { gte: fromDate, lte: toDate } },
-      select: { paid_at: true, amount_cents: true, category: true },
+      select: { paid_at: true, amount_cents: true, category: true, name: true },
     }),
   ]);
 
@@ -111,6 +116,48 @@ export default async function DashboardPage() {
       else if (p.category === "personal") b.otherPersonal += p.amount_cents;
     }
   }
+  // Per-month per-source work expense breakdown (used by PDF export)
+  type WorkRow = { id: string; name: string; monthly: Record<string, number> };
+  const ensureWorkRow = (rows: Map<string, WorkRow>, id: string, name: string): WorkRow => {
+    let row = rows.get(id);
+    if (!row) {
+      row = { id, name, monthly: Object.fromEntries(months.map((m) => [m, 0])) };
+      rows.set(id, row);
+    }
+    return row;
+  };
+  const salariesRows = new Map<string, WorkRow>();
+  const workSubsRows = new Map<string, WorkRow>();
+  const workOtherRows = new Map<string, WorkRow>();
+
+  for (const p of salaryPayments) {
+    const monthKey = toPeriodKey(p.paid_at);
+    if (!buckets.has(monthKey)) continue;
+    const row = ensureWorkRow(salariesRows, p.person_id, p.person.name);
+    row.monthly[monthKey] = (row.monthly[monthKey] ?? 0) + p.total_cents;
+  }
+  for (const p of subPayments) {
+    if (p.subscription.category !== "work") continue;
+    const monthKey = toPeriodKey(p.paid_at);
+    if (!buckets.has(monthKey)) continue;
+    const row = ensureWorkRow(workSubsRows, p.subscription.id, p.subscription.name);
+    row.monthly[monthKey] = (row.monthly[monthKey] ?? 0) + p.amount_cents_snapshot;
+  }
+  for (const p of otherExpenses) {
+    if (p.category !== "work") continue;
+    const monthKey = toPeriodKey(p.paid_at);
+    if (!buckets.has(monthKey)) continue;
+    // Group by name (OtherExpense has no stable id concept across entries with same name)
+    const row = ensureWorkRow(workOtherRows, p.name, p.name);
+    row.monthly[monthKey] = (row.monthly[monthKey] ?? 0) + p.amount_cents;
+  }
+
+  const workExpensesByItem = {
+    salaries: Array.from(salariesRows.values()),
+    workSubs: Array.from(workSubsRows.values()),
+    workOther: Array.from(workOtherRows.values()),
+  };
+
   // Per-month per-client income (used by Corporate chart's "exclude clients" toggle)
   const incomeBuckets = new Map<string, Map<string, number>>(months.map((m) => [m, new Map()]));
   const clientsIndex: Record<string, { name: string; color: string }> = {};
@@ -243,6 +290,7 @@ export default async function DashboardPage() {
         monthlyData={monthlyData}
         monthlyIncomeByClient={monthlyIncomeByClient}
         clientsIndex={clientsIndex}
+        workExpensesByItem={workExpensesByItem}
         sentTotal={sentTotal}
         sentCount={sentCount}
       />
