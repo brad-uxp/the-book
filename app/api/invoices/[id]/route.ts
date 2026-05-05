@@ -3,6 +3,16 @@ import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
 import { lastDayOfMonth } from "@/lib/dates";
 import { auditLog } from "@/lib/audit";
+import { deleteObject } from "@/lib/r2";
+
+async function safeDeleteR2(key: string | null | undefined) {
+  if (!key) return;
+  try {
+    await deleteObject(key);
+  } catch (err) {
+    console.error(`[invoices] failed to delete R2 object ${key}:`, err);
+  }
+}
 
 export async function GET(
   _req: NextRequest,
@@ -68,6 +78,7 @@ export async function PATCH(
       : null;
   if (sent.has("notes")) data.notes = parsed.data.notes ?? null;
   if (sent.has("file_url")) data.file_url = parsed.data.file_url ?? null;
+  if (sent.has("file_key")) data.file_key = parsed.data.file_key ?? null;
   if (sent.has("referrer_id")) data.referrer_id = parsed.data.referrer_id ?? null;
 
   const invoice = await prisma.invoice.update({
@@ -75,6 +86,10 @@ export async function PATCH(
     data,
     include: { client: true, referrer: true },
   });
+
+  if (sent.has("file_key") && before?.file_key && before.file_key !== invoice.file_key) {
+    await safeDeleteR2(before.file_key);
+  }
 
   auditLog({
     entity_type: "invoice",
@@ -122,6 +137,8 @@ export async function DELETE(
   });
 
   await prisma.invoice.delete({ where: { id } });
+
+  await safeDeleteR2(before?.file_key);
 
   if (before) {
     auditLog({

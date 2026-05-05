@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useReactTable,
@@ -50,8 +50,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link, Link2, Check, ChevronsUpDown, UserCheck, Download } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link2, Check, ChevronsUpDown, UserCheck, Download, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
 import { formatDate, formatMonth } from "@/lib/dates";
@@ -85,6 +84,7 @@ interface Invoice {
   reminder_date: string | null;
   notes: string | null;
   file_url: string | null;
+  file_key: string | null;
   created_at: string;
   updated_at: string;
   client: Client;
@@ -130,8 +130,8 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
   const [detailItem, setDetailItem] = useState<Invoice | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [addingFile, setAddingFile] = useState(false);
-  const [fileUrl, setFileUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const router = useRouter();
 
@@ -230,31 +230,66 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
   const closeDetail = () => {
     setDetailItem(null);
     setIsEditMode(false);
-    setAddingFile(false);
-    setFileUrl("");
   };
 
-  const handleSaveFileUrl = async () => {
-    if (!detailItem || !fileUrl.trim()) return;
-    setLoading(true);
+  const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+  const handlePickPdf = async (file: File) => {
+    if (!detailItem) return;
+    if (file.type !== "application/pdf") {
+      alert("Solo se permiten archivos PDF");
+      return;
+    }
+    if (file.size > MAX_PDF_BYTES) {
+      alert("El archivo supera los 10 MB");
+      return;
+    }
+    setUploading(true);
     try {
-      const res = await fetch(`/api/invoices/${detailItem.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_url: fileUrl.trim() }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error ?? "Error saving file URL");
+      const urlRes = await fetch(`/api/invoices/${detailItem.id}/upload-url`, { method: "POST" });
+      if (!urlRes.ok) {
+        alert("No se pudo obtener URL de subida");
         return;
       }
-      setDetailItem({ ...detailItem, file_url: fileUrl.trim() });
-      setAddingFile(false);
-      setFileUrl("");
+      const { uploadUrl, key } = (await urlRes.json()) as { uploadUrl: string; key: string };
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/pdf" },
+        body: file,
+      });
+      if (!putRes.ok) {
+        alert(`Error subiendo a R2 (status ${putRes.status})`);
+        return;
+      }
+
+      const patchRes = await fetch(`/api/invoices/${detailItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_key: key }),
+      });
+      if (!patchRes.ok) {
+        alert("Error guardando referencia del archivo");
+        return;
+      }
+
+      setDetailItem({ ...detailItem, file_key: key });
       await refresh();
     } finally {
-      setLoading(false);
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleViewFile = async () => {
+    if (!detailItem) return;
+    const res = await fetch(`/api/invoices/${detailItem.id}/download-url`);
+    if (!res.ok) {
+      alert("No se pudo obtener el archivo");
+      return;
+    }
+    const { url } = (await res.json()) as { url: string; kind: string };
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const handleExportPdf = async () => {
@@ -491,7 +526,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
               <UserCheck className="h-2.5 w-2.5" />
             </span>
           )}
-          {!row.original.file_url && (
+          {!row.original.file_url && !row.original.file_key && (
             <span
               className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 shrink-0"
               title="No file attached"
@@ -985,64 +1020,71 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
               <LinkedIssues invoiceId={detailItem.id} />
 
               <div className="border-t" />
-              {addingFile ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    placeholder="https://..."
-                    value={fileUrl}
-                    onChange={(e) => setFileUrl(e.target.value)}
-                    className="flex-1"
-                    autoFocus
-                    onKeyDown={(e) => e.key === "Enter" && handleSaveFileUrl()}
-                  />
-                  <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handlePickPdf(f);
+                  }}
+                />
+                {detailItem.file_key || detailItem.file_url ? (
+                  <>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => { setAddingFile(false); setFileUrl(""); }}
+                      className="w-full sm:w-auto"
+                      onClick={handleViewFile}
+                      disabled={uploading}
                     >
-                      Cancel
+                      <FileText className="mr-2 h-4 w-4" />
+                      {detailItem.file_key ? "View PDF" : "Open in Drive"}
                     </Button>
                     <Button
+                      variant="ghost"
                       size="sm"
-                      onClick={handleSaveFileUrl}
-                      disabled={loading || !fileUrl.trim()}
+                      className="w-full sm:w-auto text-muted-foreground"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
                     >
-                      {loading ? "Saving..." : "Save"}
+                      {uploading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 h-4 w-4" />
+                      )}
+                      {uploading ? "Uploading..." : "Replace"}
                     </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  {detailItem.file_url ? (
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
-                      <a href={detailItem.file_url} target="_blank" rel="noopener noreferrer">
-                        <FileText className="mr-2 h-4 w-4" />
-                        View file
-                      </a>
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full sm:w-auto border-dashed text-muted-foreground"
-                      onClick={() => setAddingFile(true)}
-                    >
-                      <Link className="mr-2 h-4 w-4" />
-                      Add file
-                    </Button>
-                  )}
-                  <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                  </>
+                ) : (
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="w-full sm:w-auto"
-                    onClick={closeDetail}
+                    className="w-full sm:w-auto border-dashed text-muted-foreground"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
                   >
-                    Close
+                    {uploading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    {uploading ? "Uploading..." : "Upload PDF"}
                   </Button>
-                </div>
-              )}
+                )}
+                <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={closeDetail}
+                  disabled={uploading}
+                >
+                  Close
+                </Button>
+              </div>
             </div>
           ) : null}
         </DialogContent>

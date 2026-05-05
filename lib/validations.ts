@@ -107,6 +107,7 @@ export const InvoiceSchema = z.object({
   reminder_date: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   file_url: z.string().nullable().optional(),
+  file_key: z.string().nullable().optional(),
 });
 
 export type InvoiceInput = z.infer<typeof InvoiceSchema>;
