@@ -60,41 +60,50 @@ type ChartPoint = {
   label: string;
 };
 
+function fmtCurrencyNoCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
+type ExportLine = { key: LineKey; label: string; color: string };
+
 // Native vector chart drawn directly in jsPDF — avoids html2canvas/oklch issues.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function drawLineChart(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   doc: any,
   area: { x: number; y: number; w: number; h: number },
   chartData: ChartPoint[],
-  visible: Record<LineKey, boolean>
+  lines: ExportLine[],
+  showDataLabels: boolean = false
 ) {
   const { x, y, w, h } = area;
-  const padding = { top: 4, right: 8, bottom: 16, left: 22 };
+  const padding = { top: 6, right: 10, bottom: 18, left: 26 };
   const plotX = x + padding.left;
   const plotY = y + padding.top;
   const plotW = w - padding.left - padding.right;
   const plotH = h - padding.top - padding.bottom;
 
-  const visibleLines = LINES.filter((L) => visible[L.key]);
-  if (visibleLines.length === 0 || chartData.length === 0) return;
+  if (lines.length === 0 || chartData.length === 0) return;
 
   // Compute y-axis range across visible lines
   let minVal = 0;
   let maxVal = 0;
   for (const d of chartData) {
-    for (const L of visibleLines) {
+    for (const L of lines) {
       const v = d[L.key];
       if (v > maxVal) maxVal = v;
       if (v < minVal) minVal = v;
     }
   }
-  // Pad slightly so peaks don't touch the top
+  // Pad slightly so peaks don't touch the top (extra top room for data labels)
   const range = (maxVal - minVal) || 1;
-  maxVal = maxVal + range * 0.05;
+  maxVal = maxVal + range * (showDataLabels ? 0.1 : 0.05);
   minVal = minVal - range * 0.05;
 
-  const gridLines = 4;
+  const gridLines = 5;
   const valToY = (v: number) => plotY + plotH - ((v - minVal) / (maxVal - minVal || 1)) * plotH;
   const idxToX = (i: number) =>
     plotX + (chartData.length === 1 ? plotW / 2 : (i / (chartData.length - 1)) * plotW);
@@ -108,33 +117,33 @@ function drawLineChart(
   }
 
   // Y-axis labels
-  doc.setFontSize(7);
+  doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
   for (let i = 0; i <= gridLines; i++) {
     const val = minVal + (i / gridLines) * (maxVal - minVal);
     const py = plotY + plotH - (i / gridLines) * plotH;
-    doc.text(compactCurrency(val), plotX - 1.5, py + 1.2, { align: "right" });
+    doc.text(compactCurrency(val), plotX - 2, py + 1.4, { align: "right" });
   }
 
   // X-axis labels
   for (let i = 0; i < chartData.length; i++) {
-    doc.text(chartData[i].label, idxToX(i), plotY + plotH + 4, { align: "center" });
+    doc.text(chartData[i].label, idxToX(i), plotY + plotH + 5, { align: "center" });
   }
 
   // Zero line (slightly darker if min < 0 < max)
   if (minVal < 0 && maxVal > 0) {
     doc.setDrawColor(160, 174, 192);
-    doc.setLineWidth(0.25);
+    doc.setLineWidth(0.3);
     const zeroY = valToY(0);
     doc.line(plotX, zeroY, plotX + plotW, zeroY);
   }
 
   // Lines + dots
-  for (const L of visibleLines) {
+  for (const L of lines) {
     const [r, g, b] = hexToRgb(L.color);
     doc.setDrawColor(r, g, b);
     doc.setFillColor(r, g, b);
-    doc.setLineWidth(0.55);
+    doc.setLineWidth(0.7);
     for (let i = 0; i < chartData.length - 1; i++) {
       doc.line(
         idxToX(i),
@@ -144,21 +153,36 @@ function drawLineChart(
       );
     }
     for (let i = 0; i < chartData.length; i++) {
-      doc.circle(idxToX(i), valToY(chartData[i][L.key]), 0.7, "F");
+      doc.circle(idxToX(i), valToY(chartData[i][L.key]), 1.0, "F");
+    }
+  }
+
+  // Data labels: numeric tag above each dot, colored by line
+  if (showDataLabels) {
+    doc.setFontSize(6.5);
+    for (const L of lines) {
+      const [r, g, b] = hexToRgb(L.color);
+      doc.setTextColor(r, g, b);
+      for (let i = 0; i < chartData.length; i++) {
+        const v = chartData[i][L.key];
+        const px = idxToX(i);
+        const py = valToY(v) - 2.2;
+        doc.text(fmtCurrencyNoCents(v), px, py, { align: "center" });
+      }
     }
   }
 
   // Legend (below x-labels)
-  const legendY = y + h - 1;
+  const legendY = y + h - 2;
   let legendX = plotX;
-  doc.setFontSize(7);
-  for (const L of visibleLines) {
+  doc.setFontSize(8);
+  for (const L of lines) {
     const [r, g, b] = hexToRgb(L.color);
     doc.setFillColor(r, g, b);
-    doc.circle(legendX + 1, legendY - 1, 0.8, "F");
+    doc.circle(legendX + 1.2, legendY - 1.2, 1.1, "F");
     doc.setTextColor(60, 60, 60);
-    doc.text(L.label, legendX + 3, legendY);
-    legendX += doc.getTextWidth(L.label) + 8;
+    doc.text(L.label, legendX + 3.5, legendY);
+    legendX += doc.getTextWidth(L.label) + 10;
   }
 }
 
@@ -347,19 +371,36 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         cursorY += 4;
       }
 
-      // Chart
-      const chartH = 70;
+      // ── Chart: only Income / Work expenses / Corporate net, full first page
+      const EXPORT_KEYS: LineKey[] = ["income", "workExpenses", "corporateNet"];
+      const exportLines: ExportLine[] = LINES
+        .filter((L) => EXPORT_KEYS.includes(L.key) && visible[L.key])
+        .map((L) => ({ key: L.key, label: L.label, color: L.color }));
+
+      const chartTop = cursorY;
+      const chartBottom = pageH - margin - 4; // leave room for page footer
       drawLineChart(
         doc,
-        { x: margin, y: cursorY, w: pageW - margin * 2, h: chartH },
+        { x: margin, y: chartTop, w: pageW - margin * 2, h: chartBottom - chartTop },
         chartData,
-        visible
+        exportLines,
+        true
       );
-      cursorY += chartH + 6;
 
-      // ── Income table ──────────────────────────────────────────────────────
+      // ── Page 2+: unified table ────────────────────────────────────────────
+      doc.addPage();
+      cursorY = margin + 4;
+
+      doc.setTextColor(...primary);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Detail by item", margin, cursorY);
+      doc.setFont("helvetica", "normal");
+      cursorY += 5;
+
+      // Build rows: income clients (positive) + work expense items (negative)
       const includedClients = visibleClients.filter((c) => !excluded.has(c.id));
-      const incomeRows = includedClients.map((c) => {
+      const incomeRowsBuilt = includedClients.map((c) => {
         const monthAmounts = months.map((m) => {
           const byClient = incomeByClient.find((x) => x.month === m)?.byClient ?? {};
           return byClient[c.id] ?? 0;
@@ -367,40 +408,98 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         const total = monthAmounts.reduce((s, v) => s + v, 0);
         return { name: c.name, monthAmounts, total };
       });
-      const incomeMonthTotals = months.map((_, i) =>
-        incomeRows.reduce((s, r) => s + r.monthAmounts[i], 0)
-      );
-      const incomeGrandTotal = incomeRows.reduce((s, r) => s + r.total, 0);
 
-      doc.setTextColor(...primary);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("Income by client", margin, cursorY);
-      doc.setFont("helvetica", "normal");
-      cursorY += 3;
+      const buildExpenseRows = (rows: WorkExpenseRow[]) =>
+        rows
+          .map((r) => {
+            // Negate so values display as expense outflow
+            const monthAmounts = months.map((m) => -(r.monthly[m] ?? 0));
+            const total = monthAmounts.reduce((s, v) => s + v, 0);
+            return { name: r.name, monthAmounts, total };
+          })
+          .filter((r) => r.total !== 0)
+          .sort((a, b) => a.total - b.total); // most negative first
+
+      const salariesRowsBuilt = buildExpenseRows(workExpensesByItem.salaries);
+      const workSubsRowsBuilt = buildExpenseRows(workExpensesByItem.workSubs);
+      const workOtherRowsBuilt = buildExpenseRows(workExpensesByItem.workOther);
+
+      // Net per month (= corporateNet from chartData, already excluded-aware)
+      const netMonths = chartData.map((d) => d.corporateNet);
+      const netGrand = netMonths.reduce((s, v) => s + v, 0);
+
+      // Format helper: signed currency, em-dash for zero
+      const fmtSigned = (cents: number) => {
+        if (cents === 0) return "—";
+        if (cents < 0) return `−${formatCents(Math.abs(cents))}`;
+        return formatCents(cents);
+      };
+
+      // Build flat row metadata for autotable + cell-level styling lookup
+      type RowMeta = { kind: "subheader" | "income" | "expense" | "total" };
+      const rowMeta: RowMeta[] = [];
+      const tableBody: string[][] = [];
+
+      const pushSubheader = (label: string) => {
+        rowMeta.push({ kind: "subheader" });
+        tableBody.push([label, ...monthLabels.map(() => ""), ""]);
+      };
+      const pushDataRows = (
+        rows: { name: string; monthAmounts: number[]; total: number }[],
+        kind: "income" | "expense"
+      ) => {
+        for (const r of rows) {
+          rowMeta.push({ kind });
+          tableBody.push([
+            r.name,
+            ...r.monthAmounts.map(fmtSigned),
+            fmtSigned(r.total),
+          ]);
+        }
+      };
+
+      pushSubheader("INCOME");
+      if (incomeRowsBuilt.length === 0) {
+        rowMeta.push({ kind: "income" });
+        tableBody.push(["No income in this period", ...monthLabels.map(() => ""), ""]);
+      } else {
+        pushDataRows(incomeRowsBuilt, "income");
+      }
+
+      if (salariesRowsBuilt.length > 0) {
+        pushSubheader("SALARIES");
+        pushDataRows(salariesRowsBuilt, "expense");
+      }
+      if (workSubsRowsBuilt.length > 0) {
+        pushSubheader("WORK SUBSCRIPTIONS");
+        pushDataRows(workSubsRowsBuilt, "expense");
+      }
+      if (workOtherRowsBuilt.length > 0) {
+        pushSubheader("OTHER WORK EXPENSES");
+        pushDataRows(workOtherRowsBuilt, "expense");
+      }
+
+      // Final Net row
+      rowMeta.push({ kind: "total" });
+      tableBody.push([
+        "Net (Income − Work expenses)",
+        ...netMonths.map(fmtSigned),
+        fmtSigned(netGrand),
+      ]);
+
+      const orange: [number, number, number] = [249, 115, 22];
 
       autoTable(doc, {
         startY: cursorY,
-        head: [["Client", ...monthLabels, "Total"]],
-        body:
-          incomeRows.length === 0
-            ? [["No income in this period", ...monthLabels.map(() => ""), ""]]
-            : incomeRows.map((r) => [
-                r.name,
-                ...r.monthAmounts.map((v) => (v === 0 ? "—" : formatCents(v))),
-                formatCents(r.total),
-              ]),
-        foot:
-          incomeRows.length === 0
-            ? undefined
-            : [["Total", ...incomeMonthTotals.map((v) => formatCents(v)), formatCents(incomeGrandTotal)]],
+        head: [["Item", ...monthLabels, "Total"]],
+        body: tableBody,
         theme: "plain",
         headStyles: {
           fillColor: bgLight,
           textColor: muted,
           fontStyle: "bold",
           fontSize: 7,
-          cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
+          cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 },
           lineWidth: { bottom: 0.3 },
           lineColor: [226, 232, 240],
         },
@@ -411,162 +510,31 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
           lineWidth: { bottom: 0.15 },
           lineColor: [226, 232, 240],
         },
-        footStyles: {
-          fillColor: bgLight,
-          textColor: primary,
-          fontStyle: "bold",
-          fontSize: 7,
-          cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
-          lineWidth: { top: 0.3 },
-          lineColor: [226, 232, 240],
-        },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         didParseCell: (data: any) => {
+          if (data.section !== "body") return;
+          const meta = rowMeta[data.row.index];
+          if (!meta) return;
+
           if (data.column.index > 0) data.cell.styles.halign = "right";
+
+          if (meta.kind === "subheader") {
+            data.cell.styles.fillColor = bgLight;
+            data.cell.styles.textColor = muted;
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.fontSize = 6.5;
+            data.cell.styles.cellPadding = { top: 2, bottom: 1.5, left: 2, right: 2 };
+          } else if (meta.kind === "expense" && data.column.index > 0) {
+            data.cell.styles.textColor = orange;
+          } else if (meta.kind === "total") {
+            data.cell.styles.fillColor = primary;
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 2, right: 2 };
+          }
         },
         margin: { left: margin, right: margin },
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cursorY = (doc as any).lastAutoTable.finalY + 6;
-
-      // ── Work expenses tables ─────────────────────────────────────────────
-      doc.setTextColor(...primary);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("Work expenses by source", margin, cursorY);
-      doc.setFont("helvetica", "normal");
-      cursorY += 3;
-
-      type Section = { title: string; rows: WorkExpenseRow[] };
-      const sections: Section[] = [
-        { title: "Salaries", rows: workExpensesByItem.salaries },
-        { title: "Work subscriptions", rows: workExpensesByItem.workSubs },
-        { title: "Other work expenses", rows: workExpensesByItem.workOther },
-      ];
-
-      // Track grand totals per month across all work-expense sections
-      const grandMonthTotals = months.map(() => 0);
-      let workExpensesGrandTotal = 0;
-
-      for (const section of sections) {
-        // Filter row data to visible months only
-        const sectionRows = section.rows
-          .map((r) => {
-            const monthAmounts = months.map((m) => r.monthly[m] ?? 0);
-            const total = monthAmounts.reduce((s, v) => s + v, 0);
-            return { name: r.name, monthAmounts, total };
-          })
-          .filter((r) => r.total > 0)
-          .sort((a, b) => b.total - a.total);
-
-        if (sectionRows.length === 0) continue;
-
-        const sectionMonthTotals = months.map((_, i) =>
-          sectionRows.reduce((s, r) => s + r.monthAmounts[i], 0)
-        );
-        const sectionGrandTotal = sectionRows.reduce((s, r) => s + r.total, 0);
-
-        for (let i = 0; i < months.length; i++) grandMonthTotals[i] += sectionMonthTotals[i];
-        workExpensesGrandTotal += sectionGrandTotal;
-
-        // Page break if low on space
-        if (cursorY > pageH - 40) {
-          doc.addPage();
-          cursorY = margin + 4;
-        }
-
-        doc.setTextColor(...muted);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "bold");
-        doc.text(section.title, margin, cursorY);
-        doc.setFont("helvetica", "normal");
-        cursorY += 2;
-
-        autoTable(doc, {
-          startY: cursorY,
-          head: [[section.title, ...monthLabels, "Total"]],
-          body: sectionRows.map((r) => [
-            r.name,
-            ...r.monthAmounts.map((v) => (v === 0 ? "—" : formatCents(v))),
-            formatCents(r.total),
-          ]),
-          foot: [
-            [
-              "Subtotal",
-              ...sectionMonthTotals.map((v) => formatCents(v)),
-              formatCents(sectionGrandTotal),
-            ],
-          ],
-          theme: "plain",
-          headStyles: {
-            fillColor: bgLight,
-            textColor: muted,
-            fontStyle: "bold",
-            fontSize: 7,
-            cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
-            lineWidth: { bottom: 0.3 },
-            lineColor: [226, 232, 240],
-          },
-          bodyStyles: {
-            textColor: primary,
-            fontSize: 7,
-            cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
-            lineWidth: { bottom: 0.15 },
-            lineColor: [226, 232, 240],
-          },
-          footStyles: {
-            fillColor: bgLight,
-            textColor: primary,
-            fontStyle: "bold",
-            fontSize: 7,
-            cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
-            lineWidth: { top: 0.3 },
-            lineColor: [226, 232, 240],
-          },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          didParseCell: (data: any) => {
-            if (data.column.index > 0) data.cell.styles.halign = "right";
-          },
-          margin: { left: margin, right: margin },
-        });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        cursorY = (doc as any).lastAutoTable.finalY + 4;
-      }
-
-      // Grand total row across all work-expense sections
-      if (workExpensesGrandTotal > 0) {
-        if (cursorY > pageH - 18) {
-          doc.addPage();
-          cursorY = margin + 4;
-        }
-        autoTable(doc, {
-          startY: cursorY,
-          head: undefined,
-          body: [
-            [
-              "Total work expenses",
-              ...grandMonthTotals.map((v) => formatCents(v)),
-              formatCents(workExpensesGrandTotal),
-            ],
-          ],
-          theme: "plain",
-          bodyStyles: {
-            fillColor: primary,
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            fontSize: 7,
-            cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
-          },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          didParseCell: (data: any) => {
-            if (data.column.index > 0) data.cell.styles.halign = "right";
-          },
-          margin: { left: margin, right: margin },
-          // The first column should match width of the table-data column 1 visually — autotable handles it.
-        });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        cursorY = (doc as any).lastAutoTable.finalY + 6;
-      }
 
       // Footer with page numbers
       const totalPages = doc.getNumberOfPages();
