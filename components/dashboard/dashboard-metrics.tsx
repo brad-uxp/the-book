@@ -35,13 +35,25 @@ export interface MonthData {
   otherPersonal: number;
 }
 
+export interface MonthIncomeByClient {
+  month: string;
+  byClient: Record<string, number>;
+}
+
+export interface ClientInfo {
+  name: string;
+  color: string;
+}
+
 interface Props {
   monthlyData: MonthData[];
+  monthlyIncomeByClient: MonthIncomeByClient[];
+  clientsIndex: Record<string, ClientInfo>;
   sentTotal: number;
   sentCount: number;
 }
 
-export function DashboardMetrics({ monthlyData, sentTotal, sentCount }: Props) {
+export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, sentTotal, sentCount }: Props) {
   const [preset, setPreset] = useState<Preset>("ytd");
 
   const filtered = useMemo(() => {
@@ -103,6 +115,11 @@ export function DashboardMetrics({ monthlyData, sentTotal, sentCount }: Props) {
     }),
     [filtered]
   );
+
+  const incomeByClientFiltered = useMemo(() => {
+    const visibleMonths = new Set(filtered.map((d) => d.month));
+    return monthlyIncomeByClient.filter((d) => visibleMonths.has(d.month));
+  }, [filtered, monthlyIncomeByClient]);
 
   return (
     <div className="space-y-4">
@@ -218,7 +235,11 @@ export function DashboardMetrics({ monthlyData, sentTotal, sentCount }: Props) {
       <DashboardChart data={chartData} />
 
       {/* Corporate profitability chart */}
-      <CorporateChart data={chartData} />
+      <CorporateChart
+        data={chartData}
+        incomeByClient={incomeByClientFiltered}
+        clientsIndex={clientsIndex}
+      />
     </div>
   );
 }

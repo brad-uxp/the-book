@@ -71,7 +71,13 @@ export default async function DashboardPage() {
     }),
     prisma.invoice.findMany({
       where: { status: "paid", due_date: { gte: fromDate, lte: toDate } },
-      select: { due_date: true, amount_cents: true, fee_cents: true },
+      select: {
+        due_date: true,
+        amount_cents: true,
+        fee_cents: true,
+        client_id: true,
+        client: { select: { name: true, color_hex: true } },
+      },
     }),
     prisma.otherExpense.findMany({
       where: { paid_at: { gte: fromDate, lte: toDate } },
@@ -105,12 +111,30 @@ export default async function DashboardPage() {
       else if (p.category === "personal") b.otherPersonal += p.amount_cents;
     }
   }
+  // Per-month per-client income (used by Corporate chart's "exclude clients" toggle)
+  const incomeBuckets = new Map<string, Map<string, number>>(months.map((m) => [m, new Map()]));
+  const clientsIndex: Record<string, { name: string; color: string }> = {};
+
   for (const inv of invoices) {
-    const b = buckets.get(toPeriodKey(inv.due_date));
-    if (b) b.income += inv.amount_cents + inv.fee_cents;
+    const monthKey = toPeriodKey(inv.due_date);
+    const b = buckets.get(monthKey);
+    const total = inv.amount_cents + inv.fee_cents;
+    if (b) b.income += total;
+
+    const ib = incomeBuckets.get(monthKey);
+    if (ib) {
+      ib.set(inv.client_id, (ib.get(inv.client_id) ?? 0) + total);
+      if (!clientsIndex[inv.client_id]) {
+        clientsIndex[inv.client_id] = { name: inv.client.name, color: inv.client.color_hex };
+      }
+    }
   }
 
   const monthlyData = months.map((month) => ({ month, ...buckets.get(month)! }));
+  const monthlyIncomeByClient = months.map((month) => ({
+    month,
+    byClient: Object.fromEntries(incomeBuckets.get(month)!),
+  }));
 
   // ── Upcoming data ───────────────────────────────────────────────────────────
   const [activeSubscriptions, activePeople, upcomingInvoices] = await Promise.all([
@@ -217,6 +241,8 @@ export default async function DashboardPage() {
       {/* Metrics: filter toggle + summary cards + chart */}
       <DashboardMetrics
         monthlyData={monthlyData}
+        monthlyIncomeByClient={monthlyIncomeByClient}
+        clientsIndex={clientsIndex}
         sentTotal={sentTotal}
         sentCount={sentCount}
       />
