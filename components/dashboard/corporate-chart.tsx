@@ -81,11 +81,15 @@ function drawLineChart(
   excludedNote: string = ""
 ) {
   const { x, y, w, h } = area;
-  const padding = { top: 6, right: 10, bottom: 18, left: 26 };
+  const padding = { top: 6, right: 10, bottom: 18, left: 12 };
   const plotX = x + padding.left;
   const plotY = y + padding.top;
   const plotW = w - padding.left - padding.right;
   const plotH = h - padding.top - padding.bottom;
+  // Horizontal padding inside plot so first/last data points don't touch the Y axis or right edge
+  const innerPadL = 6;
+  const innerPadR = 4;
+  const usableW = Math.max(0, plotW - innerPadL - innerPadR);
 
   if (lines.length === 0 || chartData.length === 0) return;
 
@@ -107,7 +111,9 @@ function drawLineChart(
   const gridLines = 5;
   const valToY = (v: number) => plotY + plotH - ((v - minVal) / (maxVal - minVal || 1)) * plotH;
   const idxToX = (i: number) =>
-    plotX + (chartData.length === 1 ? plotW / 2 : (i / (chartData.length - 1)) * plotW);
+    plotX +
+    innerPadL +
+    (chartData.length === 1 ? usableW / 2 : (i / (chartData.length - 1)) * usableW);
 
   // Gridlines (horizontal + vertical at month marks)
   doc.setDrawColor(226, 232, 240);
