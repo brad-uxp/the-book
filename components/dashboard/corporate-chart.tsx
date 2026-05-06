@@ -81,15 +81,9 @@ function drawLineChart(
   excludedNote: string = ""
 ) {
   const { x, y, w, h } = area;
-  const padding = { top: 6, right: 10, bottom: 18, left: 12 };
-  const plotX = x + padding.left;
+  const padding = { top: 6, right: 10, bottom: 18 };
   const plotY = y + padding.top;
-  const plotW = w - padding.left - padding.right;
   const plotH = h - padding.top - padding.bottom;
-  // Horizontal padding inside plot so first/last data points don't touch the Y axis or right edge
-  const innerPadL = 6;
-  const innerPadR = 4;
-  const usableW = Math.max(0, plotW - innerPadL - innerPadR);
 
   if (lines.length === 0 || chartData.length === 0) return;
 
@@ -109,6 +103,25 @@ function drawLineChart(
   minVal = minVal - range * 0.05;
 
   const gridLines = 5;
+
+  // Measure Y labels to position the plot dynamically — labels left-align at area.x
+  // (so their left edge sits at the page margin, aligned with the H1 above)
+  doc.setFontSize(8);
+  let maxYLabelW = 0;
+  for (let i = 0; i <= gridLines; i++) {
+    const val = minVal + (i / gridLines) * (maxVal - minVal);
+    const tw = doc.getTextWidth(compactCurrency(val));
+    if (tw > maxYLabelW) maxYLabelW = tw;
+  }
+  const yLabelGap = 3; // mm gap between right edge of Y labels and the Y axis
+  const plotX = x + maxYLabelW + yLabelGap;
+  const plotW = w - maxYLabelW - yLabelGap - padding.right;
+
+  // Inner horizontal padding so first chip doesn't sit on the Y axis line
+  const innerPadL = 6;
+  const innerPadR = 4;
+  const usableW = Math.max(0, plotW - innerPadL - innerPadR);
+
   const valToY = (v: number) => plotY + plotH - ((v - minVal) / (maxVal - minVal || 1)) * plotH;
   const idxToX = (i: number) =>
     plotX +
@@ -127,13 +140,13 @@ function drawLineChart(
     doc.line(px, plotY, px, plotY + plotH);
   }
 
-  // Y-axis labels
+  // Y-axis labels — left-aligned at area.x (= page margin) so they line up with the H1
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
   for (let i = 0; i <= gridLines; i++) {
     const val = minVal + (i / gridLines) * (maxVal - minVal);
     const py = plotY + plotH - (i / gridLines) * plotH;
-    doc.text(compactCurrency(val), plotX - 2, py + 1.4, { align: "right" });
+    doc.text(compactCurrency(val), x, py + 1.4, { align: "left" });
   }
 
   // X-axis labels
