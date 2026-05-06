@@ -77,7 +77,8 @@ function drawLineChart(
   area: { x: number; y: number; w: number; h: number },
   chartData: ChartPoint[],
   lines: ExportLine[],
-  showDataLabels: boolean = false
+  showDataLabels: boolean = false,
+  excludedNote: string = ""
 ) {
   const { x, y, w, h } = area;
   const padding = { top: 6, right: 10, bottom: 18, left: 26 };
@@ -98,9 +99,9 @@ function drawLineChart(
       if (v < minVal) minVal = v;
     }
   }
-  // Pad slightly so peaks don't touch the top (extra top room for data labels)
+  // Pad slightly so peaks don't touch the top
   const range = (maxVal - minVal) || 1;
-  maxVal = maxVal + range * (showDataLabels ? 0.1 : 0.05);
+  maxVal = maxVal + range * 0.05;
   minVal = minVal - range * 0.05;
 
   const gridLines = 5;
@@ -108,12 +109,16 @@ function drawLineChart(
   const idxToX = (i: number) =>
     plotX + (chartData.length === 1 ? plotW / 2 : (i / (chartData.length - 1)) * plotW);
 
-  // Horizontal gridlines
+  // Gridlines (horizontal + vertical at month marks)
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.15);
   for (let i = 0; i <= gridLines; i++) {
     const py = plotY + plotH - (i / gridLines) * plotH;
     doc.line(plotX, py, plotX + plotW, py);
+  }
+  for (let i = 0; i < chartData.length; i++) {
+    const px = idxToX(i);
+    doc.line(px, plotY, px, plotY + plotH);
   }
 
   // Y-axis labels
@@ -157,19 +162,41 @@ function drawLineChart(
     }
   }
 
-  // Data labels: numeric tag above each dot, colored by line
+  // Data labels: chip centered on the line — white fill, line-colored border + text
   if (showDataLabels) {
-    doc.setFontSize(6.5);
+    const fontSize = 6.5;
+    const padX = 1.4;
+    const chipH = 3.2;
+    doc.setFontSize(fontSize);
+    doc.setFont("helvetica", "bold");
     for (const L of lines) {
       const [r, g, b] = hexToRgb(L.color);
-      doc.setTextColor(r, g, b);
       for (let i = 0; i < chartData.length; i++) {
         const v = chartData[i][L.key];
-        const px = idxToX(i);
-        const py = valToY(v) - 2.2;
-        doc.text(fmtCurrencyNoCents(v), px, py, { align: "center" });
+        const text = fmtCurrencyNoCents(v);
+        const cx = idxToX(i);
+        const cy = valToY(v);
+        const textW = doc.getTextWidth(text);
+        const chipW = textW + padX * 2;
+
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(r, g, b);
+        doc.setLineWidth(0.25);
+        doc.roundedRect(
+          cx - chipW / 2,
+          cy - chipH / 2,
+          chipW,
+          chipH,
+          chipH / 2,
+          chipH / 2,
+          "FD"
+        );
+
+        doc.setTextColor(r, g, b);
+        doc.text(text, cx, cy, { align: "center", baseline: "middle" });
       }
     }
+    doc.setFont("helvetica", "normal");
   }
 
   // Legend (below x-labels)
@@ -183,6 +210,12 @@ function drawLineChart(
     doc.setTextColor(60, 60, 60);
     doc.text(L.label, legendX + 3.5, legendY);
     legendX += doc.getTextWidth(L.label) + 10;
+  }
+  if (excludedNote) {
+    const note = `· Excluding: ${excludedNote}`;
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(7.5);
+    doc.text(note, legendX, legendY);
   }
 }
 
@@ -328,7 +361,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
-      const margin = 12;
+      const margin = 8;
 
       const primary: [number, number, number] = [15, 23, 42];
       const muted: [number, number, number] = [100, 116, 139];
@@ -337,39 +370,30 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       const months = chartData.map((d) => d.month);
       const monthLabels = chartData.map((d) => d.label);
 
-      // Header bar
-      doc.setFillColor(...primary);
-      doc.rect(0, 0, pageW, 22, "F");
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(14);
-      doc.text("Corporate profitability report", margin, 10);
-      doc.setFontSize(8);
+      // Title + period (no header bar)
       const periodLabel =
         months.length === 0
           ? "—"
           : months.length === 1
           ? shortMonth(months[0])
-          : `${shortMonth(months[0])} – ${shortMonth(months[months.length - 1])}`;
-      doc.text(`Period: ${periodLabel}`, margin, 16);
-      doc.text(
-        new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
-        pageW - margin,
-        16,
-        { align: "right" }
-      );
+          : `${shortMonth(months[0])} - ${shortMonth(months[months.length - 1])}`;
+      doc.setTextColor(...primary);
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.text("Corporate profitability report", margin, 9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...muted);
+      doc.setFontSize(9);
+      doc.text(`Period: ${periodLabel}`, pageW - margin, 9, { align: "right" });
 
-      let cursorY = 26;
+      const excludedNames =
+        excluded.size > 0
+          ? Array.from(excluded)
+              .map((id) => clientsIndex[id]?.name ?? "Unknown")
+              .join(", ")
+          : "";
 
-      // Excluded note
-      if (excluded.size > 0) {
-        const names = Array.from(excluded)
-          .map((id) => clientsIndex[id]?.name ?? "Unknown")
-          .join(", ");
-        doc.setTextColor(...muted);
-        doc.setFontSize(8);
-        doc.text(`Excluded clients: ${names}`, margin, cursorY);
-        cursorY += 4;
-      }
+      let cursorY = 13;
 
       // ── Chart: only Income / Work expenses / Corporate net, full first page
       const EXPORT_KEYS: LineKey[] = ["income", "workExpenses", "corporateNet"];
@@ -384,7 +408,8 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         { x: margin, y: chartTop, w: pageW - margin * 2, h: chartBottom - chartTop },
         chartData,
         exportLines,
-        true
+        true,
+        excludedNames
       );
 
       // ── Page 2+: unified table ────────────────────────────────────────────
