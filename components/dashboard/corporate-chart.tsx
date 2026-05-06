@@ -469,10 +469,10 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         OTH: { bg: [254, 215, 170], text: [194, 65, 12] },   // orange
       };
 
-      // Flat row metadata: type chip + sign (income vs expense) + total flag
+      // Flat row metadata: type chip + sign (income vs expense) + total/margin flag
       type RowMeta = {
         chip: ChipKind | null;
-        kind: "income" | "expense" | "total";
+        kind: "income" | "expense" | "total" | "margin";
       };
       const rowMeta: RowMeta[] = [];
       const tableBody: string[][] = [];
@@ -510,6 +510,25 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         "Net (Income - Work expenses)",
         ...netMonths.map(fmtSigned),
         fmtSigned(netGrand),
+      ]);
+
+      // Margin % row (per month + period average)
+      const monthIncomes = months.map((_, i) =>
+        incomeRowsBuilt.reduce((s, r) => s + r.monthAmounts[i], 0)
+      );
+      const totalIncomePeriod = monthIncomes.reduce((s, v) => s + v, 0);
+      const monthMargins = monthIncomes.map((inc, i) =>
+        inc > 0 ? (chartData[i].corporateNet / inc) * 100 : null
+      );
+      const avgMargin = totalIncomePeriod > 0 ? (netGrand / totalIncomePeriod) * 100 : null;
+      const fmtPct = (v: number | null) => (v === null ? "—" : `${v.toFixed(1)}%`);
+
+      rowMeta.push({ chip: null, kind: "margin" });
+      tableBody.push([
+        "",
+        "Margin %",
+        ...monthMargins.map(fmtPct),
+        fmtPct(avgMargin),
       ]);
 
       const orange: [number, number, number] = [249, 115, 22];
@@ -554,6 +573,15 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = "bold";
             data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 2, right: 2 };
+            return;
+          }
+
+          // Margin row: light slate, primary bold — softer than the Net row above
+          if (meta.kind === "margin") {
+            data.cell.styles.fillColor = bgLight;
+            data.cell.styles.textColor = primary;
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.cellPadding = { top: 1.8, bottom: 1.8, left: 2, right: 2 };
             return;
           }
 
