@@ -428,29 +428,39 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       const netMonths = chartData.map((d) => d.corporateNet);
       const netGrand = netMonths.reduce((s, v) => s + v, 0);
 
-      // Format helper: signed currency, em-dash for zero
+      // Format helper: signed currency with ASCII minus, em-dash for zero
       const fmtSigned = (cents: number) => {
         if (cents === 0) return "—";
-        if (cents < 0) return `−${formatCents(Math.abs(cents))}`;
+        if (cents < 0) return `-${formatCents(Math.abs(cents))}`;
         return formatCents(cents);
       };
 
-      // Build flat row metadata for autotable + cell-level styling lookup
-      type RowMeta = { kind: "subheader" | "income" | "expense" | "total" };
+      // Type chip definitions: label + bg + text colors
+      type ChipKind = "INC" | "SAL" | "SUB" | "OTH";
+      const CHIPS: Record<ChipKind, { bg: [number, number, number]; text: [number, number, number] }> = {
+        INC: { bg: [219, 234, 254], text: [29, 78, 216] },   // blue
+        SAL: { bg: [254, 226, 226], text: [185, 28, 28] },   // red
+        SUB: { bg: [254, 243, 199], text: [180, 83, 9] },    // amber
+        OTH: { bg: [254, 215, 170], text: [194, 65, 12] },   // orange
+      };
+
+      // Flat row metadata: type chip + sign (income vs expense) + total flag
+      type RowMeta = {
+        chip: ChipKind | null;
+        kind: "income" | "expense" | "total";
+      };
       const rowMeta: RowMeta[] = [];
       const tableBody: string[][] = [];
 
-      const pushSubheader = (label: string) => {
-        rowMeta.push({ kind: "subheader" });
-        tableBody.push([label, ...monthLabels.map(() => ""), ""]);
-      };
-      const pushDataRows = (
+      const pushRows = (
         rows: { name: string; monthAmounts: number[]; total: number }[],
+        chip: ChipKind,
         kind: "income" | "expense"
       ) => {
         for (const r of rows) {
-          rowMeta.push({ kind });
+          rowMeta.push({ chip, kind });
           tableBody.push([
+            chip,
             r.name,
             ...r.monthAmounts.map(fmtSigned),
             fmtSigned(r.total),
@@ -458,31 +468,21 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         }
       };
 
-      pushSubheader("INCOME");
       if (incomeRowsBuilt.length === 0) {
-        rowMeta.push({ kind: "income" });
-        tableBody.push(["No income in this period", ...monthLabels.map(() => ""), ""]);
+        rowMeta.push({ chip: "INC", kind: "income" });
+        tableBody.push(["INC", "No income in this period", ...monthLabels.map(() => ""), ""]);
       } else {
-        pushDataRows(incomeRowsBuilt, "income");
+        pushRows(incomeRowsBuilt, "INC", "income");
       }
+      pushRows(salariesRowsBuilt, "SAL", "expense");
+      pushRows(workSubsRowsBuilt, "SUB", "expense");
+      pushRows(workOtherRowsBuilt, "OTH", "expense");
 
-      if (salariesRowsBuilt.length > 0) {
-        pushSubheader("SALARIES");
-        pushDataRows(salariesRowsBuilt, "expense");
-      }
-      if (workSubsRowsBuilt.length > 0) {
-        pushSubheader("WORK SUBSCRIPTIONS");
-        pushDataRows(workSubsRowsBuilt, "expense");
-      }
-      if (workOtherRowsBuilt.length > 0) {
-        pushSubheader("OTHER WORK EXPENSES");
-        pushDataRows(workOtherRowsBuilt, "expense");
-      }
-
-      // Final Net row
-      rowMeta.push({ kind: "total" });
+      // Final Net row (no chip, distinct styling)
+      rowMeta.push({ chip: null, kind: "total" });
       tableBody.push([
-        "Net (Income − Work expenses)",
+        "",
+        "Net (Income - Work expenses)",
         ...netMonths.map(fmtSigned),
         fmtSigned(netGrand),
       ]);
@@ -491,24 +491,28 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
 
       autoTable(doc, {
         startY: cursorY,
-        head: [["Item", ...monthLabels, "Total"]],
+        head: [["Type", "Item", ...monthLabels, "Total"]],
         body: tableBody,
-        theme: "plain",
+        theme: "grid",
         headStyles: {
           fillColor: bgLight,
           textColor: muted,
           fontStyle: "bold",
           fontSize: 7,
           cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 },
-          lineWidth: { bottom: 0.3 },
+          lineWidth: 0.2,
           lineColor: [226, 232, 240],
         },
         bodyStyles: {
           textColor: primary,
           fontSize: 7,
-          cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
-          lineWidth: { bottom: 0.15 },
+          cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
+          lineWidth: 0.15,
           lineColor: [226, 232, 240],
+        },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 38 },
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         didParseCell: (data: any) => {
@@ -516,22 +520,50 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
           const meta = rowMeta[data.row.index];
           if (!meta) return;
 
-          if (data.column.index > 0) data.cell.styles.halign = "right";
+          // Right-align numeric columns
+          if (data.column.index >= 2) data.cell.styles.halign = "right";
 
-          if (meta.kind === "subheader") {
-            data.cell.styles.fillColor = bgLight;
-            data.cell.styles.textColor = muted;
-            data.cell.styles.fontStyle = "bold";
-            data.cell.styles.fontSize = 6.5;
-            data.cell.styles.cellPadding = { top: 2, bottom: 1.5, left: 2, right: 2 };
-          } else if (meta.kind === "expense" && data.column.index > 0) {
-            data.cell.styles.textColor = orange;
-          } else if (meta.kind === "total") {
+          // Total row: slate background, white text
+          if (meta.kind === "total") {
             data.cell.styles.fillColor = primary;
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = "bold";
             data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 2, right: 2 };
+            return;
           }
+
+          // Expense rows: orange text on numeric cells
+          if (meta.kind === "expense" && data.column.index >= 2) {
+            data.cell.styles.textColor = orange;
+          }
+
+          // Suppress default rendering of the chip cell — we draw it ourselves
+          if (data.column.index === 0 && meta.chip) {
+            data.cell.text = [];
+          }
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        didDrawCell: (data: any) => {
+          if (data.section !== "body") return;
+          if (data.column.index !== 0) return;
+          const meta = rowMeta[data.row.index];
+          if (!meta?.chip) return;
+
+          const chip = CHIPS[meta.chip];
+          const padX = 1.2;
+          const chipH = 3.2;
+          const chipW = data.cell.width - padX * 2;
+          const cx = data.cell.x + padX;
+          const cy = data.cell.y + (data.cell.height - chipH) / 2;
+          const r = chipH / 2;
+
+          doc.setFillColor(...chip.bg);
+          doc.roundedRect(cx, cy, chipW, chipH, r, r, "F");
+          doc.setTextColor(...chip.text);
+          doc.setFontSize(5.5);
+          doc.setFont("helvetica", "bold");
+          doc.text(meta.chip, cx + chipW / 2, cy + chipH / 2 + 0.6, { align: "center" });
+          doc.setFont("helvetica", "normal");
         },
         margin: { left: margin, right: margin },
       });
