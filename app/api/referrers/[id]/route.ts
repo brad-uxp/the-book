@@ -50,10 +50,16 @@ export async function DELETE(
     return NextResponse.json({ error: "Referrer not found" }, { status: 404 });
   }
 
-  const invoiceCount = await prisma.invoice.count({ where: { referrer_id: id } });
-  if (invoiceCount > 0) {
+  const [invoiceCount, feePaymentCount] = await Promise.all([
+    prisma.invoice.count({ where: { referrer_id: id } }),
+    prisma.feePayment.count({ where: { referrer_id: id } }),
+  ]);
+  if (invoiceCount > 0 || feePaymentCount > 0) {
+    const parts: string[] = [];
+    if (invoiceCount > 0) parts.push(`${invoiceCount} invoice${invoiceCount > 1 ? "s" : ""}`);
+    if (feePaymentCount > 0) parts.push(`${feePaymentCount} fee payment${feePaymentCount > 1 ? "s" : ""}`);
     return NextResponse.json(
-      { error: `Cannot delete: ${invoiceCount} invoice${invoiceCount > 1 ? "s" : ""} assigned to this referrer` },
+      { error: `Cannot delete: this referrer has ${parts.join(" and ")}` },
       { status: 409 }
     );
   }
