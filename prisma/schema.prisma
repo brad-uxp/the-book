@@ -61,8 +61,10 @@ model SubscriptionPayment {
 
   subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
 
-  // NOTE: No DB-level unique on (subscription_id, due_date) because of soft deletes.
-  // Uniqueness among non-deleted records is enforced at the application level.
+  // Uniqueness among non-deleted records is enforced by a partial unique index
+  // (see migration partial_unique_subscription_payment). Prisma cannot model
+  // partial uniques natively; the @@index below stays for queries that include
+  // soft-deleted rows.
   @@index([subscription_id, due_date])
   @@index([paid_at])
 }
