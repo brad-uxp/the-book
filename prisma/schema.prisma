@@ -8,6 +8,28 @@ datasource db {
 }
 
 // ============================================================
+// Migration convention
+// ============================================================
+//
+// Some database objects in this project are NOT representable in the Prisma
+// schema and live only in hand-written migrations. As of today:
+//
+//   - SubscriptionPayment_subscription_id_due_date_active_key
+//     (partial unique index WHERE deleted_at IS NULL)
+//
+// Because `prisma migrate dev` diffs the schema against the live DB, any
+// such object will appear "extra" and Prisma will try to DROP it on the
+// next migration. To prevent that:
+//
+// 1. Always run `prisma migrate dev --create-only --name <x>` first.
+// 2. Inspect the generated SQL.
+// 3. Remove any `DROP INDEX`/`DROP CONSTRAINT` line that targets one of
+//    the manually-managed objects above.
+// 4. Then run `prisma migrate dev` to apply.
+//
+// Keep this list updated when new manual objects are added.
+
+// ============================================================
 // Subscriptions
 // ============================================================
 
@@ -359,6 +381,7 @@ model AuditLog {
   entity_id   String
   entity_name String   // denormalized label for list display (no JOIN needed)
   action      String   // "create" | "update" | "delete"
+  actor_email String?  // who performed the action; null for legacy/system events
   before      Json?    // previous state (update/delete)
   after       Json?    // new state (create/update)
   created_at  DateTime @default(now())
