@@ -16,6 +16,8 @@ datasource db {
 //
 //   - SubscriptionPayment_subscription_id_due_date_active_key
 //     (partial unique index WHERE deleted_at IS NULL)
+//   - settings_singleton_check
+//     (CHECK constraint on Settings.id = 'singleton')
 //
 // Because `prisma migrate dev` diffs the schema against the live DB, any
 // such object will appear "extra" and Prisma will try to DROP it on the
