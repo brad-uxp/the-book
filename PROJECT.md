@@ -266,7 +266,6 @@ accounting-system/
 | Invoice              | GET/PATCH/DEL   | `/api/invoices/[id]`                   |
 | Clients              | GET/POST        | `/api/clients`                         |
 | Client               | GET/PATCH/DEL   | `/api/clients/[id]`                    |
-| Expenses             | GET             | `/api/expenses`                        |
 | Other Expenses       | GET/POST        | `/api/other-expenses`                  |
 | Other Expense        | GET/PATCH/DEL   | `/api/other-expenses/[id]`             |
 | Fee Payments         | GET/POST        | `/api/fee-payments`                    |
