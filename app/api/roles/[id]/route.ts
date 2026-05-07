@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 const PatchSchema = z.object({ name: z.string().min(1) });
 
@@ -24,6 +24,7 @@ export async function PATCH(
     entity_id: id,
     entity_name: role.name,
     action: "update",
+    actor_email: await getActorEmail(),
     before: before ? { name: before.name } : null,
     after: { name: role.name },
   });
@@ -53,6 +54,7 @@ export async function DELETE(
       entity_id: id,
       entity_name: before.name,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: { name: before.name },
     });
   }

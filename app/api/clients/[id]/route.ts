@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ClientSchema } from "@/lib/validations";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function PATCH(
   req: NextRequest,
@@ -32,6 +32,7 @@ export async function PATCH(
     entity_id: id,
     entity_name: client.name,
     action: "update",
+    actor_email: await getActorEmail(),
     before: before ? { name: before.name, color_hex: before.color_hex, default_referrer_id: before.default_referrer_id } : null,
     after: { name: client.name, color_hex: client.color_hex, default_referrer_id: client.default_referrer_id },
   });
@@ -61,6 +62,7 @@ export async function DELETE(
       entity_id: id,
       entity_name: before.name,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: { name: before.name, color_hex: before.color_hex },
     });
   }

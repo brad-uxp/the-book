@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 const PatchSchema = z.object({
   paid_at: z.string().optional(),
@@ -44,6 +44,7 @@ export async function PATCH(
     entity_id: id,
     entity_name: `${before.person.name} – ${periodLabel}`,
     action: "update",
+    actor_email: await getActorEmail(),
     before: {
       person_id: before.person_id,
       due_date: before.due_date,
@@ -87,6 +88,7 @@ export async function DELETE(
       entity_id: id,
       entity_name: `${before.person.name} – ${periodLabel}`,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: {
         person_id: before.person_id,
         due_date: before.due_date,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 const CreateSchema = z.object({
   name: z.string().min(1),
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     entity_id: fee.id,
     entity_name: fee.name,
     action: "create",
+    actor_email: await getActorEmail(),
     after: {
       name: fee.name,
       paid_at: fee.paid_at,

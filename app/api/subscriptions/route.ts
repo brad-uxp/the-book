@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { SubscriptionSchema } from "@/lib/validations";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 import { getTodayInTZ } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
     entity_id: sub.id,
     entity_name: sub.name,
     action: "create",
+    actor_email: await getActorEmail(),
     after: {
       name: sub.name,
       amount_cents: sub.amount_cents,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 const RoleSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     entity_id: role.id,
     entity_name: role.name,
     action: "create",
+    actor_email: await getActorEmail(),
     after: { name: role.name },
   });
 

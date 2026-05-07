@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { IssueSchema } from "@/lib/validations";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function PATCH(
   req: NextRequest,
@@ -49,6 +49,7 @@ export async function PATCH(
     entity_id: id,
     entity_name: issue.title,
     action: "update",
+    actor_email: await getActorEmail(),
     before: before ? {
       title: before.title,
       client_id: before.client_id,
@@ -86,6 +87,7 @@ export async function DELETE(
       entity_id: id,
       entity_name: before.title,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: {
         title: before.title,
         client_id: before.client_id,

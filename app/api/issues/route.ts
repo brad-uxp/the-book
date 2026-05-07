@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { IssueSchema } from "@/lib/validations";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
     entity_id: issue.id,
     entity_name: issue.title,
     action: "create",
+    actor_email: await getActorEmail(),
     after: {
       title: issue.title,
       client_id: issue.client_id,

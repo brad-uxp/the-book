@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getTodayInTZ, calcMonthlyDueDate, calcAnnualDueDate } from "@/lib/dates";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(
   _req: NextRequest,
@@ -80,6 +80,7 @@ export async function POST(
     entity_id: payment.id,
     entity_name: `${sub.name} – ${periodLabel}`,
     action: "create",
+    actor_email: await getActorEmail(),
     after: {
       subscription_id: payment.subscription_id,
       due_date: payment.due_date,
@@ -119,6 +120,7 @@ export async function DELETE(
       entity_id: paymentId,
       entity_name: `${before.subscription.name} – ${periodLabel}`,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: {
         subscription_id: before.subscription_id,
         due_date: before.due_date,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { SubscriptionSchema, SubscriptionBaseSchema } from "@/lib/validations";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(
   _req: NextRequest,
@@ -62,6 +62,7 @@ export async function PATCH(
     entity_id: id,
     entity_name: sub.name,
     action: "update",
+    actor_email: await getActorEmail(),
     before: before ? {
       name: before.name,
       amount_cents: before.amount_cents,
@@ -104,6 +105,7 @@ export async function DELETE(
       entity_id: id,
       entity_name: before.name,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: {
         name: before.name,
         amount_cents: before.amount_cents,

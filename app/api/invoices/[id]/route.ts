@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
 import { lastDayOfMonth } from "@/lib/dates";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2";
 
 async function safeDeleteR2(key: string | null | undefined) {
@@ -96,6 +96,7 @@ export async function PATCH(
     entity_id: id,
     entity_name: `${invoice.invoice_number ? `#${invoice.invoice_number} · ` : ""}${invoice.client.name}`,
     action: "update",
+    actor_email: await getActorEmail(),
     before: before ? {
       invoice_number: before.invoice_number,
       client_id: before.client_id,
@@ -146,6 +147,7 @@ export async function DELETE(
       entity_id: id,
       entity_name: `${before.invoice_number ? `#${before.invoice_number} · ` : ""}${before.client.name}`,
       action: "delete",
+      actor_email: await getActorEmail(),
       before: {
         invoice_number: before.invoice_number,
         client_id: before.client_id,

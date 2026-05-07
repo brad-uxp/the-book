@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { SalaryPaymentSchema } from "@/lib/validations";
 import { clampDay } from "@/lib/dates";
-import { auditLog } from "@/lib/audit";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(
   _req: NextRequest,
@@ -76,6 +76,7 @@ export async function POST(
     entity_id: payment.id,
     entity_name: `${person.name} – ${dueDate.toISOString().slice(0, 7)}`,
     action: "create",
+    actor_email: await getActorEmail(),
     after: {
       person_id: payment.person_id,
       due_date: payment.due_date,
