@@ -170,7 +170,37 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
     if (refRes.ok) setReferrers(await refRes.json());
   };
 
-  const handleCreate = async (input: InvoiceInput) => {
+  const uploadInvoicePdf = async (invoiceId: string, file: File): Promise<string | null> => {
+    const urlRes = await fetch(`/api/invoices/${invoiceId}/upload-url`, { method: "POST" });
+    if (!urlRes.ok) {
+      alert("No se pudo obtener URL de subida");
+      return null;
+    }
+    const { uploadUrl, key } = (await urlRes.json()) as { uploadUrl: string; key: string };
+
+    const putRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/pdf" },
+      body: file,
+    });
+    if (!putRes.ok) {
+      alert(`Error subiendo a R2 (status ${putRes.status})`);
+      return null;
+    }
+
+    const patchRes = await fetch(`/api/invoices/${invoiceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_key: key }),
+    });
+    if (!patchRes.ok) {
+      alert("Error guardando referencia del archivo");
+      return null;
+    }
+    return key;
+  };
+
+  const handleCreate = async (input: InvoiceInput, file: File | null) => {
     setLoading(true);
     try {
       const res = await fetch("/api/invoices", {
@@ -183,6 +213,10 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
         alert(err.error ?? "Error creating invoice");
         return;
       }
+      const created = (await res.json()) as { id: string };
+      if (file) {
+        await uploadInvoicePdf(created.id, file);
+      }
       await refresh();
       setCreateOpen(false);
     } finally {
@@ -190,7 +224,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
     }
   };
 
-  const handleEdit = async (input: InvoiceInput) => {
+  const handleEdit = async (input: InvoiceInput, file: File | null) => {
     if (!detailItem) return;
     setLoading(true);
     try {
@@ -203,6 +237,9 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
         const err = await res.json();
         alert(err.error ?? "Error updating invoice");
         return;
+      }
+      if (file) {
+        await uploadInvoicePdf(detailItem.id, file);
       }
       await refresh();
       setDetailItem(null);
@@ -246,33 +283,8 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
     }
     setUploading(true);
     try {
-      const urlRes = await fetch(`/api/invoices/${detailItem.id}/upload-url`, { method: "POST" });
-      if (!urlRes.ok) {
-        alert("No se pudo obtener URL de subida");
-        return;
-      }
-      const { uploadUrl, key } = (await urlRes.json()) as { uploadUrl: string; key: string };
-
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": "application/pdf" },
-        body: file,
-      });
-      if (!putRes.ok) {
-        alert(`Error subiendo a R2 (status ${putRes.status})`);
-        return;
-      }
-
-      const patchRes = await fetch(`/api/invoices/${detailItem.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_key: key }),
-      });
-      if (!patchRes.ok) {
-        alert("Error guardando referencia del archivo");
-        return;
-      }
-
+      const key = await uploadInvoicePdf(detailItem.id, file);
+      if (!key) return;
       setDetailItem({ ...detailItem, file_key: key });
       await refresh();
     } finally {

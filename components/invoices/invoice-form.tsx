@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -45,7 +45,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Check, ChevronsUpDown, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Trash2, Upload, FileText, X } from "lucide-react";
 
 interface Client {
   id: string;
@@ -70,16 +70,17 @@ const FormSchema = z.object({
   due_date: z.string().min(1, "Due date is required"),
   reminder_date: z.string().optional(),
   notes: z.string().optional(),
-  file_url: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
+
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 interface InvoiceFormProps {
   clients: Client[];
   referrers: Referrer[];
   defaultValues?: Partial<InvoiceInput>;
-  onSubmit: (data: InvoiceInput) => Promise<void>;
+  onSubmit: (data: InvoiceInput, file: File | null) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
   loading?: boolean;
@@ -96,6 +97,11 @@ export function InvoiceForm({
 }: InvoiceFormProps) {
   const [clientOpen, setClientOpen] = useState(false);
   const [referrerOpen, setReferrerOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const hasExistingFile = Boolean(defaultValues?.file_key || defaultValues?.file_url);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
@@ -117,7 +123,6 @@ export function InvoiceForm({
         ? new Date(defaultValues.reminder_date).toISOString().slice(0, 10)
         : "",
       notes: defaultValues?.notes ?? "",
-      file_url: defaultValues?.file_url ?? "",
     },
   });
 
@@ -133,19 +138,41 @@ export function InvoiceForm({
     }
   }, [watchedClientId, clients, form]);
 
+  const handleFilePick = (file: File | undefined | null) => {
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      setFileError("Solo se permiten archivos PDF");
+      return;
+    }
+    if (file.size > MAX_PDF_BYTES) {
+      setFileError("El archivo supera los 10 MB");
+      return;
+    }
+    setFileError(null);
+    setPendingFile(file);
+  };
+
+  const clearPendingFile = () => {
+    setPendingFile(null);
+    setFileError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSubmit = async (data: FormValues) => {
-    await onSubmit({
-      invoice_number: data.invoice_number || null,
-      client_id: data.client_id,
-      referrer_id: data.referrer_id || null,
-      amount_cents: parseToCents(data.amount_dollars),
-      fee_cents: parseToCents(data.fee_dollars || "0"),
-      status: data.status,
-      due_date: data.due_date,
-      reminder_date: data.reminder_date || null,
-      notes: data.notes || null,
-      file_url: data.file_url || null,
-    });
+    await onSubmit(
+      {
+        invoice_number: data.invoice_number || null,
+        client_id: data.client_id,
+        referrer_id: data.referrer_id || null,
+        amount_cents: parseToCents(data.amount_dollars),
+        fee_cents: parseToCents(data.fee_dollars || "0"),
+        status: data.status,
+        due_date: data.due_date,
+        reminder_date: data.reminder_date || null,
+        notes: data.notes || null,
+      },
+      pendingFile
+    );
   };
 
   return (
@@ -400,19 +427,51 @@ export function InvoiceForm({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="file_url"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>File link (optional)</FormLabel>
-              <FormControl>
-                <Input type="url" placeholder="https://..." {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
+        <FormItem>
+          <FormLabel>Invoice PDF (optional)</FormLabel>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => handleFilePick(e.target.files?.[0])}
+          />
+          {pendingFile ? (
+            <div className="flex w-full items-center gap-2 overflow-hidden rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{pendingFile.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {(pendingFile.size / 1024 / 1024).toFixed(2)} MB
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 shrink-0 p-0"
+                onClick={clearPendingFile}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start font-normal text-muted-foreground"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {hasExistingFile ? "Replace PDF" : "Upload PDF"}
+            </Button>
           )}
-        />
+          {fileError ? (
+            <p className="text-sm text-destructive">{fileError}</p>
+          ) : hasExistingFile && !pendingFile ? (
+            <p className="text-xs text-muted-foreground">
+              Ya hay un archivo cargado. Sube uno nuevo para reemplazarlo.
+            </p>
+          ) : null}
+        </FormItem>
 
         <div className="flex items-center justify-between pt-2">
           {onDelete ? (
