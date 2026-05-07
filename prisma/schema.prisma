@@ -104,6 +104,8 @@ model Person {
   salary_base        SalaryBase?
   salary_payments    SalaryPayment[]
   increase_reminders SalaryIncreaseReminder[]
+
+  @@index([role_id])
 }
 
 model SalaryBase {
@@ -242,6 +244,8 @@ model Client {
   default_referrer Referrer? @relation(fields: [default_referrer_id], references: [id], onDelete: SetNull)
   invoices         Invoice[]
   issues           Issue[]
+
+  @@index([default_referrer_id])
 }
 
 model Invoice {
@@ -266,6 +270,8 @@ model Invoice {
   @@index([status])
   @@index([due_date])
   @@index([status, due_date])
+  @@index([client_id])
+  @@index([referrer_id])
 }
 
 // ============================================================
@@ -299,6 +305,7 @@ model FeePayment {
   updated_at   DateTime  @updatedAt
 
   @@index([paid_at])
+  @@index([referrer_id])
 }
 
 // ============================================================
