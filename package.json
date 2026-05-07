@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "postinstall": "prisma generate",
-    "dev": "next dev",
+    "dev": "next dev --port 3001",
     "build": "next build --webpack",
     "start": "prisma migrate deploy && next start",
     "db:generate": "prisma generate",

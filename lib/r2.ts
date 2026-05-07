@@ -19,6 +19,7 @@ function getClient(): S3Client {
       region: "auto",
       endpoint,
       credentials: { accessKeyId, secretAccessKey },
+      forcePathStyle: true,
     });
   }
   return cachedClient;

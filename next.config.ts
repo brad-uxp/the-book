@@ -7,6 +7,19 @@ const withSerwist = withSerwistInit({
   disable: process.env.NODE_ENV === "development",
 });
 
+// CSP origin for the storage backend.
+// In production R2 derives from R2_ACCOUNT_ID → use the wildcard.
+// In local dev R2_ENDPOINT points to MinIO (http://localhost:9100) → use that origin.
+const storageConnectSrc = (() => {
+  const endpoint = process.env.R2_ENDPOINT;
+  if (!endpoint) return "https://*.r2.cloudflarestorage.com";
+  try {
+    return new URL(endpoint).origin;
+  } catch {
+    return "https://*.r2.cloudflarestorage.com";
+  }
+})();
+
 const nextConfig: NextConfig = {
   turbopack: {},
   images: {
@@ -51,7 +64,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self'",
-              "connect-src 'self' https://*.r2.cloudflarestorage.com",
+              `connect-src 'self' ${storageConnectSrc}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },
