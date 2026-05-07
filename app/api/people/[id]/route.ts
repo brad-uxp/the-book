@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { PersonSchema } from "@/lib/validations";
+import { PersonWithSalarySchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(
@@ -27,7 +27,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const parsed = PersonSchema.partial().safeParse(body);
+  const parsed = PersonWithSalarySchema.partial().safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

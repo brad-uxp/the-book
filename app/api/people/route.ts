@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { PersonSchema } from "@/lib/validations";
+import { PersonWithSalarySchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const parsed = PersonSchema.safeParse(body);
+  const parsed = PersonWithSalarySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import type { PersonInput } from "@/lib/validations";
+import type { PersonWithSalaryInput } from "@/lib/validations";
 import { parseToCents, centsToDecimalString } from "@/lib/currency";
 import {
   Form,
@@ -41,9 +41,9 @@ interface Role {
 }
 
 interface PersonFormProps {
-  defaultValues?: Partial<PersonInput>;
+  defaultValues?: Partial<PersonWithSalaryInput>;
   roles?: Role[];
-  onSubmit: (data: PersonInput) => Promise<void>;
+  onSubmit: (data: PersonWithSalaryInput) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
 }

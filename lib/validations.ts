@@ -36,16 +36,23 @@ export type SubscriptionPaymentInput = z.infer<typeof SubscriptionPaymentSchema>
 
 // ─── People / Salaries ────────────────────────────────────────────────────────
 
-export const PersonSchema = z.object({
+// Person columns that map directly to the Person model.
+export const PersonInputSchema = z.object({
   name: z.string().min(1, "Name is required"),
   payday_day: z.number().int().min(1).max(31),
   status: z.enum(["active", "inactive"]).default("active"),
   role_id: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+});
+
+// Composite shape used by the create/edit person form, which also persists
+// base_salary_cents into the related SalaryBase row inside a transaction.
+export const PersonWithSalarySchema = PersonInputSchema.extend({
   base_salary_cents: z.number().int().min(0, "Salary must be non-negative"),
 });
 
-export type PersonInput = z.infer<typeof PersonSchema>;
+export type PersonInput = z.infer<typeof PersonInputSchema>;
+export type PersonWithSalaryInput = z.infer<typeof PersonWithSalarySchema>;
 
 export const SalaryPaymentSchema = z.object({
   paid_at: z.string().min(1, "Payment date is required"),

@@ -54,7 +54,7 @@ import { PersonForm } from "./person-form";
 import { RoleManager } from "./role-manager";
 
 const SalaryChart = dynamic(() => import("./salary-chart").then((m) => m.SalaryChart), { ssr: false });
-import type { PersonInput } from "@/lib/validations";
+import type { PersonWithSalaryInput } from "@/lib/validations";
 import { LinkedIssues } from "@/components/issues/linked-issues";
 
 interface SalaryReminder {
@@ -234,7 +234,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
     if (rolesRes.ok) setRoles(await rolesRes.json());
   };
 
-  const handleCreate = async (input: PersonInput) => {
+  const handleCreate = async (input: PersonWithSalaryInput) => {
     setLoading(true);
     try {
       await fetch("/api/people", {
@@ -249,7 +249,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
     }
   };
 
-  const handleEdit = async (input: PersonInput) => {
+  const handleEdit = async (input: PersonWithSalaryInput) => {
     if (!editItem) return;
     setLoading(true);
     try {
