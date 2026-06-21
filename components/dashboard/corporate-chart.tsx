@@ -542,13 +542,15 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       const measuredTableH = (measureDoc as any).lastAutoTable.finalY + 2;
 
       // ── Single continuous-page layout (no page breaks) ────────────────────
+      // Distribution card at the top (below the title), then the chart, then
+      // the detail table.
+      const boxH = 22;
+      const boxY = 13;
       const CHART_H = 95;
-      const chartTop = 13;
+      const chartTop = boxY + boxH + 8;
       const detailTitleY = chartTop + CHART_H + 8;
       const tableStartY = detailTitleY + 5;
-      const boxH = 22;
-      const boxY = tableStartY + measuredTableH + 8;
-      const totalH = boxY + boxH + 8;
+      const totalH = tableStartY + measuredTableH + 8;
 
       // Match orientation to aspect so jsPDF keeps width = pageW (no auto-swap).
       const orientation = totalH > pageW ? "portrait" : "landscape";
@@ -563,6 +565,43 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       doc.setTextColor(...muted);
       doc.setFontSize(9);
       doc.text(`Period: ${periodLabel}`, pageW - margin, 9, { align: "right" });
+
+      // ── Distribution summary box (corporate net + 60/40 partner split) ────
+      // netGrand is the accumulated corporate net, already net of excluded clients.
+      const emerald: [number, number, number] = [16, 185, 129];
+      const boxX = margin;
+      const boxW = pageW - margin * 2;
+      const padX = 6;
+
+      doc.setFillColor(...bgLight);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, "FD");
+
+      // Corporate net (accumulated) — left side
+      const labelY = boxY + 7;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...muted);
+      doc.text("Corporate net - accumulated", boxX + padX, labelY);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(...emerald);
+      doc.text(formatCents(netGrand), boxX + padX, labelY + 9);
+
+      // 60/40 partner split — right side
+      const drawSplit = (x: number, label: string, value: number) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(...muted);
+        doc.text(label, x, labelY);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(...primary);
+        doc.text(formatCents(Math.round(value)), x, labelY + 8);
+      };
+      drawSplit(boxX + boxW * 0.52, "Partner A - 60%", netGrand * 0.6);
+      drawSplit(boxX + boxW * 0.74, "Partner B - 40%", netGrand * 0.4);
 
       // Chart
       drawLineChart(
@@ -668,43 +707,6 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         },
         margin: { left: margin, right: margin },
       });
-
-      // ── Distribution summary box (corporate net + 60/40 partner split) ────
-      // netGrand is the accumulated corporate net, already net of excluded clients.
-      const emerald: [number, number, number] = [16, 185, 129];
-      const boxX = margin;
-      const boxW = pageW - margin * 2;
-      const padX = 6;
-
-      doc.setFillColor(...bgLight);
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(0.2);
-      doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, "FD");
-
-      // Corporate net (accumulated) — left side
-      const labelY = boxY + 7;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(...muted);
-      doc.text("Corporate net - accumulated", boxX + padX, labelY);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(15);
-      doc.setTextColor(...emerald);
-      doc.text(formatCents(netGrand), boxX + padX, labelY + 9);
-
-      // 60/40 partner split — right side
-      const drawSplit = (x: number, label: string, value: number) => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7);
-        doc.setTextColor(...muted);
-        doc.text(label, x, labelY);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.setTextColor(...primary);
-        doc.text(formatCents(Math.round(value)), x, labelY + 8);
-      };
-      drawSplit(boxX + boxW * 0.52, "Partner A - 60%", netGrand * 0.6);
-      drawSplit(boxX + boxW * 0.74, "Partner B - 40%", netGrand * 0.4);
 
       const today = new Date().toISOString().slice(0, 10);
       doc.save(`corporate-profitability-${today}.pdf`);
