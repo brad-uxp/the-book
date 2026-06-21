@@ -384,10 +384,8 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         import("jspdf-autotable"),
       ]);
 
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
       const margin = 8;
+      const pageW = 297; // landscape A4 width — single continuous sheet
 
       const primary: [number, number, number] = [15, 23, 42];
       const muted: [number, number, number] = [100, 116, 139];
@@ -396,21 +394,12 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       const months = chartData.map((d) => d.month);
       const monthLabels = chartData.map((d) => d.label);
 
-      // Title + period (no header bar)
       const periodLabel =
         months.length === 0
           ? "—"
           : months.length === 1
           ? shortMonth(months[0])
           : `${shortMonth(months[0])} - ${shortMonth(months[months.length - 1])}`;
-      doc.setTextColor(...primary);
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.text("Corporate profitability report", margin, 9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...muted);
-      doc.setFontSize(9);
-      doc.text(`Period: ${periodLabel}`, pageW - margin, 9, { align: "right" });
 
       const excludedNames =
         excluded.size > 0
@@ -419,35 +408,11 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
               .join(", ")
           : "";
 
-      let cursorY = 13;
-
-      // ── Chart: only Income / Work expenses / Corporate net, full first page
+      // Chart lines (Income / Work expenses / Corporate net)
       const EXPORT_KEYS: LineKey[] = ["income", "workExpenses", "corporateNet"];
       const exportLines: ExportLine[] = LINES
         .filter((L) => EXPORT_KEYS.includes(L.key) && visible[L.key])
         .map((L) => ({ key: L.key, label: L.label, color: L.color }));
-
-      const chartTop = cursorY;
-      const chartBottom = pageH - margin - 4; // leave room for page footer
-      drawLineChart(
-        doc,
-        { x: margin, y: chartTop, w: pageW - margin * 2, h: chartBottom - chartTop },
-        chartData,
-        exportLines,
-        true,
-        excludedNames
-      );
-
-      // ── Page 2+: unified table ────────────────────────────────────────────
-      doc.addPage();
-      cursorY = margin + 4;
-
-      doc.setTextColor(...primary);
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("Detail by item", margin, cursorY);
-      doc.setFont("helvetica", "normal");
-      cursorY += 5;
 
       // Build rows: income clients (positive) + work expense items (negative)
       const includedClients = visibleClients.filter((c) => !excluded.has(c.id));
@@ -559,8 +524,65 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
 
       const orange: [number, number, number] = [249, 115, 22];
 
+      // ── Measure the detail table on a throwaway tall page to learn its exact
+      //    height, so the final single sheet can be sized to fit everything. ──
+      const measureDoc = new jsPDF({ orientation: "portrait", unit: "mm", format: [pageW, 4000] });
+      autoTable(measureDoc, {
+        startY: 0,
+        head: [["Type", "Item", ...monthLabels, "Total"]],
+        body: tableBody,
+        theme: "grid",
+        headStyles: { fontSize: 7, cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 } },
+        bodyStyles: { fontSize: 7, cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 } },
+        columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 38 } },
+        margin: { left: margin, right: margin },
+      });
+      // +2mm covers the slightly taller Net/Margin rows (extra cell padding).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const measuredTableH = (measureDoc as any).lastAutoTable.finalY + 2;
+
+      // ── Single continuous-page layout (no page breaks) ────────────────────
+      const CHART_H = 95;
+      const chartTop = 13;
+      const detailTitleY = chartTop + CHART_H + 8;
+      const tableStartY = detailTitleY + 5;
+      const boxH = 22;
+      const boxY = tableStartY + measuredTableH + 8;
+      const totalH = boxY + boxH + 8;
+
+      // Match orientation to aspect so jsPDF keeps width = pageW (no auto-swap).
+      const orientation = totalH > pageW ? "portrait" : "landscape";
+      const doc = new jsPDF({ orientation, unit: "mm", format: [pageW, totalH] });
+
+      // Title + period
+      doc.setTextColor(...primary);
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.text("Corporate profitability report", margin, 9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...muted);
+      doc.setFontSize(9);
+      doc.text(`Period: ${periodLabel}`, pageW - margin, 9, { align: "right" });
+
+      // Chart
+      drawLineChart(
+        doc,
+        { x: margin, y: chartTop, w: pageW - margin * 2, h: CHART_H },
+        chartData,
+        exportLines,
+        true,
+        excludedNames
+      );
+
+      // Detail table title
+      doc.setTextColor(...primary);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Detail by item", margin, detailTitleY);
+      doc.setFont("helvetica", "normal");
+
       autoTable(doc, {
-        startY: cursorY,
+        startY: tableStartY,
         head: [["Type", "Item", ...monthLabels, "Total"]],
         body: tableBody,
         theme: "grid",
@@ -650,14 +672,6 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       // ── Distribution summary box (corporate net + 60/40 partner split) ────
       // netGrand is the accumulated corporate net, already net of excluded clients.
       const emerald: [number, number, number] = [16, 185, 129];
-      const boxH = 22;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const afterTableY = (doc as any).lastAutoTable?.finalY ?? cursorY;
-      let boxY = afterTableY + 6;
-      if (boxY + boxH > pageH - margin - 6) {
-        doc.addPage();
-        boxY = margin + 4;
-      }
       const boxX = margin;
       const boxW = pageW - margin * 2;
       const padX = 6;
@@ -689,17 +703,8 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         doc.setTextColor(...primary);
         doc.text(formatCents(Math.round(value)), x, labelY + 8);
       };
-      drawSplit(boxX + boxW * 0.52, "Socio A - 60%", netGrand * 0.6);
-      drawSplit(boxX + boxW * 0.74, "Socio B - 40%", netGrand * 0.4);
-
-      // Footer with page numbers
-      const totalPages = doc.getNumberOfPages();
-      for (let p = 1; p <= totalPages; p++) {
-        doc.setPage(p);
-        doc.setTextColor(...muted);
-        doc.setFontSize(7);
-        doc.text(`Page ${p} of ${totalPages}`, pageW - margin, pageH - 4, { align: "right" });
-      }
+      drawSplit(boxX + boxW * 0.52, "Partner A - 60%", netGrand * 0.6);
+      drawSplit(boxX + boxW * 0.74, "Partner B - 40%", netGrand * 0.4);
 
       const today = new Date().toISOString().slice(0, 10);
       doc.save(`corporate-profitability-${today}.pdf`);
@@ -833,6 +838,42 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         </div>
       )}
 
+      {chartData.length > 0 && (
+        <div className="rounded-lg border bg-muted/30 p-4">
+          <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Corporate net · accumulated
+              </p>
+              <p
+                className="mt-1 text-2xl font-bold tabular-nums leading-none"
+                style={{ color: "#10b981" }}
+              >
+                {formatCents(cumulativeCorporateNet)}
+              </p>
+            </div>
+            <div className="flex gap-6">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Socio A · 60%
+                </p>
+                <p className="mt-1 text-base font-semibold tabular-nums leading-none">
+                  {formatCents(Math.round(cumulativeCorporateNet * 0.6))}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Socio B · 40%
+                </p>
+                <p className="mt-1 text-base font-semibold tabular-nums leading-none">
+                  {formatCents(Math.round(cumulativeCorporateNet * 0.4))}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {chartData.length === 0 ? (
         <p className="py-20 text-center text-sm text-muted-foreground">
           No data for the selected range.
@@ -869,42 +910,6 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
               ))}
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      )}
-
-      {chartData.length > 0 && (
-        <div className="rounded-lg border bg-muted/30 p-4">
-          <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Corporate net · accumulated
-              </p>
-              <p
-                className="mt-1 text-2xl font-bold tabular-nums leading-none"
-                style={{ color: "#10b981" }}
-              >
-                {formatCents(cumulativeCorporateNet)}
-              </p>
-            </div>
-            <div className="flex gap-6">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Socio A · 60%
-                </p>
-                <p className="mt-1 text-base font-semibold tabular-nums leading-none">
-                  {formatCents(Math.round(cumulativeCorporateNet * 0.6))}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Socio B · 40%
-                </p>
-                <p className="mt-1 text-base font-semibold tabular-nums leading-none">
-                  {formatCents(Math.round(cumulativeCorporateNet * 0.4))}
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </div>
