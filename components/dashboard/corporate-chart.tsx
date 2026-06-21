@@ -647,6 +647,51 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         margin: { left: margin, right: margin },
       });
 
+      // ── Distribution summary box (corporate net + 60/40 partner split) ────
+      // netGrand is the accumulated corporate net, already net of excluded clients.
+      const emerald: [number, number, number] = [16, 185, 129];
+      const boxH = 22;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const afterTableY = (doc as any).lastAutoTable?.finalY ?? cursorY;
+      let boxY = afterTableY + 6;
+      if (boxY + boxH > pageH - margin - 6) {
+        doc.addPage();
+        boxY = margin + 4;
+      }
+      const boxX = margin;
+      const boxW = pageW - margin * 2;
+      const padX = 6;
+
+      doc.setFillColor(...bgLight);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, "FD");
+
+      // Corporate net (accumulated) — left side
+      const labelY = boxY + 7;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...muted);
+      doc.text("Corporate net - accumulated", boxX + padX, labelY);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(...emerald);
+      doc.text(formatCents(netGrand), boxX + padX, labelY + 9);
+
+      // 60/40 partner split — right side
+      const drawSplit = (x: number, label: string, value: number) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(...muted);
+        doc.text(label, x, labelY);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(...primary);
+        doc.text(formatCents(Math.round(value)), x, labelY + 8);
+      };
+      drawSplit(boxX + boxW * 0.52, "Socio A - 60%", netGrand * 0.6);
+      drawSplit(boxX + boxW * 0.74, "Socio B - 40%", netGrand * 0.4);
+
       // Footer with page numbers
       const totalPages = doc.getNumberOfPages();
       for (let p = 1; p <= totalPages; p++) {
