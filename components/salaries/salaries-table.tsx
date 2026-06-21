@@ -44,7 +44,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, LayoutGrid, Pencil, DollarSign, Users, ClipboardList, Link2, Trash2 } from "lucide-react";
+import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, FileText, LayoutList, Pencil, DollarSign, Users, ClipboardList, Link2, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
@@ -119,7 +119,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [paymentPerson, setPaymentPerson] = useState<Person | null>(null);
   const [reminderPerson, setReminderPerson] = useState<Person | null>(null);
   const [loading, setLoading] = useState(false);
-  const [view, setView] = useState<"table" | "cards" | "report">("table");
+  const [view, setView] = useState<"table" | "report">("table");
   const [rolesOpen, setRolesOpen] = useState(false);
 
   // Deep-link: open person detail from ?person=<id> (e.g. from task @mentions)
@@ -143,6 +143,9 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
       .catch(() => {});
   }, []);
 
+  // Inactive workers are hidden by default; this toggle reveals them.
+  const [showInactive, setShowInactive] = useState(false);
+
   // Unpaid this month filter
   const [unpaidThisMonth, setUnpaidThisMonth] = useState(false);
 
@@ -155,9 +158,12 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   };
 
   const filteredData = useMemo(() => {
-    if (!unpaidThisMonth) return data;
-    return data.filter((p) => p.status === "active" && !isPaidThisMonth(p));
-  }, [data, unpaidThisMonth]);
+    let result = data;
+    if (!showInactive) result = result.filter((p) => p.status === "active");
+    if (unpaidThisMonth)
+      result = result.filter((p) => p.status === "active" && !isPaidThisMonth(p));
+    return result;
+  }, [data, showInactive, unpaidThisMonth]);
 
   // Report state
   const [reportSelected, setReportSelected] = useState<Set<string>>(new Set());
@@ -208,11 +214,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkOverrides, setBulkOverrides] = useState<Record<string, { adj: string; note: string }>>({});
   const [bulkErrors, setBulkErrors] = useState<Record<string, string>>({});
-
-  // Default to cards on mobile
-  useEffect(() => {
-    if (window.innerWidth < 640) setView("cards");
-  }, []);
 
   // Payment form state
   const [paidAt, setPaidAt] = useState("");
@@ -579,15 +580,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             <LayoutList className="h-4 w-4" />
           </Button>
           <Button
-            variant={view === "cards" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-9 w-9 rounded-none border-r"
-            onClick={() => setView("cards")}
-            title="Cards view"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
             variant={view === "report" ? "secondary" : "ghost"}
             size="icon"
             className="h-9 w-9 rounded-none"
@@ -603,6 +595,14 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
           {/* Desktop-only buttons */}
           <div className="hidden sm:flex items-center gap-2">
             {view !== "report" && (
+            <>
+            <Button
+              variant={showInactive ? "default" : "outline"}
+              className="h-9"
+              onClick={() => setShowInactive((v) => !v)}
+            >
+              Show inactive
+            </Button>
             <Button
               variant={unpaidThisMonth ? "default" : "outline"}
               className="h-9"
@@ -610,6 +610,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             >
               Unpaid this month
             </Button>
+            </>
             )}
             <RoleManager roles={roles} onRefresh={refresh} open={rolesOpen} onOpenChange={setRolesOpen} />
             <Button variant="outline" className="h-9" onClick={() => setBulkOpen(true)}>
@@ -630,6 +631,9 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
             <DropdownMenuContent align="end">
               {view !== "report" && (
               <>
+              <DropdownMenuItem onClick={() => setShowInactive((v) => !v)}>
+                {showInactive ? "Hide inactive" : "Show inactive"}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setUnpaidThisMonth((v) => !v)}>
                 {unpaidThisMonth ? "Show all" : "Unpaid this month"}
               </DropdownMenuItem>
@@ -650,183 +654,6 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
           </DropdownMenu>
         </div>
       </div>
-
-      {/* ── Cards view ─────────────────────────────────────────────────── */}
-      {view === "cards" && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredData.length === 0 ? (
-            <p className="col-span-full text-center text-muted-foreground py-12">
-              {unpaidThisMonth ? "All salaries paid this month." : "No people found. Add one to get started."}
-            </p>
-          ) : (
-            filteredData.map((p) => (
-              <div
-                key={p.id}
-                className="flex flex-col rounded-xl border bg-card shadow-sm overflow-hidden"
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2 p-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${AVATAR_CLASSES[p.status] ?? "bg-muted text-muted-foreground"}`}
-                    >
-                      <User className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold leading-tight truncate">{p.name}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        <Badge variant="outline" className={`${STATUS_CLASSES[p.status]} capitalize text-[11px] px-1.5 py-0`}>
-                          {p.status}
-                        </Badge>
-                        {p.role && (
-                          <span className="text-xs text-muted-foreground truncate">{p.role.name}</span>
-                        )}
-                        {(linkedIssueCounts[p.id] ?? 0) > 0 && (
-                          <span
-                            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 shrink-0"
-                            title={`${linkedIssueCounts[p.id]} linked issue(s)`}
-                          >
-                            <Link2 className="h-2.5 w-2.5" />
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 -mr-1 -mt-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => setEditItem(p)}
-                    title="Edit"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {/* Body */}
-                <div className="px-4 pb-4 flex-1 space-y-1">
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div className="rounded-lg bg-muted/50 px-3 py-2.5">
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Base Salary</p>
-                      <p className="text-sm font-semibold">
-                        {p.salary_base ? formatCents(p.salary_base.base_salary_cents) : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-muted/50 px-3 py-2.5">
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Pay Day</p>
-                      <p className="text-sm font-semibold">Day {p.payday_day}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between py-2.5">
-                    <span className="text-muted-foreground text-xs">Last payment</span>
-                    {p.salary_payments[0] ? (
-                      <span className="text-sm font-medium">
-                        {new Date(p.salary_payments[0].due_date).toLocaleString("en", {
-                          month: "short",
-                          year: "numeric",
-                        })}{" "}
-                        · {formatCents(p.salary_payments[0].total_cents)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">None yet</span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between py-2.5">
-                    <span className="text-muted-foreground text-xs">Raise reminder</span>
-                    {(() => {
-                      const reminder = p.increase_reminders.find((r) => r.status === "scheduled");
-                      return reminder ? (
-                        <button
-                          onClick={() => {
-                            setEditingReminderId(reminder.id);
-                            setReminderDate(reminder.effective_date);
-                            setReminderAmount(centsToDecimalString(reminder.suggested_new_base_cents));
-                            setReminderPerson(p);
-                          }}
-                          className="text-sm font-medium text-amber-600 dark:text-amber-400 underline-offset-2 hover:underline transition-colors text-right"
-                        >
-                          {formatDate(reminder.effective_date)} → {formatCents(reminder.suggested_new_base_cents)}
-                        </button>
-                      ) : p.status === "active" ? (
-                        <button
-                          onClick={() => {
-                            setEditingReminderId(null);
-                            setReminderDate("");
-                            setReminderAmount("");
-                            setReminderPerson(p);
-                          }}
-                          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
-                        >
-                          + Set reminder
-                        </button>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      );
-                    })()}
-                  </div>
-
-                  {p.notes && (
-                    <p className="text-xs text-muted-foreground italic border-t pt-3 mt-1">{p.notes}</p>
-                  )}
-                </div>
-
-                {/* Footer actions */}
-                <div className="border-t flex gap-2 px-4 py-3">
-                  {p.status === "active" ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-10 flex-1 text-sm"
-                        onClick={() => setPaymentPerson(p)}
-                      >
-                        <DollarSign className="mr-1.5 h-4 w-4" /> Register Pay
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-10 flex-1 text-sm"
-                        onClick={() =>
-                          router.push(
-                            `/expenses?source=${p.id}&name=${encodeURIComponent(p.name)}`
-                          )
-                        }
-                      >
-                        <History className="mr-1.5 h-4 w-4" /> History
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-10 w-full text-sm"
-                      onClick={() =>
-                        router.push(
-                          `/expenses?source=${p.id}&name=${encodeURIComponent(p.name)}`
-                        )
-                      }
-                    >
-                      <History className="mr-1.5 h-4 w-4" /> History
-                    </Button>
-                  )}
-                  {p.salary_payments.length === 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-10 text-sm text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDelete(p.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
 
       {/* ── Report view ────────────────────────────────────────────────── */}
       {view === "report" && (
@@ -1457,7 +1284,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
               <LinkedIssues personId={detailPerson.id} />
 
               <div className="border-t" />
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <Button
                   variant="outline"
                   size="sm"
@@ -1486,7 +1313,9 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
                     Register payment
                   </Button>
                 )}
-                <div className="border-t sm:border-t-0 sm:border-l sm:h-6 sm:ml-auto" />
+                {/* Spacer pushes the destructive/close actions to the right on
+                    desktop; collapses on mobile where buttons stack full-width. */}
+                <div className="hidden sm:block sm:flex-1" />
                 {detailPerson.salary_payments.length === 0 && (
                   <Button
                     variant="outline"
