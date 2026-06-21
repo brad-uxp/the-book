@@ -364,6 +364,13 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
     [data, excluded, incomeByMonth]
   );
 
+  // Cumulative corporate net across the visible window — respects excluded clients,
+  // since chartData already nets out their income.
+  const cumulativeCorporateNet = useMemo(
+    () => chartData.reduce((sum, d) => sum + d.corporateNet, 0),
+    [chartData]
+  );
+
   // Excluded clients that actually appear in the visible window (for the chip row).
   const excludedVisible = visibleClients.filter((c) => excluded.has(c.id));
   // Excluded clients NOT in visible window — still in the set but invisible to user; keep them excluded.
@@ -817,6 +824,42 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
               ))}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {chartData.length > 0 && (
+        <div className="rounded-lg border bg-muted/30 p-4">
+          <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Corporate net · accumulated
+              </p>
+              <p
+                className="mt-1 text-2xl font-bold tabular-nums leading-none"
+                style={{ color: "#10b981" }}
+              >
+                {formatCents(cumulativeCorporateNet)}
+              </p>
+            </div>
+            <div className="flex gap-6">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Socio A · 60%
+                </p>
+                <p className="mt-1 text-base font-semibold tabular-nums leading-none">
+                  {formatCents(Math.round(cumulativeCorporateNet * 0.6))}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Socio B · 40%
+                </p>
+                <p className="mt-1 text-base font-semibold tabular-nums leading-none">
+                  {formatCents(Math.round(cumulativeCorporateNet * 0.4))}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
