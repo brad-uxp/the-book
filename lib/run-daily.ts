@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/db";
-import { getTodayInTZ, isSameDay, addDaysUTC, clampDay } from "@/lib/dates";
+import { getTodayInTZ, isSameDay, addDaysUTC } from "@/lib/dates";
 import {
-  getSubscriptionPeriod,
+  subscriptionEvents,
   buildSubscriptionNotification,
+  advanceNotice,
 } from "@/lib/cron-helpers";
 import { sendWebPushToAll } from "@/lib/web-push";
 import type { NotificationType } from "@/app/generated/prisma/client";
@@ -96,71 +97,68 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
   });
 
   for (const sub of subscriptions) {
-    const { dueDate, isToday, isDaysBefore } =
-      getSubscriptionPeriod(sub, today, daysBefore);
-
-    if (sub.payment_mode === "auto") {
-      // N days before: upcoming notification
-      if (isDaysBefore) {
+    for (const event of subscriptionEvents(sub, today, daysBefore)) {
+      if (event.kind === "auto_upcoming") {
         await upsertNotification(
           buildSubscriptionNotification({
             type: "subscription_auto_upcoming",
             sub,
-            dueDate,
-            eventDate: addDaysUTC(dueDate, -daysBefore),
+            dueDate: event.dueDate,
+            eventDate: today,
             daysBefore,
           })
         );
         log.push(
-          `  [auto upcoming] ${sub.name} (due ${dueDate.toISOString()})`
+          `  [auto upcoming] ${sub.name} (due ${event.dueDate.toISOString()})`
         );
+        continue;
       }
 
-      // On due date: create payment + paid notification
-      if (isToday) {
-        const existing = await prisma.subscriptionPayment.findFirst({
-          where: {
-            subscription_id: sub.id,
-            due_date: dueDate,
-            deleted_at: null,
-          },
-        });
-
-        if (!existing) {
-          await prisma.subscriptionPayment.create({
-            data: {
-              subscription_id: sub.id,
-              due_date: dueDate,
-              paid_at: dueDate,
-              amount_cents_snapshot: sub.amount_cents,
-            },
-          });
-          log.push(`  [auto paid] Created payment: ${sub.name} ${dueDate.toISOString().slice(0, 7)}`);
-        }
-
-        await upsertNotification(
-          buildSubscriptionNotification({
-            type: "subscription_auto_paid",
-            sub,
-            dueDate,
-            eventDate: today,
-          })
-        );
-      }
-    } else {
-      // Manual: notify N days before
-      if (isDaysBefore) {
+      if (event.kind === "manual_due") {
         await upsertNotification(
           buildSubscriptionNotification({
             type: "subscription_manual_due",
             sub,
-            dueDate,
-            eventDate: addDaysUTC(dueDate, -daysBefore),
+            dueDate: event.dueDate,
+            eventDate: today,
             daysBefore,
           })
         );
         log.push(`  [manual upcoming] ${sub.name} in ${daysBefore}d`);
+        continue;
       }
+
+      // auto_charge — record the payment, then notify it happened.
+      const existing = await prisma.subscriptionPayment.findFirst({
+        where: {
+          subscription_id: sub.id,
+          due_date: event.dueDate,
+          deleted_at: null,
+        },
+      });
+
+      if (!existing) {
+        await prisma.subscriptionPayment.create({
+          data: {
+            subscription_id: sub.id,
+            due_date: event.dueDate,
+            paid_at: event.dueDate,
+            amount_cents_snapshot: sub.amount_cents,
+          },
+        });
+        log.push(
+          `  [auto paid] Created payment: ${sub.name} ${event.dueDate.toISOString().slice(0, 7)}`
+        );
+      }
+
+      await upsertNotification(
+        buildSubscriptionNotification({
+          type: "subscription_auto_paid",
+          sub,
+          dueDate: event.dueDate,
+          eventDate: today,
+        })
+      );
     }
   }
 }
@@ -172,24 +170,25 @@ async function runSalaries(today: Date, daysBefore: number, log: string[]) {
     where: { status: "active" },
   });
 
-  const year  = today.getUTCFullYear();
-  const month = today.getUTCMonth() + 1;
+  const when = daysBefore === 0
+    ? "today"
+    : `in ${daysBefore} day${daysBefore !== 1 ? "s" : ""}`;
 
   for (const person of people) {
-    const day     = clampDay(year, month, person.payday_day);
-    const dueDate = new Date(Date.UTC(year, month - 1, day));
-    const notifyDate = addDaysUTC(dueDate, -daysBefore);
+    // Forward-looking: computing the due date from today's month and then
+    // subtracting daysBefore silently never fires when payday_day <= daysBefore.
+    const { hit, dueDate } = advanceNotice(today, daysBefore, person.payday_day);
 
-    if (isSameDay(today, notifyDate)) {
+    if (hit) {
       await upsertNotification({
         type: "salary_manual_due" as NotificationType,
-        title: `Salary due in ${daysBefore} day${daysBefore !== 1 ? "s" : ""}: ${person.name}`,
-        body: `Monthly salary payment for ${person.name} is due in ${daysBefore} day${daysBefore !== 1 ? "s" : ""} (${dueDate.toISOString().slice(0, 10)}).`,
+        title: `Salary due ${when}: ${person.name}`,
+        body: `Monthly salary payment for ${person.name} is due ${when} (${dueDate.toISOString().slice(0, 10)}).`,
         entity_type: "person",
         entity_id: person.id,
         event_date: today,
       });
-      log.push(`  [salary upcoming] ${person.name} in ${daysBefore}d`);
+      log.push(`  [salary upcoming] ${person.name} ${when}`);
     }
   }
 }
