@@ -397,3 +397,31 @@ model AuditLog {
   @@index([created_at])
   @@index([entity_type, created_at])
 }
+
+// ============================================================
+// API Tokens (machine access)
+// ============================================================
+
+/**
+ * Bearer credentials for non-browser clients. Deliberately separate from the
+ * Google session: a leaked token is scoped to this app, revocable in one
+ * click, and shows up in the audit log as itself rather than as the human.
+ *
+ * The secret is never stored. `token_prefix` is the readable head of the token
+ * (also the lookup key, so verification is one indexed read), and `token_hash`
+ * is a SHA-256 of the whole thing — the token is 256 bits of CSPRNG output, so
+ * a password KDF would buy nothing against a brute force that is already
+ * infeasible.
+ */
+model ApiToken {
+  id           String    @id @default(uuid())
+  name         String // human label, e.g. "claude-work-session"
+  token_prefix String    @unique // first chars of the token; shown in the UI
+  token_hash   String // sha256 of the full token
+  created_at   DateTime  @default(now())
+  last_used_at DateTime?
+  expires_at   DateTime?
+  revoked_at   DateTime?
+
+  @@index([revoked_at])
+}

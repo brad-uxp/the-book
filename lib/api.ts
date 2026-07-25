@@ -1,5 +1,57 @@
+import { cache } from "react";
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth, isAllowedSession } from "@/auth";
+import { prisma } from "@/lib/db";
+import {
+  bearerFromHeader,
+  checkToken,
+  prefixOf,
+  tokenActor,
+} from "@/lib/api-tokens";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+/** Who is making the current request. */
+export type Actor =
+  | { kind: "user"; label: string }
+  | { kind: "token"; id: string; label: string };
+
+/**
+ * Resolves the caller from either credential the API accepts: a NextAuth
+ * cookie (the browser) or a Bearer token (machines).
+ *
+ * Wrapped in `cache` so a request that authorizes and then writes an audit log
+ * resolves the caller once rather than hitting the tokens table twice.
+ *
+ * Note this runs in the Node handler, not in `proxy.ts` — the proxy is Edge and
+ * cannot reach Prisma, so it lets Bearer requests through and lets the handler
+ * decide.
+ */
+export const resolveActor = cache(async (): Promise<Actor | null> => {
+  const raw = bearerFromHeader((await headers()).get("authorization"));
+
+  if (raw) {
+    const prefix = prefixOf(raw);
+    if (!prefix) return null;
+    const record = await prisma.apiToken
+      .findUnique({ where: { token_prefix: prefix } })
+      .catch(() => null);
+    const verified = checkToken(record, raw, new Date());
+    if (!verified) return null;
+
+    // Recorded for the settings page; must never fail the request.
+    prisma.apiToken
+      .update({ where: { id: verified.id }, data: { last_used_at: new Date() } })
+      .catch((err) => console.error("[api-token] last_used_at:", err));
+
+    return { kind: "token", id: verified.id, label: tokenActor(verified.name) };
+  }
+
+  const session = await auth().catch(() => null);
+  if (!isAllowedSession(session)) return null;
+  const email = (session as { user?: { email?: string } } | null)?.user?.email;
+  return { kind: "user", label: email ?? "unknown" };
+});
 
 /**
  * Per-handler authorization.
@@ -9,15 +61,54 @@ import { auth, isAllowedSession } from "@/auth";
  * Handlers call this so authorization is enforced where the data actually
  * lives, not only at the edge.
  *
- * Returns a 401 response to hand straight back, or null when allowed:
+ * Returns a response to hand straight back, or null when allowed:
  *
  *   const denied = await requireSession();
  *   if (denied) return denied;
  */
 export async function requireSession(): Promise<NextResponse | null> {
-  const session = await auth().catch(() => null);
-  if (isAllowedSession(session)) return null;
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const actor = await resolveActor();
+  if (!actor) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Only machine callers are limited. A runaway agent loop is the realistic
+  // way this API gets hammered; a human in a browser is not.
+  if (actor.kind === "token") {
+    const verdict = checkRateLimit(actor.id);
+    if (!verdict.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded" },
+        {
+          status: 429,
+          headers: { "Retry-After": String(verdict.retryAfterSeconds) },
+        }
+      );
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Authorization for routes a machine must never reach.
+ *
+ * Token management is the obvious one: a token that can mint tokens is a token
+ * that cannot be revoked, since the agent would simply issue itself a new one.
+ * Revoking has to stay something only the human can do.
+ */
+export async function requireUserSession(): Promise<NextResponse | null> {
+  const actor = await resolveActor();
+  if (!actor) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (actor.kind !== "user") {
+    return NextResponse.json(
+      { error: "This endpoint requires an interactive session" },
+      { status: 403 }
+    );
+  }
+  return null;
 }
 
 /** Prisma's known request errors carry a string `code` like "P2025". */

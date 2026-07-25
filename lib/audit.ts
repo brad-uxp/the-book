@@ -1,16 +1,20 @@
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/app/generated/prisma/client";
-import { auth } from "@/auth";
+import { resolveActor } from "@/lib/api";
 
 /**
- * Resolves the actor email from the current request session.
- * Returns null when there is no session (e.g. unauthenticated context or
- * when the caller is unsure). Crons should pass the literal "system"
- * directly instead of calling this helper.
+ * Label for whoever is performing the current mutation.
+ *
+ * An email for a browser session, `token:<name>` for an API token. Keeping
+ * them distinguishable is the point: with machine access enabled, "did I do
+ * this or did the agent?" has to be answerable from the log alone.
+ *
+ * Returns null when there is no identifiable caller. Crons pass the literal
+ * "system" instead of calling this.
  */
 export async function getActorEmail(): Promise<string | null> {
-  const session = await auth();
-  return session?.user?.email ?? null;
+  const actor = await resolveActor().catch(() => null);
+  return actor?.label ?? null;
 }
 
 /**

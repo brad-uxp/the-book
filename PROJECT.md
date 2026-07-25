@@ -180,10 +180,16 @@ editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (38)
+## Rutas API (40)
 
-Todas exigen sesión (`requireSession()` en el handler, además del `proxy.ts`),
+Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]` y `cron/daily`, que se protege con `CRON_SECRET`.
+
+Se aceptan **dos credenciales**: la cookie de NextAuth (navegador) y
+`Authorization: Bearer tb_…` (máquinas). La referencia para clientes externos
+está en [`API.md`](./API.md). La gestión de tokens (`/api/settings/tokens`) es
+la excepción: exige sesión interactiva, porque un token que puede emitir tokens
+no se puede revocar.
 
 | Recurso           | Métodos         | Ruta                                 |
 | ----------------- | --------------- | ------------------------------------ |

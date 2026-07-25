@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { SettingsForm } from "@/components/settings/settings-form";
+import { ApiTokens } from "@/components/settings/api-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function SettingsPage() {
         </p>
       </div>
       <SettingsForm initial={initial} />
+      <ApiTokens />
     </div>
   );
 }

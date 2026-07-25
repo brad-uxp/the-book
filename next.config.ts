@@ -30,12 +30,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // No CORS headers on the API, deliberately.
+        //
+        // This used to send `Access-Control-Allow-Origin: *` together with
+        // `Allow-Headers: Authorization`. That was harmless only while nothing
+        // read the Authorization header; now that API tokens exist, it would
+        // mean any page in any browser could use a leaked token AND read the
+        // response, instead of the browser blocking it.
+        //
+        // Nothing legitimate needs it: the web UI is same-origin, and machine
+        // clients call server-side, where CORS does not apply at all.
         source: "/api/:path*",
-        headers: [
-          { key: "Access-Control-Allow-Origin", value: "*" },
-          { key: "Access-Control-Allow-Methods", value: "GET,POST,PATCH,DELETE,OPTIONS" },
-          { key: "Access-Control-Allow-Headers", value: "Content-Type, Authorization" },
-        ],
+        headers: [{ key: "Vary", value: "Origin" }],
       },
       {
         // Static assets in /public — short cache + revalidate so deploys show changes fast

@@ -13,6 +13,16 @@ export const proxy = auth(async (req) => {
     return NextResponse.next();
   }
 
+  // Machine clients present a Bearer token. It cannot be verified here — this
+  // runs on the Edge runtime, which has no database — so the request is passed
+  // to the handler, where requireSession() validates it against ApiToken and
+  // returns 401 if it does not check out. Nothing is trusted at this point;
+  // only the cheap "is this even a token request" test happens.
+  const authorization = req.headers.get("authorization");
+  if (pathname.startsWith("/api/") && /^Bearer\s+tb_/i.test(authorization ?? "")) {
+    return NextResponse.next();
+  }
+
   // Authenticated via NextAuth session (web) — allow through.
   // Deliberately NOT `if (req.auth)`: on an Auth.js config error req.auth holds
   // an error object, which is truthy and would let every request through.
