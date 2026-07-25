@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { formatCents } from "@/lib/currency";
+import { getTodayInTZ, monthlyPeriodKey } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 const DashboardChart = dynamic(() => import("./dashboard-chart").then((m) => m.DashboardChart), { ssr: false });
@@ -18,8 +19,14 @@ const PRESETS: { key: Preset; label: string }[] = [
   { key: "all",    label: "All time" },
 ];
 
+/**
+ * Must agree with the server, which buckets by UTC month (app/dashboard/page).
+ * Using the browser's local components instead would disagree for the hours
+ * between local midnight and UTC midnight, silently dropping the newest month
+ * from "This year" and "Last 12 months".
+ */
 function toPeriodKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return monthlyPeriodKey(date.getUTCFullYear(), date.getUTCMonth() + 1);
 }
 
 export interface MonthData {
@@ -70,15 +77,17 @@ export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIn
   const [preset, setPreset] = useState<Preset>("ytd");
 
   const filtered = useMemo(() => {
-    const now = new Date();
+    const now = getTodayInTZ();
     const currentMonth = toPeriodKey(now);
 
     if (preset === "ytd") {
-      const yearStart = `${now.getFullYear()}-01`;
+      const yearStart = `${now.getUTCFullYear()}-01`;
       return monthlyData.filter((d) => d.month >= yearStart && d.month <= currentMonth);
     }
     if (preset === "last12") {
-      const from = toPeriodKey(new Date(now.getFullYear(), now.getMonth() - 11, 1));
+      const from = toPeriodKey(
+        new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
+      );
       return monthlyData.filter((d) => d.month >= from && d.month <= currentMonth);
     }
     // all — trim leading/trailing months with no data

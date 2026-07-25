@@ -5,23 +5,35 @@ import {
   getTodayInTZ,
   addDaysUTC,
   clampDay,
+  monthlyPeriodKey,
 } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Month bucket for a stored date. Reads UTC components: every date in this
+ * database is a UTC midnight, so `getMonth()` would put the 1st of a month in
+ * the previous one for any server west of UTC.
+ */
 function toPeriodKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return monthlyPeriodKey(date.getUTCFullYear(), date.getUTCMonth() + 1);
 }
 
 /**
  * Returns last 13 months (covers "This year" and "Last 12 months" presets).
  * Previously fetched 36 months — reduced to minimize DB load and payload size.
+ *
+ * All UTC: every date in this database is stored at UTC midnight, so reading
+ * calendar components in the server's local zone would shift the first and last
+ * day of each month for any deployment west of UTC.
  */
 function getRecentMonths(): string[] {
-  const now = new Date();
+  const today = getTodayInTZ();
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth();
   return Array.from({ length: 13 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (12 - i), 1);
-    return toPeriodKey(d);
+    const d = new Date(Date.UTC(year, month - (12 - i), 1));
+    return monthlyPeriodKey(d.getUTCFullYear(), d.getUTCMonth() + 1);
   });
 }
 
@@ -46,7 +58,8 @@ export default async function DashboardPage() {
   const to   = months[months.length - 1];
 
   const fromDate = new Date(from + "-01");
-  const toDate   = new Date(parseInt(to.slice(0, 4)), parseInt(to.slice(5, 7)), 0);
+  // UTC end-of-month, to match fromDate (an ISO date-only string parses as UTC).
+  const toDate   = new Date(Date.UTC(parseInt(to.slice(0, 4)), parseInt(to.slice(5, 7)), 0, 23, 59, 59, 999));
 
   const sentInvoices = await prisma.invoice.aggregate({
     where: { status: "sent" },

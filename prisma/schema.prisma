@@ -83,7 +83,11 @@ model SubscriptionPayment {
   created_at            DateTime  @default(now())
   deleted_at            DateTime? // soft delete
 
-  subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: these rows ARE the accounting history. Deleting the
+  // parent used to hard-delete every payment (including already soft-deleted
+  // ones) and silently rewrite closed months. The API returns 409 and points
+  // at the inactive status; this is the database-level backstop.
+  subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Restrict)
 
   // Uniqueness among non-deleted records is enforced by a partial unique index
   // (see migration partial_unique_subscription_payment). Prisma cannot model
@@ -153,7 +157,8 @@ model SalaryPayment {
   total_cents                Int // base_salary_cents_snapshot + adjustment_cents
   created_at                 DateTime @default(now())
 
-  person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade — see SubscriptionPayment.subscription.
+  person Person @relation(fields: [person_id], references: [id], onDelete: Restrict)
 
   @@unique([person_id, due_date])
   @@index([paid_at])
@@ -203,6 +208,7 @@ model Notification {
   @@unique([type, entity_id, event_date])
   @@index([read_at, created_at])
   @@index([created_at])
+  @@index([type])
 }
 
 // ============================================================
@@ -293,9 +299,9 @@ model Invoice {
   referrer_id String?
   referrer    Referrer? @relation(fields: [referrer_id], references: [id])
 
-  @@index([status])
   @@index([due_date])
   @@index([status, due_date])
+  @@index([created_at])
   @@index([client_id])
   @@index([referrer_id])
 }
