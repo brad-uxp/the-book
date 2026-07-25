@@ -1,12 +1,5 @@
 import { toZonedTime } from "date-fns-tz";
-import {
-  format,
-  addDays,
-  getDaysInMonth,
-  startOfMonth,
-  endOfMonth,
-  subMonths,
-} from "date-fns";
+import { format, getDaysInMonth, subMonths } from "date-fns";
 
 export const TZ = "America/Montevideo";
 

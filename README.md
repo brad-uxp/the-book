@@ -39,22 +39,22 @@ cp .env.example .env
 
 ```bash
 # Generate Prisma client
-npm run db:generate
+pnpm db:generate
 
 # Apply migrations (creates tables)
-npm run db:migrate
+pnpm db:migrate
 
 # Optional: seed with demo data
-npx prisma db seed
+pnpm exec tsx prisma/seed.ts
 ```
 
 ### 4. Start Dev Server
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
-Open `http://localhost:3000` — it redirects to `/subscriptions`.
+Open `http://localhost:3001` — it redirects to `/subscriptions`.
 
 ---
 
@@ -62,14 +62,16 @@ Open `http://localhost:3000` — it redirects to `/subscriptions`.
 
 | Command | Description |
 |---|---|
-| `npm run db:generate` | Generate Prisma client from schema |
-| `npm run db:migrate` | Run pending migrations (dev) |
-| `npm run db:push` | Push schema changes without migration (quick iteration) |
-| `npm run db:studio` | Open Prisma Studio GUI |
+| `pnpm db:generate` | Generate Prisma client from schema |
+| `pnpm db:migrate` | Run pending migrations (dev) |
+| `pnpm db:push` | Push schema changes without migration (quick iteration) |
+| `pnpm db:studio` | Open Prisma Studio GUI |
+| `pnpm test` | Run the vitest suite |
+| `pnpm typecheck` | Type-check with `tsc --noEmit` |
 
 For production migrations:
 ```bash
-npx prisma migrate deploy
+pnpm exec prisma migrate deploy
 ```
 
 ---
@@ -94,7 +96,7 @@ npx prisma migrate deploy
 
 5. **After deploying**, run migrations:
    ```bash
-   DATABASE_URL="<prod-url>" npx prisma migrate deploy
+   DATABASE_URL="<prod-url>" pnpm exec prisma migrate deploy
    ```
 
 ---

@@ -420,8 +420,10 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
           });
           if (!res.ok) {
             const err = await res.json();
-            // eslint-disable-next-line @typescript-eslint/no-throw-literal
-            throw { id, message: err.error ?? "Error registering payment" };
+            throw Object.assign(
+              new Error(err.error ?? "Error registering payment"),
+              { id }
+            );
           }
         })
       );

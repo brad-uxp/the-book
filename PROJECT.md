@@ -339,12 +339,14 @@ MOBILE_AUTH_SECRET=<openssl rand -base64 32>
 ## Comandos de Desarrollo
 
 ```bash
-npm run dev            # Servidor de desarrollo (localhost:3000)
-npm run build          # Build de producción
-npm run db:generate    # Generar tipos Prisma
-npm run db:migrate     # Ejecutar migraciones
-npm run db:seed        # Seed de datos de demo
-npm run db:studio      # Abrir Prisma Studio (GUI)
+pnpm dev               # Servidor de desarrollo (localhost:3001)
+pnpm build             # Build de producción (next build --webpack)
+pnpm db:generate       # Generar tipos Prisma
+pnpm db:migrate        # Ejecutar migraciones
+pnpm exec tsx prisma/seed.ts   # Seed de datos de demo
+pnpm db:studio         # Abrir Prisma Studio (GUI)
+pnpm test              # Correr tests (vitest)
+pnpm typecheck         # tsc --noEmit
 ```
 
 ---
