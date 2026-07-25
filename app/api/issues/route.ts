@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { IssueSchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const personId = searchParams.get("personId");
   const invoiceId = searchParams.get("invoiceId");
@@ -27,6 +30,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const parsed = IssueSchema.safeParse(body);
   if (!parsed.success) {

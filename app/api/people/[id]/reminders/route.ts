@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { SalaryIncreaseReminderSchema } from "@/lib/validations";
+import { requireSession } from "@/lib/api";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const reminders = await prisma.salaryIncreaseReminder.findMany({
     where: { person_id: id },
@@ -18,6 +21,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const body = await req.json();
   const parsed = SalaryIncreaseReminderSchema.safeParse(body);
@@ -47,6 +52,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const body = await req.json();
   const { reminderId, action, new_effective_date, new_suggested_base_cents } =
@@ -122,6 +129,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const { searchParams } = new URL(req.url);
   const reminderId = searchParams.get("reminderId");

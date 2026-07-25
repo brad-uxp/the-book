@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ClientSchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const clients = await prisma.client.findMany({
     select: { id: true, name: true, color_hex: true, default_referrer_id: true },
     orderBy: { name: "asc" },
@@ -12,6 +15,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const parsed = ClientSchema.safeParse(body);
   if (!parsed.success) {

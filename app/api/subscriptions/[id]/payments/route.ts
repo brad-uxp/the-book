@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getTodayInTZ, calcMonthlyDueDate, calcAnnualDueDate } from "@/lib/dates";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const payments = await prisma.subscriptionPayment.findMany({
     where: { subscription_id: id, deleted_at: null },
@@ -19,6 +22,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const body = await req.json();
   const { paid_at, amount_cents } = body;
@@ -96,6 +101,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const { searchParams } = new URL(req.url);
   const paymentId = searchParams.get("paymentId");

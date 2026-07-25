@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { PersonWithSalarySchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const person = await prisma.person.findUnique({
     where: { id },
@@ -25,6 +28,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const body = await req.json();
   const parsed = PersonWithSalarySchema.partial().safeParse(body);
@@ -104,6 +109,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
 
   const before = await prisma.person.findUnique({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { requireSession } from "@/lib/api";
 
 const SettingsSchema = z.object({
   days_before_subscription: z.number().int().min(0).max(30).optional(),
@@ -9,6 +10,8 @@ const SettingsSchema = z.object({
 });
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const settings = await prisma.settings.findUnique({ where: { id: "singleton" } });
   return NextResponse.json(settings ?? {
     id: "singleton",
@@ -19,6 +22,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const parsed = SettingsSchema.safeParse(body);
   if (!parsed.success) {

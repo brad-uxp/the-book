@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ReferrerSchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const referrers = await prisma.referrer.findMany({
     orderBy: { name: "asc" },
   });
@@ -11,6 +14,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const parsed = ReferrerSchema.safeParse(body);
   if (!parsed.success) {

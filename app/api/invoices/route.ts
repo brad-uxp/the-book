@@ -3,8 +3,11 @@ import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
 import { lastDayOfMonth } from "@/lib/dates";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const pageParam = searchParams.get("page");
   const limitParam = searchParams.get("limit");
@@ -35,6 +38,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const parsed = InvoiceSchema.safeParse(body);
   if (!parsed.success) {

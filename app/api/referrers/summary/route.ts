@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireSession } from "@/lib/api";
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const referrers = await prisma.referrer.findMany({
     orderBy: { name: "asc" },
     include: {

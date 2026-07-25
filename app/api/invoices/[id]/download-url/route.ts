@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getDownloadUrl } from "@/lib/r2";
+import { requireSession } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { id },

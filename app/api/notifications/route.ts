@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireSession } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const filter = searchParams.get("filter") ?? "unread"; // "unread" | "all"
   const type = searchParams.get("type"); // optional filter by type
@@ -26,6 +29,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const { id } = body;
 

@@ -2,17 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { auditLog, getActorEmail } from "@/lib/audit";
+import { requireSession } from "@/lib/api";
 
 const RoleSchema = z.object({
   name: z.string().min(1, "Name is required"),
 });
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const roles = await prisma.role.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json(roles);
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const body = await req.json();
   const parsed = RoleSchema.safeParse(body);
   if (!parsed.success) {

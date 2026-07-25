@@ -4,6 +4,7 @@ import { InvoiceSchema } from "@/lib/validations";
 import { lastDayOfMonth } from "@/lib/dates";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2";
+import { requireSession } from "@/lib/api";
 
 async function safeDeleteR2(key: string | null | undefined) {
   if (!key) return;
@@ -18,6 +19,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { id },
@@ -31,6 +34,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const body = await req.json();
 
@@ -130,6 +135,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
 
   const before = await prisma.invoice.findUnique({

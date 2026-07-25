@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { sendWebPushToAll } from "@/lib/web-push";
+import { requireSession } from "@/lib/api";
 
 export async function POST() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
