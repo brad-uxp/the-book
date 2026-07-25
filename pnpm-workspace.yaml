@@ -1,0 +1,19 @@
+# pnpm 11 refuses to finish `install` while any dependency has an unreviewed
+# build script (ERR_PNPM_IGNORED_BUILDS). Locally that is a warning because a
+# global ignore-scripts already answers the question; in CI, where there is no
+# global config, it aborts the build.
+#
+# Every one of these is denied. None is needed: `prisma generate` runs from the
+# build script, and sharp gets its binaries from the @img/sharp-* optional
+# dependencies rather than from its postinstall. Verified with a clean install
+# and a full build in an isolated HOME.
+#
+# Flip one to `true` only with a reason — this is the supply-chain surface the
+# project deliberately keeps closed.
+allowBuilds:
+  '@prisma/engines': false
+  core-js: false
+  msw: false
+  prisma: false
+  sharp: false
+  unrs-resolver: false
