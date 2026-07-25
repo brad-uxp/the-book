@@ -72,7 +72,7 @@ type ExportLine = { key: LineKey; label: string; color: string };
 
 // Native vector chart drawn directly in jsPDF — avoids html2canvas/oklch issues.
 function drawLineChart(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   doc: any,
   area: { x: number; y: number; w: number; h: number },
   chartData: ChartPoint[],
@@ -238,7 +238,7 @@ function drawLineChart(
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
@@ -538,7 +538,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         margin: { left: margin, right: margin },
       });
       // +2mm covers the slightly taller Net/Margin rows (extra cell padding).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const measuredTableH = (measureDoc as any).lastAutoTable.finalY + 2;
 
       // ── Single continuous-page layout (no page breaks) ────────────────────
@@ -645,7 +645,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
           0: { cellWidth: 10, halign: "center" },
           1: { cellWidth: 38 },
         },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         didParseCell: (data: any) => {
           if (data.section !== "body") return;
           const meta = rowMeta[data.row.index];
@@ -682,7 +682,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
             data.cell.text = [];
           }
         },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         didDrawCell: (data: any) => {
           if (data.section !== "body") return;
           if (data.column.index !== 0) return;

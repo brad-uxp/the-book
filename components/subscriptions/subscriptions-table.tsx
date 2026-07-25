@@ -65,8 +65,13 @@ function SubscriptionIcon({
   const sources = faviconSources(iconUrl);
   const [srcIndex, setSrcIndex] = useState(0);
 
-  // Reset source index when the URL changes (e.g. component reuse)
-  useEffect(() => { setSrcIndex(0); }, [iconUrl]);
+  // Reset the fallback chain when the URL changes (e.g. component reuse).
+  // Done during render so the first paint never shows the previous icon.
+  const [lastIconUrl, setLastIconUrl] = useState(iconUrl);
+  if (iconUrl !== lastIconUrl) {
+    setLastIconUrl(iconUrl);
+    setSrcIndex(0);
+  }
 
   const favicon = sources[srcIndex] ?? null;
   const showImg = !!favicon;

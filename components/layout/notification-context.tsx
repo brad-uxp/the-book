@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 
 interface NotificationContextValue {
   unreadCount: number;
@@ -15,21 +16,14 @@ export function useUnreadNotifications() {
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const fetchCount = useCallback(async () => {
-    try {
-      const res = await fetch("/api/notifications/count");
-      if (res.ok) {
-        const data = await res.json();
-        setUnreadCount(data.unreadCount);
-      }
-    } catch {}
+  const fetchCount = useCallback(async (signal: AbortSignal) => {
+    const res = await fetch("/api/notifications/count", { signal });
+    if (!res.ok) throw new Error(`count request failed: ${res.status}`);
+    const data = await res.json();
+    setUnreadCount(data.unreadCount);
   }, []);
 
-  useEffect(() => {
-    fetchCount();
-    const interval = setInterval(fetchCount, 60_000);
-    return () => clearInterval(interval);
-  }, [fetchCount]);
+  usePolling(fetchCount);
 
   return (
     <NotificationContext.Provider value={{ unreadCount }}>

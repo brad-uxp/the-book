@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import {
   Sheet,
   SheetContent,
@@ -102,32 +103,49 @@ export function ReferrerDetailModal({
   const [invoices, setInvoices] = useState<InvoiceDetail[]>([]);
   const [payments, setPayments] = useState<PaymentDetail[]>([]);
 
-  useEffect(() => {
-    if (!referrer) return;
+  // Reset the form when a different referrer is opened. Adjusting state during
+  // render rather than in an effect, so the modal never paints the previous
+  // referrer's edit state for a frame.
+  const referrerId = referrer?.id ?? null;
+  const [lastReferrerId, setLastReferrerId] = useState(referrerId);
+  if (referrerId !== lastReferrerId) {
+    setLastReferrerId(referrerId);
     setIsEditing(false);
     setError(null);
-    Promise.all([
-      fetch(`/api/referrers/${referrer.id}/clients`).then((r) => r.json()),
-      fetch(`/api/referrers/${referrer.id}/detail`).then((r) => r.json()),
-    ]).then(([clients, detail]) => {
-      setDefaultClients(clients);
-      // Natural sort: "a5" before "a49", nulls last
-      const sorted = [...(detail.invoices ?? [])].sort((a: InvoiceDetail, b: InvoiceDetail) => {
-        const an = a.invoice_number ?? "";
-        const bn = b.invoice_number ?? "";
-        if (!an && !bn) return 0;
-        if (!an) return 1;
-        if (!bn) return -1;
-        return an.localeCompare(bn, undefined, { numeric: true, sensitivity: "base" });
-      });
-      setInvoices(sorted);
-      setPayments(detail.feePayments ?? []);
-    }).catch(() => {
-      setDefaultClients([]);
-      setInvoices([]);
-      setPayments([]);
-    });
-  }, [referrer]);
+  }
+
+  const loadDetail = useCallback(
+    async (signal: AbortSignal) => {
+      if (!referrerId) return;
+      try {
+        const [clients, detail] = await Promise.all([
+          fetch(`/api/referrers/${referrerId}/clients`, { signal }).then((r) => r.json()),
+          fetch(`/api/referrers/${referrerId}/detail`, { signal }).then((r) => r.json()),
+        ]);
+        setDefaultClients(clients);
+        // Natural sort: "a5" before "a49", nulls last
+        const sorted = [...(detail.invoices ?? [])].sort((a: InvoiceDetail, b: InvoiceDetail) => {
+          const an = a.invoice_number ?? "";
+          const bn = b.invoice_number ?? "";
+          if (!an && !bn) return 0;
+          if (!an) return 1;
+          if (!bn) return -1;
+          return an.localeCompare(bn, undefined, { numeric: true, sensitivity: "base" });
+        });
+        setInvoices(sorted);
+        setPayments(detail.feePayments ?? []);
+      } catch (err) {
+        if (signal.aborted) return;
+        setDefaultClients([]);
+        setInvoices([]);
+        setPayments([]);
+        throw err;
+      }
+    },
+    [referrerId]
+  );
+
+  usePolling(loadDetail, null, referrerId);
 
   const handleStartEdit = () => {
     if (!referrer) return;

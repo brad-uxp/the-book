@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { X, Share, PlusSquare } from "lucide-react";
 
@@ -37,38 +37,48 @@ function detectMobilePlatform(): Platform {
   return null;
 }
 
+/** Nothing to subscribe to: the platform cannot change while the tab is open. */
+const noopSubscribe = () => () => {};
+
+/**
+ * Which install banner this device is eligible for, or null for none.
+ *
+ * All three inputs — display mode, user agent, localStorage — are invisible to
+ * the server, so this cannot be computed during render or seeded into
+ * useState. useSyncExternalStore is the sanctioned way to read a client-only
+ * value: it returns the server snapshot for SSR and re-renders after
+ * hydration, without a synchronous setState inside an effect.
+ */
+function useInstallPlatform(): Platform {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () =>
+      isStandalone() || wasDismissedRecently() ? null : detectMobilePlatform(),
+    () => null
+  );
+}
+
 export function InstallBanner() {
-  const [visible, setVisible] = useState(false);
-  const [platform, setPlatform] = useState<Platform>(null);
+  const platform = useInstallPlatform();
+  const [dismissed, setDismissed] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    if (isStandalone() || wasDismissedRecently()) return;
+    if (platform !== "android") return;
 
-    const plat = detectMobilePlatform();
-    if (!plat) return;
-
-    setPlatform(plat);
-
-    if (plat === "ios") {
-      setVisible(true);
-      return;
-    }
-
-    // Android: wait for beforeinstallprompt
+    // Android only: the banner waits for the browser to offer the prompt.
     const handler = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setVisible(true);
     };
 
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [platform]);
 
   const dismiss = useCallback(() => {
-    setVisible(false);
+    setDismissed(true);
     localStorage.setItem(DISMISSED_KEY, String(Date.now()));
   }, []);
 
@@ -76,10 +86,16 @@ export function InstallBanner() {
     if (deferredPrompt) {
       await deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === "accepted") setVisible(false);
+      if (outcome === "accepted") setDismissed(true);
       setDeferredPrompt(null);
     }
   }, [deferredPrompt]);
+
+  // Derived rather than stored: iOS shows instructions immediately, Android
+  // only once the browser has offered a prompt to defer.
+  const visible =
+    !dismissed &&
+    (platform === "ios" || (platform === "android" && deferredPrompt !== null));
 
   if (!visible) return null;
 

@@ -358,7 +358,13 @@ export function InlineTitle({
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => setDraft(value), [value]);
+  // Sync the draft when the committed value changes upstream. During render so
+  // the textarea never flashes the previous title.
+  const [lastValue, setLastValue] = useState(value);
+  if (value !== lastValue) {
+    setLastValue(value);
+    setDraft(value);
+  }
 
   // Auto-resize textarea to fit content
   useEffect(() => {

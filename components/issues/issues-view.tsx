@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Filter, LayoutGrid, LayoutList, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -66,14 +67,7 @@ export function IssuesView({ clients, initialIssues }: Props) {
   const searchParams = useSearchParams();
 
   // On mobile (<sm), always show list view
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const mql = window.matchMedia("(max-width: 639px)");
-    setIsMobile(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
+  const isMobile = useMediaQuery("(max-width: 639px)");
   const effectiveView = isMobile ? "list" : view;
 
   const filteredIssues = useMemo(() => {
@@ -93,19 +87,22 @@ export function IssuesView({ clients, initialIssues }: Props) {
     return result;
   }, [issues, search, filterClient, filterStatus]);
 
-  // Deep-link: open issue detail from ?issue=<id>
-  useEffect(() => {
-    const issueId = searchParams.get("issue");
-    if (issueId) {
-      const issue = issues.find((t) => t.id === issueId);
-      if (issue) {
-        if (issue.category === "note") setView("list");
-        setEditIssue(issue);
-      }
-      router.replace("/issues", { scroll: false });
+  // Deep-link: open issue detail from ?issue=<id>, once.
+  // Opening the dialog is a state adjustment, so it happens during render;
+  // clearing the query string is navigation, so it stays in an effect.
+  const deepLinkId = searchParams.get("issue");
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
+  if (deepLinkId && !deepLinkHandled) {
+    setDeepLinkHandled(true);
+    const issue = issues.find((t) => t.id === deepLinkId);
+    if (issue) {
+      if (issue.category === "note") setView("list");
+      setEditIssue(issue);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
+  useEffect(() => {
+    if (deepLinkHandled) router.replace("/issues", { scroll: false });
+  }, [deepLinkHandled, router]);
 
   const updateIssue = (id: string, patch: Partial<Issue>) => {
     setIssues((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));

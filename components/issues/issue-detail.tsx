@@ -63,6 +63,7 @@ import {
 } from "./invoice-mention-list";
 import { InvoiceForm } from "@/components/invoices/invoice-form";
 import type { InvoiceInput } from "@/lib/validations";
+import { useNow } from "@/hooks/use-now";
 
 // ── Mention extensions with `deleted` attribute ─────────────────────────────
 
@@ -374,22 +375,29 @@ export function IssueDetail({
     localStorage.setItem("issues-detail-expanded", String(expanded));
   }, [expanded]);
 
-  // Refs to avoid stale closures in editor callbacks
+  // Refs to avoid stale closures in editor callbacks. Assigned after commit,
+  // not during render: a render can be thrown away or replayed, and mutating a
+  // ref there would leave it pointing at props from a render that never
+  // committed. No dependency array — these must track every render.
   const issueRef = useRef(issue);
-  issueRef.current = issue;
   const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
+  useEffect(() => {
+    issueRef.current = issue;
+    onUpdateRef.current = onUpdate;
+  });
   const isSyncingRef = useRef(false);
 
+  const now = useNow();
+
   const isDueSoon = (dateStr: string | null) => {
-    if (!dateStr) return false;
-    const diff = new Date(dateStr).getTime() - Date.now();
+    if (!dateStr || !now) return false;
+    const diff = new Date(dateStr).getTime() - now;
     return diff > 0 && diff < 3 * 24 * 60 * 60 * 1000;
   };
 
   const isOverdue = (dateStr: string | null) => {
-    if (!dateStr) return false;
-    return new Date(dateStr).getTime() < Date.now();
+    if (!dateStr || !now) return false;
+    return new Date(dateStr).getTime() < now;
   };
 
   // Fetch people for @mention suggestions
@@ -735,7 +743,7 @@ export function IssueDetail({
       }
     });
     if (changed) editor.view.dispatch(tr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [editor, people, peopleFetched, issue?.id]);
 
   // Dynamic label sync for invoice mentions (+ deleted detection)
@@ -769,7 +777,7 @@ export function IssueDetail({
       }
     });
     if (changed) editor.view.dispatch(tr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [editor, invoices, invoicesFetched, issue?.id]);
 
   return (

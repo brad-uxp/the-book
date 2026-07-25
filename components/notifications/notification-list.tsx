@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { usePolling } from "@/hooks/use-polling";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
@@ -43,20 +44,21 @@ export function NotificationList() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/notifications?filter=all&limit=100");
-    if (res.ok) {
+  // `loading` starts true, so there is no setLoading(true) here: raising it on
+  // every refresh flashes the skeleton over data that is already on screen.
+  const fetchNotifications = useCallback(async (signal: AbortSignal) => {
+    try {
+      const res = await fetch("/api/notifications?filter=all&limit=100", { signal });
+      if (!res.ok) throw new Error(`notifications request failed: ${res.status}`);
       const data = await res.json();
       setNotifications(data.notifications);
       setUnreadCount(data.unreadCount);
+    } finally {
+      if (!signal.aborted) setLoading(false);
     }
-    setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+  const refresh = usePolling(fetchNotifications, null);
 
   const markRead = async (id: string) => {
     await fetch("/api/notifications", {
@@ -64,12 +66,12 @@ export function NotificationList() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    fetchNotifications();
+    refresh();
   };
 
   const markAllRead = async () => {
     await fetch("/api/notifications/mark-all-read", { method: "POST" });
-    fetchNotifications();
+    refresh();
   };
 
   return (

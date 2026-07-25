@@ -39,7 +39,7 @@ interface LineConfig {
   color: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function SalaryTooltip({ active, payload, label, lines }: any) {
   if (!active || !payload?.length) return null;
   const visibleLines = (lines as LineConfig[]).filter(({ key }) => {

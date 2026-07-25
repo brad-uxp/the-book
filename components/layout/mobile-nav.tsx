@@ -31,10 +31,15 @@ export function MobileNav() {
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  useEffect(() => {
+  // Adjusting state during render, not in an effect: React discards this render
+  // and re-runs the component immediately, so the menu never paints open on the
+  // new route. An effect would paint the stale state first.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (pathname !== lastPathname) {
+    setLastPathname(pathname);
     setOpen(false);
     setConfirmSignOut(false);
-  }, [pathname]);
+  }
 
   const { unreadCount } = useUnreadNotifications();
   const user = session?.user;

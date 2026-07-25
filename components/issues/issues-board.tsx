@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { useNow } from "@/hooks/use-now";
 import {
   DragDropContext,
   Droppable,
@@ -59,15 +60,17 @@ export function IssuesBoard({
   const columnIssues = (status: IssueStatus) =>
     issues.filter((t) => t.category === "task" && t.status === status);
 
+  const now = useNow();
+
   const isDueSoon = (dateStr: string | null) => {
-    if (!dateStr) return false;
-    const diff = new Date(dateStr).getTime() - Date.now();
+    if (!dateStr || !now) return false;
+    const diff = new Date(dateStr).getTime() - now;
     return diff > 0 && diff < 3 * 24 * 60 * 60 * 1000;
   };
 
   const isOverdue = (dateStr: string | null) => {
-    if (!dateStr) return false;
-    return new Date(dateStr).getTime() < Date.now();
+    if (!dateStr || !now) return false;
+    return new Date(dateStr).getTime() < now;
   };
 
   const handleDragEnd = (result: DropResult) => {
