@@ -1,8 +1,8 @@
-# AccountBook - Sistema de Contabilidad Personal
+# AccountBook — Sistema de Contabilidad Personal
 
-> Sistema de contabilidad personal completo y listo para producción, construido con Next.js 16, React 19, Prisma 7 y PostgreSQL. Desplegado en Vercel.
+> Sistema de contabilidad personal, en producción. Next.js 16, React 19, Prisma 7 y PostgreSQL, desplegado en **Railway** (`book.bolstro.com`).
 
-**Repositorio:** [github.com/Bradly95/system-2026](https://github.com/Bradly95/system-2026)
+**Repositorio:** `brad-uxp/the-book`
 
 ---
 
@@ -13,303 +13,261 @@
 - **Next.js 16** (App Router) + **TypeScript**
 - **React 19**
 - **Tailwind CSS v4**
-- **shadcn/ui** (estilo new-york) — 28 componentes base (Radix UI)
+- **shadcn/ui** (estilo new-york) — 27 componentes base (Radix UI)
 - **TanStack Table v8** — tablas con sorting, filtrado y paginación
 - **Recharts** — gráficos y visualizaciones
+- **TipTap** — editor de texto rico (descripciones de issues)
 - **React Hook Form** + **Zod** — formularios y validación
+- **jsPDF** + **jspdf-autotable** — exportación de reportes
 - **Sonner** — notificaciones toast
 - **Lucide React** — iconos
 - **date-fns / date-fns-tz** — manejo de fechas con timezone
 
 ### Backend & Base de Datos
 
-- **Prisma 7** ORM con adaptador PostgreSQL
-- **PostgreSQL** como base de datos
-- **NextAuth 5 (beta)** — autenticación con Google OAuth
-- **Nodemailer** — envío de emails vía Gmail SMTP
+- **Prisma 7** ORM con adaptador PostgreSQL (`@prisma/adapter-pg`)
+- **PostgreSQL 18** como base de datos
+- **NextAuth 5 (beta)** — autenticación con Google OAuth, single-user
+- **Cloudflare R2** (S3-compatible) — adjuntos de facturas vía URLs presignadas
+- **web-push** (VAPID) — notificaciones push
+
+> **No hay email ni auth mobile.** Ambas funcionalidades existieron y fueron
+> eliminadas del producto. Si leés menciones a Nodemailer, Gmail SMTP, JWT con
+> `jose` o `POST /api/auth/mobile`, son de una versión anterior.
 
 ### Infraestructura
 
-- **Vercel** — hosting, deployment y cron jobs
-- **Vercel Cron** — tareas diarias automatizadas (06:00 UTC)
+- **Railway** — hosting y base de datos (una réplica, región `us-west2`)
+- **Scheduler in-app** — `instrumentation.ts` registra `lib/daily-scheduler.ts`,
+  que corre el job diario a las **13:00 UTC** (10:00 en Montevideo).
+  No hay cron de plataforma. Se desactiva con `DISABLE_INAPP_CRON=1`.
+- **PWA** con `serwist` (service worker generado en `public/sw.js`)
+
+⚠️ **`pnpm start` corre `prisma migrate deploy` antes de `next start`**, así que
+cada arranque aplica las migraciones pendientes a producción sin intervención
+humana. Una migración commiteada llega a la base en el siguiente deploy.
 
 ---
 
 ## Estructura del Proyecto
 
 ```
-accounting-system/
+TheBook/
 ├── app/
-│   ├── api/                          # 27 rutas API (REST)
-│   │   ├── auth/[...nextauth]/       # Autenticación NextAuth
-│   │   ├── auth/mobile/              # Login mobile (Google ID Token → JWT)
-│   │   ├── subscriptions/            # CRUD suscripciones + pagos
-│   │   ├── people/                   # CRUD personas + pagos salarios + reminders
-│   │   ├── invoices/                 # CRUD facturas
-│   │   ├── clients/                  # CRUD clientes
-│   │   ├── other-expenses/           # CRUD gastos varios
-│   │   ├── fee-payments/             # CRUD pagos de comisiones
-│   │   ├── roles/                    # CRUD roles laborales
-│   │   ├── expenses/                 # Vista unificada de gastos
-│   │   ├── notifications/            # Listado + marcar como leídas
-│   │   ├── audit-logs/               # Historial de auditoría
-│   │   ├── settings/                 # Configuración global + test email
-│   │   └── cron/daily/               # Cron job diario
-│   ├── admin-logs/page.tsx           # Página de logs de auditoría
+│   ├── api/                          # 38 rutas API (REST) — ver tabla abajo
+│   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
+│   ├── fees/page.tsx                 # Comisiones por referidor
 │   ├── invoices/page.tsx             # Gestión de facturas
+│   ├── issues/page.tsx               # Tareas y notas
 │   ├── login/page.tsx                # Login con Google OAuth
 │   ├── notifications/page.tsx        # Centro de notificaciones
+│   ├── offline/page.tsx              # Fallback PWA
 │   ├── salaries/page.tsx             # Gestión de salarios y personas
 │   ├── settings/page.tsx             # Configuración del sistema
 │   ├── subscriptions/page.tsx        # Gestión de suscripciones
-│   ├── generated/prisma/             # Tipos Prisma auto-generados
-│   ├── layout.tsx                    # Layout raíz con sidebar
-│   └── loading.tsx                   # Estado de carga global
+│   ├── generated/prisma/             # Cliente Prisma (gitignored, generado en build)
+│   ├── sw.ts                         # Service worker (serwist)
+│   └── layout.tsx                    # Layout raíz con sidebar
 ├── components/
-│   ├── layout/                       # Sidebar, MobileNav, NotificationBell
-│   ├── ui/                           # 28 componentes shadcn/ui
-│   ├── auth/                         # InactivityGuard
-│   ├── dashboard/                    # Charts, Metrics, UpcomingCards
-│   ├── expenses/                     # ExpenseTable, ExpenseCharts, Forms
-│   ├── invoices/                     # InvoicesTable, InvoiceForm, ClientManager
-│   ├── notifications/                # NotificationList
-│   ├── salaries/                     # SalariesTable, PersonForm, RoleManager
-│   ├── settings/                     # SettingsForm
-│   ├── subscriptions/                # SubscriptionsTable, SubscriptionForm
-│   └── admin-logs/                   # AuditLogTable
-├── hooks/
-│   └── use-toast.ts                  # Hook de notificaciones toast
+│   ├── ui/                           # 27 componentes shadcn/ui
+│   ├── layout/                       # Sidebar, MobileNav, NotificationBell, InstallBanner
+│   ├── dashboard/                    # Charts, Metrics, UpcomingCards, CorporateChart
+│   ├── expenses/  invoices/  salaries/  subscriptions/
+│   ├── fees/                         # Referidores y comisiones
+│   ├── issues/                       # Board, lista, detalle, editores inline
+│   ├── notifications/  settings/  admin-logs/
 ├── lib/
-│   ├── jwt.ts                        # Utilidades JWT (sign/verify con jose)
+│   ├── api.ts                        # requireSession, mapeo de errores, readJson
+│   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
+│   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
+│   ├── currency.ts                   # Centavos ↔ display (testeada)
+│   ├── daily-scheduler.ts            # Scheduler in-app
+│   ├── dates.ts                      # Fechas UTC + timezone Montevideo (testeada)
 │   ├── db.ts                         # Singleton de Prisma Client
-│   ├── dates.ts                      # Utilidades de fechas (timezone Montevideo)
-│   ├── email.ts                      # Templates de email + envío
-│   ├── audit.ts                      # Logging de auditoría
-│   ├── cron-helpers.ts               # Helpers para cron jobs
-│   ├── currency.ts                   # Formateo USD (centavos → display)
+│   ├── r2.ts                         # Cloudflare R2 + validación de object keys
+│   ├── run-daily.ts                  # Orquestación del job diario
 │   ├── validations.ts                # Esquemas Zod
-│   └── utils.ts                      # Utilidades generales
+│   ├── web-push.ts                   # Envío de push
+│   └── utils.ts
 ├── prisma/
-│   ├── schema.prisma                 # Esquema de base de datos
-│   └── seed.ts                       # Datos de demo
-├── public/                           # Assets estáticos (logo, íconos)
-├── middleware.ts                     # Protección de rutas (auth)
-├── auth.ts                           # Configuración NextAuth
-├── next.config.ts                    # Config Next.js + headers de seguridad
-├── vercel.json                       # Config Vercel + cron schedule
-├── prisma.config.ts                  # Config generador Prisma
-├── tsconfig.json                     # Config TypeScript
-└── package.json                      # Dependencias
+│   ├── schema.prisma
+│   ├── migrations/                   # Migraciones escritas a mano
+│   └── migrations.test.ts            # Guard de los índices que Prisma no modela
+├── proxy.ts                          # Middleware de auth (Next 16 lo llama proxy)
+├── auth.ts                           # NextAuth + ALLOWED_EMAILS + isAllowedSession
+├── instrumentation.ts                # Registra el scheduler in-app
+└── eslint.config.mjs
 ```
+
+> **Nota:** en Next 16 el middleware se llama `proxy.ts`, no `middleware.ts`.
+> No existe `prisma/seed.ts`.
 
 ---
 
 ## Esquema de Base de Datos
 
+17 tablas. Todos los montos son `Int` en **centavos**; todas las fechas se
+guardan como **UTC midnight**.
+
 ### Autenticación y Configuración
 
-| Modelo     | Descripción                                                                      |
-| ---------- | -------------------------------------------------------------------------------- |
-| `Settings` | Configuración global (singleton): email destinatario, días de aviso anticipado   |
+| Modelo             | Descripción                                                              |
+| ------------------ | ------------------------------------------------------------------------ |
+| `Settings`         | Configuración global (singleton, `CHECK (id = 'singleton')`)             |
+| `PushSubscription` | Suscripción de web push por endpoint                                     |
 
 ### Suscripciones
 
-| Modelo                  | Descripción                                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `Subscription`          | Suscripción recurrente: nombre, monto, frecuencia (mensual/anual), categoría, modo de pago       |
-| `SubscriptionPayment`   | Registro de pago con soft-delete (undo): fecha de vencimiento, snapshot del monto                |
+| Modelo                | Descripción                                                                     |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `Subscription`        | Recurrente: nombre, monto, frecuencia, categoría, modo de pago                  |
+| `SubscriptionPayment` | Pago con soft-delete (`deleted_at`) para undo; snapshot del monto               |
 
 ### Personas y Salarios
 
-| Modelo                     | Descripción                                                                         |
-| -------------------------- | ----------------------------------------------------------------------------------- |
-| `Person`                   | Empleado/miembro del equipo: nombre, día de pago, rol, estado                       |
-| `SalaryBase`               | Salario base actual (relación 1:1 con Person)                                       |
-| `SalaryPayment`            | Pago de salario: snapshot base + ajuste (bonus/deducción) + nota                    |
-| `SalaryIncreaseReminder`   | Recordatorio de aumento: fecha efectiva, monto sugerido, estado                     |
-| `Role`                     | Puesto de trabajo (nombre único, relación con personas)                              |
+| Modelo                   | Descripción                                                       |
+| ------------------------ | ----------------------------------------------------------------- |
+| `Person`                 | Empleado: nombre, día de pago, rol, estado (`active`/`inactive`)  |
+| `SalaryBase`             | Salario base actual (1:1 con Person)                              |
+| `SalaryPayment`          | Pago: snapshot base + ajuste + total                              |
+| `SalaryIncreaseReminder` | Recordatorio de aumento                                           |
+| `Role`                   | Puesto de trabajo (nombre único)                                  |
 
-### Facturas y Clientes
+### Facturas, Clientes y Referidores
 
-| Modelo    | Descripción                                                                                                |
-| --------- | ---------------------------------------------------------------------------------------------------------- |
-| `Client`  | Cliente/proyecto: nombre + color hex para identificación visual                                            |
-| `Invoice` | Factura: número, cliente, monto, comisión, estado (pending→accounting→sent→paid), fecha de vencimiento     |
+| Modelo       | Descripción                                                                          |
+| ------------ | ------------------------------------------------------------------------------------ |
+| `Client`     | Cliente/proyecto: nombre, color hex, referidor por defecto                           |
+| `Referrer`   | Referidor que cobra comisión                                                          |
+| `Invoice`    | Factura: número (único, case-insensitive), cliente, monto, comisión, estado, adjunto |
+| `FeePayment` | Pago de comisión a un referidor                                                       |
 
-### Gastos
+> **Convención de `Invoice.fee_cents`:** se guarda **negativo** — es un descuento
+> sobre la factura. El dashboard suma `amount_cents + fee_cents` (resta la comisión
+> del ingreso) y la vista de referidores usa `Math.abs` (total adeudado). Las dos
+> lecturas son correctas bajo esa convención; una factura con fee positivo las
+> rompería en direcciones opuestas.
 
-| Modelo         | Descripción                                                             |
-| -------------- | ----------------------------------------------------------------------- |
-| `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha, notas                   |
-| `FeePayment`   | Pago de comisión (excluido del ingreso neto): nombre, monto, fecha      |
+### Gastos e Issues
+
+| Modelo         | Descripción                                                          |
+| -------------- | -------------------------------------------------------------------- |
+| `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
+| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente |
 
 ### Sistema
 
-| Modelo         | Descripción                                                                                   |
-| -------------- | --------------------------------------------------------------------------------------------- |
-| `Notification` | Notificación in-app y email: 11 tipos, idempotente por (type, entity_id, event_date)          |
-| `AuditLog`     | Historial completo de cambios: entidad, acción, snapshots before/after en JSON                |
+| Modelo         | Descripción                                                                |
+| -------------- | -------------------------------------------------------------------------- |
+| `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
+| `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
+
+### Invariantes que la base enforza
+
+- `SubscriptionPayment.subscription` y `SalaryPayment.person` son **`ON DELETE RESTRICT`**:
+  los pagos son historia contable y no se van con su padre. La API responde 409 y
+  sugiere marcar `inactive`.
+- **Índice único parcial** en `SubscriptionPayment (subscription_id, due_date) WHERE deleted_at IS NULL` —
+  evita cobrar dos veces el mismo período.
+- **Índice único funcional** en `Invoice (lower(invoice_number)) WHERE invoice_number IS NOT NULL`.
+
+⚠️ Los dos últimos **no se pueden expresar en `schema.prisma`**, así que
+`prisma migrate dev` los ve como drift y genera un `DROP INDEX`.
+`prisma/migrations.test.ts` falla el build si eso llega a pasar. Si tenés que
+editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Funcionalidades
+## Rutas API (38)
 
-### 1. Dashboard (`/dashboard`)
+Todas exigen sesión (`requireSession()` en el handler, además del `proxy.ts`),
+salvo `auth/[...nextauth]` y `cron/daily`, que se protege con `CRON_SECRET`.
 
-- **4 tarjetas KPI**: facturas pendientes de cobro, salarios pagados, suscripciones pagadas, ingreso neto
-- **6 promedios mensuales**: salario, suscripciones por categoría, gastos, ingreso neto
-- **Períodos**: YTD, últimos 12 meses, todo el tiempo
-- **Gráfico de líneas**: Ingresos vs Gastos (desglosado por tipo)
-- **Gráfico corporativo**: Rentabilidad personal vs trabajo
-- **Próximos pagos**: siguiente 5 días (suscripciones, salarios, facturas)
-
-### 2. Facturas (`/invoices`)
-
-- **CRUD completo** con flujo de estados: `pending → accounting → sent → paid`
-- **Gestión de clientes** inline con asignación de color
-- **Campos**: número de factura (opcional, único), cliente, monto, comisión, fecha de vencimiento, fecha de recordatorio, URL de archivo
-- **Tabla de datos** con sorting, filtrado por estado y rango de fechas
-- **Notificaciones** automáticas por fecha de recordatorio y vencimiento
-
-### 3. Suscripciones (`/subscriptions`)
-
-- **CRUD completo**: mensuales y anuales
-- **Categorías**: trabajo / personal / servicio esencial
-- **Modos de pago**: automático (el cron registra el pago) / manual
-- **Estado**: activa / inactiva
-- **Historial de pagos** con soft-delete para undo
-- **Ícono personalizable** por URL
-- **Notificaciones** configurables (X días antes del vencimiento)
-
-### 4. Salarios y Personas (`/salaries`)
-
-- **Gestión de personas**: CRUD con roles, día de pago, salario base
-- **Pagos mensuales** con ajuste opcional (bonus/deducción) y nota explicativa
-- **Recordatorios de aumento**: programar, aplicar, ignorar o reprogramar
-- **Gestión de roles** inline (crear/editar puestos de trabajo)
-- **Vista**: nombre, rol, día de pago, salario actual, último pago, recordatorios pendientes
-- **Bulk pay**: pago masivo de salarios
-
-### 5. Gastos (`/expenses`)
-
-- **Vista unificada**: combina pagos de suscripciones, salarios, gastos varios y comisiones
-- **Gastos varios** (OtherExpense): gastos puntuales con categoría
-- **Pagos de comisiones** (FeePayment): excluidos del cálculo de ingreso neto
-- **KPIs**: total, último mes, cambio MoM, promedio
-- **Gráfico de barras apiladas**: últimos 12 meses por tipo
-- **Gráfico de torta**: desglose de suscripciones por categoría
-- **Filtros**: por tipo, rango de fechas, categoría
-
-### 6. Notificaciones (`/notifications`)
-
-- **11 tipos de notificación**: suscripción auto/manual, salario, aumento, factura vencimiento/recordatorio
-- **Centro in-app** con badge de no leídas en sidebar
-- **Filtros**: leídas/no leídas, por tipo
-- **Acciones**: marcar individual o todas como leídas
-- **Paginación** por página y límite
-- **Email**: envío automático vía cron (templates en español)
-- **Purga automática**: notificaciones de más de 7 días eliminadas por cron
-
-### 7. Configuración (`/settings`)
-
-- **Email destinatario** para notificaciones
-- **Días de aviso anticipado** (0-30): suscripciones, salarios, facturas
-- **Test de email**: enviar correo de prueba para verificar configuración
-
-### 8. Logs de Auditoría (`/admin-logs`)
-
-- **Registro de todas las acciones** CRUD (crear, actualizar, eliminar)
-- **Snapshots JSON** del estado antes y después del cambio
-- **Nombre de entidad desnormalizado** para display rápido sin JOINs
-- **Retención**: 12 meses (purgados por cron)
-- **Muestra**: últimos 50 registros con conteo total
-
-### 9. Autenticación
-
-- **Google OAuth** via NextAuth 5
-- **Acceso single-user**: emails autorizados exportados desde `auth.ts` (`ALLOWED_EMAILS`)
-- **Middleware** protege todas las rutas excepto login, auth y cron
-- **Guard de inactividad**: aviso a los 55 min, logout automático a los 60 min
-- **Página de login** con branding personalizado
-
-### 10. Autenticación Mobile
-
-- **Google Sign-In** nativo desde la app Flutter
-- **Endpoint**: `POST /api/auth/mobile` acepta `{ google_id_token }` o `{ email, secret }` (legacy)
-- **Verificación**: el ID token se valida contra `oauth2.googleapis.com/tokeninfo`, se verifica que el audience coincida con `AUTH_GOOGLE_ID` y que el email esté en `ALLOWED_EMAILS`
-- **JWT**: se genera con `jose` (compatible con Edge Runtime), expiración 7 días, firmado con `JWT_SECRET`
-- **Middleware dual**: acepta cookies NextAuth (web) y Bearer JWT (mobile) — ambos flujos coexisten
-- **CORS**: headers configurados en `next.config.ts` para `/api/*` (`Access-Control-Allow-Origin: *`)
+| Recurso           | Métodos         | Ruta                                 |
+| ----------------- | --------------- | ------------------------------------ |
+| Auth              | GET/POST        | `/api/auth/[...nextauth]`            |
+| Subscriptions     | GET/POST        | `/api/subscriptions`                 |
+| Subscription      | GET/PATCH/DEL   | `/api/subscriptions/[id]`            |
+| Sub. Payments     | GET/POST/DEL    | `/api/subscriptions/[id]/payments`   |
+| Sub. Payment      | PATCH/DELETE    | `/api/subscription-payments/[id]`    |
+| People            | GET/POST        | `/api/people`                        |
+| Person            | GET/PATCH/DEL   | `/api/people/[id]`                   |
+| Salary Payments   | GET/POST        | `/api/people/[id]/payments`          |
+| Salary Payment    | PATCH/DELETE    | `/api/salary-payments/[id]`          |
+| Salary Reminders  | GET/POST/PATCH/DEL | `/api/people/[id]/reminders`      |
+| Roles             | GET/POST        | `/api/roles`                         |
+| Role              | PATCH/DELETE    | `/api/roles/[id]`                    |
+| Invoices          | GET/POST        | `/api/invoices`                      |
+| Invoice           | GET/PATCH/DEL   | `/api/invoices/[id]`                 |
+| Invoice upload    | POST            | `/api/invoices/[id]/upload-url`      |
+| Invoice download  | GET             | `/api/invoices/[id]/download-url`    |
+| Clients           | GET/POST        | `/api/clients`                       |
+| Client            | PATCH/DELETE    | `/api/clients/[id]`                  |
+| Referrers         | GET/POST        | `/api/referrers`                     |
+| Referrer          | PATCH/DELETE    | `/api/referrers/[id]`                |
+| Referrer clients  | GET             | `/api/referrers/[id]/clients`        |
+| Referrer detail   | GET             | `/api/referrers/[id]/detail`         |
+| Referrers summary | GET             | `/api/referrers/summary`             |
+| Other Expenses    | GET/POST        | `/api/other-expenses`                |
+| Other Expense     | PATCH/DELETE    | `/api/other-expenses/[id]`           |
+| Fee Payments      | GET/POST        | `/api/fee-payments`                  |
+| Fee Payment       | PATCH/DELETE    | `/api/fee-payments/[id]`             |
+| Issues            | GET/POST        | `/api/issues`                        |
+| Issue             | GET/PATCH/DEL   | `/api/issues/[id]`                   |
+| Issues counts     | GET             | `/api/issues/linked-counts`          |
+| Notifications     | GET/PATCH       | `/api/notifications`                 |
+| Notif. count      | GET             | `/api/notifications/count`           |
+| Mark all read     | POST            | `/api/notifications/mark-all-read`   |
+| Audit Logs        | GET             | `/api/audit-logs`                    |
+| Settings          | GET/PATCH       | `/api/settings`                      |
+| Test push         | POST            | `/api/settings/test-push`            |
+| Web Push          | POST/DELETE     | `/api/web-push`                      |
+| Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---
 
-## Rutas API (27 endpoints)
+## Job Diario
 
-| Recurso              | Método          | Ruta                                   |
-| -------------------- | --------------- | -------------------------------------- |
-| Auth                 | GET/POST        | `/api/auth/[...nextauth]`             |
-| Auth Mobile          | POST            | `/api/auth/mobile`                     |
-| Subscriptions        | GET/POST        | `/api/subscriptions`                   |
-| Subscription         | GET/PATCH/DEL   | `/api/subscriptions/[id]`              |
-| Sub. Payments        | GET/POST        | `/api/subscriptions/[id]/payments`     |
-| Sub. Payment         | GET/DELETE      | `/api/subscription-payments/[id]`      |
-| People               | GET/POST        | `/api/people`                          |
-| Person               | GET/PATCH/DEL   | `/api/people/[id]`                     |
-| Salary Payments      | GET/POST        | `/api/people/[id]/payments`            |
-| Salary Payment       | GET/PATCH/DEL   | `/api/salary-payments/[id]`            |
-| Salary Reminders     | GET/POST        | `/api/people/[id]/reminders`           |
-| Roles                | GET/POST        | `/api/roles`                           |
-| Role                 | GET/PATCH/DEL   | `/api/roles/[id]`                      |
-| Invoices             | GET/POST        | `/api/invoices`                        |
-| Invoice              | GET/PATCH/DEL   | `/api/invoices/[id]`                   |
-| Clients              | GET/POST        | `/api/clients`                         |
-| Client               | GET/PATCH/DEL   | `/api/clients/[id]`                    |
-| Other Expenses       | GET/POST        | `/api/other-expenses`                  |
-| Other Expense        | GET/PATCH/DEL   | `/api/other-expenses/[id]`             |
-| Fee Payments         | GET/POST        | `/api/fee-payments`                    |
-| Fee Payment          | GET/PATCH/DEL   | `/api/fee-payments/[id]`               |
-| Notifications        | GET/PATCH       | `/api/notifications`                   |
-| Mark All Read        | POST            | `/api/notifications/mark-all-read`     |
-| Audit Logs           | GET             | `/api/audit-logs`                      |
-| Settings             | GET/PATCH       | `/api/settings`                        |
-| Test Email           | POST            | `/api/settings/test-email`             |
-| Cron Daily           | GET             | `/api/cron/daily`                      |
+Corre a las **13:00 UTC** por el scheduler in-app, y también se puede disparar
+por `GET /api/cron/daily` con `Authorization: Bearer $CRON_SECRET`.
+Es idempotente: correrlo dos veces el mismo día no duplica datos.
 
----
-
-## Cron Job Diario (`/api/cron/daily`)
-
-**Horario:** 06:00 UTC (03:00 AM hora de Montevideo)
-**Protección:** Bearer token `CRON_SECRET`
-**Idempotente:** seguro de ejecutar múltiples veces
+**Por diseño solo actúa sobre el día de hoy** — no hace catch-up de períodos
+perdidos. Pausar una suscripción se hace desactivándola; un catch-up
+recrearía el mes salteado al reactivarla.
 
 ### Tareas (en orden)
 
-1. **Limpieza**: eliminar notificaciones > 7 días, audit logs > 12 meses
-2. **Suscripciones auto**: crear notificación N días antes + crear pago en fecha de vencimiento
-3. **Suscripciones manual**: crear notificación de vencimiento
-4. **Salarios**: crear notificación N días antes del día de pago
-5. **Recordatorios de aumento**: crear notificación en fecha efectiva
-6. **Facturas**: notificación en fecha de recordatorio + N días antes del vencimiento
-7. **Envío de emails**: agrupar notificaciones de salario, enviar individuales para suscripciones/facturas
+1. **Limpieza**: notificaciones > 7 días, audit logs > 12 meses
+2. **Suscripciones**: aviso N días antes; en la fecha, si es `auto`, crea el pago
+3. **Salarios**: aviso N días antes del día de pago
+4. **Recordatorios de aumento**: aviso en la fecha efectiva
+5. **Facturas**: aviso en `reminder_date` y N días antes del vencimiento
+6. **Issues**: aviso para tareas que vencen hoy o mañana
+7. **Web push** de todo lo creado en la corrida
+
+> El aviso anticipado mira **hacia adelante** desde hoy (`advanceNotice`).
+> Calcularlo restando desde el vencimiento del mes corriente falla en silencio
+> cuando el día de pago es menor o igual a los días de anticipación.
 
 ---
 
 ## Patrones Técnicos Clave
 
-| Patrón                    | Implementación                                                          |
-| ------------------------- | ----------------------------------------------------------------------- |
-| Moneda                    | Almacenamiento en centavos (integer) para evitar errores de punto flotante |
-| Timezone                  | `America/Montevideo` (UTC-3), fechas almacenadas como UTC midnight      |
-| Day clamping              | pay_day=31 en Feb → automáticamente 28/29                              |
-| Soft-delete               | `deleted_at` en pagos de suscripción (permite undo)                     |
-| Audit logs                | Fire-and-forget (nunca bloquea requests), nombre desnormalizado          |
-| Notificaciones idempotentes| Unique en `(type, entity_id, event_date)` — upsert sin update          |
-| Validación                | Zod schemas en todas las APIs, errores con `flatten()`                  |
-| Settings singleton        | Una sola fila global de configuración                                   |
-| Auth single-user          | Email autorizado hardcodeado en `auth.ts`                               |
+| Patrón                      | Implementación                                                        |
+| --------------------------- | --------------------------------------------------------------------- |
+| Moneda                      | Enteros en centavos. `parseToCents` redondea sobre el string decimal   |
+| Timezone                    | `America/Montevideo`; fechas guardadas como UTC midnight              |
+| Day clamping                | `pay_day=31` en febrero → 28/29                                        |
+| Soft-delete                 | `deleted_at` en pagos de suscripción (permite undo)                    |
+| Audit logs                  | Fire-and-forget, nombre de entidad desnormalizado                      |
+| Notificaciones idempotentes | Unique `(type, entity_id, event_date)` + upsert sin update             |
+| Validación                  | Zod en toda API, errores con `.flatten()`                              |
+| Autorización                | `requireSession()` en cada handler, además del `proxy.ts`              |
+| Settings singleton          | Una fila, con CHECK en la base                                         |
+| Auth single-user            | `ALLOWED_EMAILS` en `auth.ts`, re-chequeado en cada refresh del token  |
 
 ---
 
@@ -323,16 +281,26 @@ DATABASE_URL=postgresql://user:password@host:port/dbname?sslmode=require
 AUTH_SECRET=<openssl rand -base64 32>
 AUTH_GOOGLE_ID=<from Google Cloud Console>
 AUTH_GOOGLE_SECRET=<from Google Cloud Console>
+AUTH_URL=https://book.bolstro.com
+AUTH_TRUST_HOST=true
 
-# Notificaciones y Cron
+# Cron
 CRON_SECRET=<random bearer token>
-GMAIL_USER=your-email@gmail.com
-GMAIL_APP_PASSWORD=<16-char Google App Password>
+DISABLE_INAPP_CRON=            # poné 1 para apagar el scheduler in-app
 
-# Autenticación mobile
-JWT_SECRET=<openssl rand -base64 64>
-MOBILE_AUTH_SECRET=<openssl rand -base64 32>
+# Cloudflare R2 (adjuntos de facturas)
+R2_ACCOUNT_ID=
+R2_BUCKET_NAME=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_ENDPOINT=                   # opcional; por defecto <account>.r2.cloudflarestorage.com
+
+# Web Push (VAPID)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
 ```
+
+Generar claves VAPID: `pnpm dlx web-push generate-vapid-keys`.
 
 ---
 
@@ -340,20 +308,31 @@ MOBILE_AUTH_SECRET=<openssl rand -base64 32>
 
 ```bash
 pnpm dev               # Servidor de desarrollo (localhost:3001)
-pnpm build             # Build de producción (next build --webpack)
-pnpm db:generate       # Generar tipos Prisma
-pnpm db:migrate        # Ejecutar migraciones
-pnpm exec tsx prisma/seed.ts   # Seed de datos de demo
-pnpm db:studio         # Abrir Prisma Studio (GUI)
-pnpm test              # Correr tests (vitest)
+pnpm build             # prisma generate && next build --webpack
+pnpm db:generate       # Generar cliente Prisma
+pnpm db:migrate        # prisma migrate dev  ⚠️ ver aviso de índices arriba
+pnpm db:studio         # Prisma Studio
+pnpm test              # vitest run
+pnpm test:coverage     # vitest run --coverage
 pnpm typecheck         # tsc --noEmit
+pnpm lint              # eslint .
 ```
+
+**Solo pnpm.** `ignore-scripts` está activo, así que `postinstall` no corre
+automáticamente; el `build` genera el cliente Prisma por su cuenta.
 
 ---
 
 ## Seguridad
 
-- **Headers HTTP**: X-Robots-Tag (noindex), X-Frame-Options (DENY), HSTS, CSP restrictivo, Permissions-Policy
-- **Middleware de auth** en todas las rutas protegidas
+- **Headers HTTP**: X-Robots-Tag (noindex), X-Frame-Options DENY, HSTS con
+  preload, CSP, Permissions-Policy
+- **Autorización en dos capas**: `proxy.ts` en el borde y `requireSession()` en
+  cada handler. El chequeo valida el email contra `ALLOWED_EMAILS`, no la mera
+  presencia de `req.auth` — un error de configuración de Auth.js hace que
+  `req.auth` sea un objeto truthy, y gatear sobre eso abre toda la API
+- **Sesión de 12 h**, con re-validación de la allowlist en cada refresh
 - **Cron protegido** con Bearer token
-- **Inactivity guard**: logout automático tras 60 min de inactividad
+- **Object keys de R2 validadas** contra el formato exacto que emite
+  `buildInvoiceKey`, y su pertenencia verificada al escribir y al firmar
+- **URLs restringidas a http(s)** en los campos que se renderizan como `src`/`href`

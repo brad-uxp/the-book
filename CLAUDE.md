@@ -1,16 +1,17 @@
 # AccountBook — Sistema de Contabilidad Personal
 
-Backend web del sistema (paquete `accounting-system`). Repo: [Bradly95/system-2026](https://github.com/Bradly95/system-2026). Desplegado en Vercel. La app vive en este directorio (`TheBook/`); el directorio padre `theBookApp/` es solo un contenedor (facturas, planes sueltos). **Lanza Claude Code desde aquí (`TheBook/`)** para que se carguen las skills y agentes del framework.
+Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book](https://github.com/brad-uxp/the-book). Desplegado en **Railway** (`book.bolstro.com`). La app vive en este directorio (`TheBook/`); el directorio padre `theBookApp/` es solo un contenedor (facturas, planes sueltos). **Lanza Claude Code desde aquí (`TheBook/`)** para que se carguen las skills y agentes del framework.
 
-**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 27 rutas API, funcionalidades, cron. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
+**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 38 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
 
 ## Stack (resumen operativo)
 
 - **Next.js 16** (App Router) + **React 19** + **TypeScript** · Tailwind **v4** · **shadcn/ui** (estilo new-york, Radix).
 - **Prisma 7** con adaptador **PostgreSQL** (`@prisma/adapter-pg`) · **NextAuth 5 (beta)** Google OAuth, single-user.
-- **Auth mobile**: `POST /api/auth/mobile` valida Google ID token → JWT con `jose` (Edge-compatible). Middleware dual: cookies web + Bearer mobile.
-- **PWA** con `serwist` · **web-push** para notificaciones · **Vercel Cron** diario (06:00 UTC) en `/api/cron/daily`.
-- **Nodemailer** (Gmail SMTP) para emails.
+- **Autorización en dos capas**: `proxy.ts` (así se llama el middleware en Next 16) + `requireSession()` en cada handler. Ambos validan el email contra `ALLOWED_EMAILS`, no la mera presencia de `req.auth`.
+- **PWA** con `serwist` · **web-push** (VAPID) para notificaciones · **Cloudflare R2** para adjuntos de facturas.
+- **Job diario in-app** a las 13:00 UTC (`instrumentation.ts` → `lib/daily-scheduler.ts`). No hay cron de plataforma; `/api/cron/daily` es el disparo manual, con `CRON_SECRET`.
+- **No hay email ni auth mobile** — existieron y se eliminaron. Si ves menciones a Nodemailer, Gmail, `jose` o `/api/auth/mobile`, son de una versión anterior.
 
 ## Convenciones que no se negocian (código = inglés, copy UI = español)
 
@@ -36,12 +37,13 @@ pnpm test           # vitest run
 pnpm typecheck      # tsc --noEmit
 ```
 
-**Gestor de paquetes: solo pnpm.** Migrado desde npm el 2026-07-24 (`pnpm-lock.yaml`, `packageManager: pnpm@11.1.1`, sin `package-lock.json`). El hook global bloquea npm/npx/yarn — usa `pnpm <script>` y `pnpm exec <bin>` / `pnpm dlx <pkg>`. Ojo: `ignore-scripts=true` global → el `postinstall: prisma generate` NO corre solo tras instalar; corre `pnpm db:generate` a mano. `minimum-release-age=1440` (24h) puede tumbar un `pnpm add` con `ERR_PNPM_MISSING_TIME`; solo entonces, y solo para deps ya vetadas, `npm_config_minimum_release_age=0 pnpm add …`.
+**Gestor de paquetes: solo pnpm.** Migrado desde npm el 2026-07-24 (`pnpm-lock.yaml`, `packageManager: pnpm@11.1.1`, sin `package-lock.json`). El hook global bloquea npm/npx/yarn — usa `pnpm <script>` y `pnpm exec <bin>` / `pnpm dlx <pkg>`. Ojo: `ignore-scripts=true` global → el `postinstall: prisma generate` NO corre solo tras instalar; corre `pnpm db:generate` a mano. Por eso el `build` hace `prisma generate && next build`: sin eso el deploy no compila. `minimum-release-age=1440` (24h) puede tumbar un `pnpm add` con `ERR_PNPM_MISSING_TIME`; solo entonces, y solo para deps ya vetadas, `npm_config_minimum_release_age=0 pnpm add …`.
 
 ## Estado del proyecto / tracking
 
 - Docs de estado: [`TRACKER.md`](./TRACKER.md), [`TASKS_SERVICE.md`](./TASKS_SERVICE.md), [`PLAN-NOTIFICATIONS.md`](./PLAN-NOTIFICATIONS.md).
-- **Tests**: vitest cableado (`vitest.config.ts`, entorno node). Cobertura inicial: lógica pura de `lib/currency.ts` y `lib/dates.ts` (`lib/*.test.ts`). **Falta todo lo demás** — APIs, cron, componentes. Al tocar un área, deja su test (la skill `tdd` guía).
+- **Tests**: vitest cableado (`vitest.config.ts`, entorno node, alias `@/`). Cubre la lógica pura: `lib/currency.ts`, `lib/dates.ts`, las reglas de notificación del job diario (`lib/cron-helpers.ts`) y un guard sobre las migraciones (`prisma/migrations.test.ts`). **Falta**: rutas API, capa de I/O del scheduler, componentes. Al tocar un área, deja su test (la skill `tdd` guía).
+- ⚠️ **`pnpm start` corre `prisma migrate deploy`**: cada arranque aplica migraciones a producción sin intervención humana. Y dos índices críticos (el unique parcial de `SubscriptionPayment` y el unique funcional de `invoice_number`) no se pueden expresar en `schema.prisma`, así que `prisma migrate dev` genera su `DROP INDEX`. `prisma/migrations.test.ts` falla el build si eso se commitea — pero revisá el SQL generado antes.
 - **Gate `pre-commit` fail-closed instalado** (`.git/hooks/pre-commit`): typecheck + `vitest run` antes de cada commit; aborta si falla. Es la propiedad mecánica #3 del framework. Bypass consciente: `git commit --no-verify`. (No se versiona — reinstalar por máquina.)
 
 ## Git (workflow de Brad)

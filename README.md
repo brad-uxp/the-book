@@ -1,15 +1,21 @@
 # AccountBook
 
-Personal accounting system — subscriptions, salaries, invoices, and expense tracking.
+Personal accounting system — subscriptions, salaries, invoices, referrer fees,
+expenses and tasks. Single user, in production at `book.bolstro.com`.
+
+For the full product map — data model, all 38 API routes, the daily job and the
+invariants the database enforces — see [`PROJECT.md`](./PROJECT.md).
 
 ## Stack
 
-- **Next.js 16** (App Router) + TypeScript
+- **Next.js 16** (App Router) + TypeScript · **React 19**
 - **Tailwind CSS v4** + **shadcn/ui** (new-york style)
-- **TanStack Table v8** — data grids
-- **Recharts** — charts
-- **Prisma 7** + **PostgreSQL** — database
-- **Vercel** — deployment + cron
+- **TanStack Table v8** — data grids · **Recharts** — charts · **TipTap** — rich text
+- **Prisma 7** + **PostgreSQL 18**
+- **NextAuth 5 (beta)** — Google OAuth, single user
+- **Cloudflare R2** — invoice attachments via presigned URLs
+- **web-push** (VAPID) — notifications
+- **Railway** — hosting and database
 - **Timezone:** `America/Montevideo` (Uruguay)
 - **Currency:** USD — amounts stored as integer cents
 
@@ -19,214 +25,124 @@ Personal accounting system — subscriptions, salaries, invoices, and expense tr
 
 ### 1. Prerequisites
 
-- Node.js 20+
-- PostgreSQL database (local or remote)
+- Node.js 22+
+- pnpm 11+ (this project is pnpm-only)
+- PostgreSQL 18 (a local one is provided in `docker-compose.yml`)
 
-### 2. Configure Environment
+### 2. Configure environment
 
 ```bash
-cp .env.example .env
-# Edit .env and set DATABASE_URL
+cp .env.example .env.local
+# Set DATABASE_URL and the Google OAuth credentials at minimum.
 ```
 
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `CRON_SECRET` | optional | Secret for Vercel cron authorization |
-| `ADMIN_KEY` | optional | Enables soft single-user auth guard |
+The full list of variables, and what each one is for, is in
+[`PROJECT.md`](./PROJECT.md#variables-de-entorno).
 
-### 3. Run Migrations
+### 3. Install and set up the database
 
 ```bash
-# Generate Prisma client
-pnpm db:generate
-
-# Apply migrations (creates tables)
+pnpm install
+pnpm db:generate          # postinstall does NOT run: ignore-scripts is on
 pnpm db:migrate
-
-# Optional: seed with demo data
-pnpm exec tsx prisma/seed.ts
 ```
 
-### 4. Start Dev Server
+### 4. Run
 
 ```bash
-pnpm dev
+pnpm dev                  # http://localhost:3001
 ```
-
-Open `http://localhost:3001` — it redirects to `/subscriptions`.
 
 ---
 
-## Database Commands
+## Commands
 
-| Command | Description |
-|---|---|
-| `pnpm db:generate` | Generate Prisma client from schema |
-| `pnpm db:migrate` | Run pending migrations (dev) |
-| `pnpm db:push` | Push schema changes without migration (quick iteration) |
-| `pnpm db:studio` | Open Prisma Studio GUI |
-| `pnpm test` | Run the vitest suite |
-| `pnpm typecheck` | Type-check with `tsc --noEmit` |
-
-For production migrations:
 ```bash
-pnpm exec prisma migrate deploy
+pnpm dev               # dev server on port 3001
+pnpm build             # prisma generate && next build --webpack
+pnpm test              # vitest run
+pnpm test:coverage     # vitest run --coverage
+pnpm typecheck         # tsc --noEmit
+pnpm lint              # eslint .
+pnpm db:generate       # regenerate the Prisma client
+pnpm db:migrate        # prisma migrate dev — see the warning below
+pnpm db:studio         # Prisma Studio
 ```
 
----
+### ⚠️ Before running `pnpm db:migrate`
 
-## Deploy to Vercel
+Two indexes cannot be expressed in `schema.prisma` — a partial unique (one
+payment per subscription period, ignoring soft-deleted rows) and a functional
+unique (case-insensitive invoice numbers). Prisma sees them as drift and
+generates `DROP INDEX` for both.
 
-1. **Connect repo** to Vercel.
+Losing the first one lets a subscription period be charged twice; losing the
+second lets two concurrent creates write the same invoice number. Delete those
+lines from the generated SQL before committing.
 
-2. **Set environment variables** in Vercel Dashboard → Settings → Environment Variables:
-   - `DATABASE_URL` — your production Postgres URL (Vercel Postgres, Supabase, Neon, etc.)
-   - `CRON_SECRET` — a random secret (e.g. `openssl rand -base64 32`)
-
-3. **Vercel Cron** is configured in `vercel.json`:
-   ```json
-   {
-     "crons": [{ "path": "/api/cron/daily", "schedule": "0 6 * * *" }]
-   }
-   ```
-   This runs daily at 06:00 UTC (03:00 Montevideo time — early morning, before business hours).
-
-4. **Cron Authorization**: Vercel automatically sends `Authorization: Bearer <CRON_SECRET>` with cron requests. Set `CRON_SECRET` in both your `.env` and Vercel's environment variables.
-
-5. **After deploying**, run migrations:
-   ```bash
-   DATABASE_URL="<prod-url>" pnpm exec prisma migrate deploy
-   ```
+`prisma/migrations.test.ts` fails the build if such a migration is committed, so
+the gate will catch it — but it is easier to not write it.
 
 ---
 
-## Soft Auth (optional)
+## Deploy
 
-To enable single-user access control, set `ADMIN_KEY` in your environment:
+Deployed on **Railway** from `main` (project `the-book`, service `the-book`).
+Railway builds with railpack and runs `pnpm start`.
 
-```env
-ADMIN_KEY=my-super-secret-key
+- `pnpm start` runs **`prisma migrate deploy && next start`**, so **every boot
+  applies pending migrations to production**. A committed migration reaches the
+  database on the next deploy, with no manual step.
+- The daily job runs **in-app** at 13:00 UTC (`instrumentation.ts` →
+  `lib/daily-scheduler.ts`). There is no platform cron. Set `DISABLE_INAPP_CRON=1`
+  to turn it off.
+- `GET /api/cron/daily` triggers the same job manually, protected by
+  `Authorization: Bearer $CRON_SECRET`.
+- One replica. The scheduler assumes that — a second replica would run the job twice.
+
+Environment variables live in the Railway dashboard, not in this repo.
+
+### Backups
+
+Take one before anything that touches the schema:
+
+```bash
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+railway ssh -i ~/.ssh/railway_ops --service Postgres \
+  "pg_dump -U \$PGUSER -d \$PGDATABASE --no-owner --no-privileges | gzip -9 | base64 -w0" \
+  2>/dev/null | tr -d '\n\r ' | base64 -d > ../backups/thebook-prod-$TS.sql.gz
 ```
 
-When set, all page and API requests must include one of:
-- **Cookie:** `admin_key=<value>`
-- **Header:** `x-admin-key: <value>`
-
-Cron requests (protected separately by `CRON_SECRET`) are excluded from this check.
-
-To disable auth again, unset `ADMIN_KEY` (empty string or absent).
+See `../backups/RESTORE.md` for verification and restore steps.
 
 ---
 
-## Modules
+## Auth
 
-### Subscriptions `/subscriptions`
-- CRUD for recurring subscriptions (monthly & annual)
-- Categories: Work, Personal, Essential Service
-- Payment modes: Auto (cron charges) / Manual (register by hand)
-- Status: Active / Paused / Canceled
-- Payment history per subscription with soft-delete support
+Google OAuth via NextAuth 5, restricted to the addresses in `ALLOWED_EMAILS`
+(`auth.ts`). Sessions last 12 hours and the allowlist is re-checked on every
+token refresh, so removing an address takes effect on the next request.
 
-### Salaries `/salaries`
-- Manage people and their monthly salary
-- Register salary payments with optional adjustments
-- Salary increase reminders (schedule, apply, ignore, reschedule)
-
-### Expenses `/expenses`
-- Unified view of all subscription + salary payments
-- KPI cards (total, last month, MoM change, average)
-- Stacked bar chart (last 12 months, salaries vs subscriptions)
-- Category pie chart for subscriptions
-- Filterable data grid with detail modal
-
-### Invoices `/invoices`
-- Client management (color-coded) — inline modal
-- Invoice lifecycle: `pending → accounting → sent → paid`
-- Gross amount, fee, and net (received) display
-- Reminder date + due date notifications
-
-### Notifications `/notifications`
-- In-app notification center with unread badge
-- Filter by unread/all and by type
-- Mark individual or all as read
-- Populated by the daily cron job
+Authorization is enforced twice: `proxy.ts` at the edge and `requireSession()`
+inside every API handler. Both check for a real allowed email rather than the
+presence of a session object — on an Auth.js configuration error `req.auth`
+holds a truthy error object, and gating on that alone opens the whole API.
 
 ---
 
-## Cron Job — `/api/cron/daily`
+## Tests
 
-Runs daily (idempotent). Processes:
-
-| Event | Trigger |
-|---|---|
-| Auto subscription upcoming | 2 days before `due_date` |
-| Auto subscription paid | On `due_date` — creates payment record |
-| Manual subscription due | On `due_date` |
-| Salary due | On `payday_day` of each month |
-| Salary increase reminder | On `effective_date` |
-| Invoice reminder | On `reminder_date` (if not paid) |
-| Invoice due | On `due_date` (if not paid) |
-
-**Idempotency:**
-- Notifications: unique on `(type, entity_id, event_date)` — upsert with no update
-- Subscription payments: checks for non-deleted record before inserting
-- Salary payments: DB-level unique on `(person_id, period_key)`
-
----
-
-## Assumptions
-
-The spec had some ambiguities; here's how each was resolved:
-
-| Gap | Decision |
-|---|---|
-| Annual subscription needs a month | Added `pay_month` (1–12) field, required when `frequency = annual`. UI shows a month selector conditionally. |
-| `pay_day` clamping | If `pay_day` exceeds the month's last day (e.g., day 31 in February), it's clamped to the last day of the month. |
-| No login | Auth is single-user. No login page. Optional `ADMIN_KEY` env var activates a simple middleware guard. |
-| Toast notifications | Used **Sonner** (shadcn recommended) instead of deprecated toast component. |
-| Cron time | Runs at 06:00 UTC = 03:00 Montevideo (early morning, low traffic). Adjust `schedule` in `vercel.json` if needed. |
-| Notification unique key | Uses `(type, entity_id, event_date)` composite unique — ensures one notification per event per day per entity. |
-| SubscriptionPayment uniqueness with soft-delete | DB has no unique constraint (would prevent re-creation after soft-delete). Uniqueness among non-deleted records is enforced at app level. |
-| `SalaryBase` storage | Separate `SalaryBase` table (1:1 with `Person`) for clean separation. Salary increases update this table. |
-| Email notifications | Not implemented (Phase 2 as specified). Only in-app notifications. |
-
----
-
-## Project Structure
-
+```bash
+pnpm test
 ```
-app/
-├── api/
-│   ├── cron/daily/       — Daily idempotent cron job
-│   ├── subscriptions/    — CRUD + payments
-│   ├── people/           — CRUD + salary payments + reminders
-│   ├── expenses/         — Unified expense data
-│   ├── invoices/         — CRUD
-│   ├── clients/          — CRUD
-│   └── notifications/    — Read + mark read
-├── subscriptions/        — Page
-├── salaries/             — Page
-├── expenses/             — Page
-├── invoices/             — Page
-└── notifications/        — Page
 
-components/
-├── layout/               — Sidebar, NotificationBell
-├── subscriptions/        — Table, Form
-├── salaries/             — Table, PersonForm
-├── expenses/             — Charts, Table
-├── invoices/             — Table, InvoiceForm, ClientManager
-└── notifications/        — NotificationList
+Covers the pure business logic: money parsing and formatting (`lib/currency.ts`),
+dates and day-clamping (`lib/dates.ts`), the daily job's notification rules
+(`lib/cron-helpers.ts`), and a guard over the migrations.
 
-lib/
-├── db.ts                 — PrismaClient singleton
-├── currency.ts           — USD formatting (cents ↔ dollars)
-├── dates.ts              — Timezone-aware date utilities
-├── validations.ts        — Zod schemas
-└── cron-helpers.ts       — Pure cron logic helpers
+A fail-closed `pre-commit` hook runs typecheck plus the suite before every
+commit. It is not versioned — reinstall it per machine. Bypass with
+`git commit --no-verify` when you mean it.
 
-prisma/
-├── schema.prisma         — Database schema
-└── seed.ts               — Demo data seed
-```
+Not covered yet: the API routes, the scheduler's I/O layer, and the React
+components.
