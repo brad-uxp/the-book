@@ -28,6 +28,7 @@ export async function PATCH(
   if (sent.has("default_referrer_id")) data.default_referrer_id = parsed.data.default_referrer_id ?? null;
 
   const before = await prisma.client.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const client = await prisma.client.update({ where: { id }, data });
 
   auditLog({
@@ -59,6 +60,7 @@ export async function DELETE(
   }
 
   const before = await prisma.client.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.client.delete({ where: { id } });
 
   if (before) {

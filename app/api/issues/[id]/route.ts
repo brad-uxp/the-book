@@ -40,6 +40,7 @@ export async function PATCH(
   if (sent.has("sort_order")) data.sort_order = parsed.data.sort_order;
 
   const before = await prisma.issue.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const issue = await prisma.issue.update({
     where: { id },
@@ -83,6 +84,7 @@ export async function DELETE(
   const { id } = await params;
 
   const before = await prisma.issue.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.issue.delete({ where: { id } });
 

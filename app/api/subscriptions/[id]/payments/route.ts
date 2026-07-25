@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getTodayInTZ, calcMonthlyDueDate, calcAnnualDueDate } from "@/lib/dates";
 import { auditLog, getActorEmail } from "@/lib/audit";
-import { requireSession } from "@/lib/api";
+import { requireSession, readJson, invalid } from "@/lib/api";
+import { SubscriptionPaymentSchema } from "@/lib/validations";
 
 export async function GET(
   _req: NextRequest,
@@ -25,8 +26,10 @@ export async function POST(
   const denied = await requireSession();
   if (denied) return denied;
   const { id } = await params;
-  const body = await req.json();
-  const { paid_at, amount_cents } = body;
+  const body = await readJson(req);
+  const parsed = SubscriptionPaymentSchema.partial().safeParse(body ?? {});
+  if (!parsed.success) return invalid(parsed.error);
+  const { paid_at, amount_cents } = parsed.data;
 
   const sub = await prisma.subscription.findUnique({ where: { id } });
   if (!sub) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -114,6 +117,7 @@ export async function DELETE(
     where: { id: paymentId },
     include: { subscription: true },
   });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.subscriptionPayment.update({
     where: { id: paymentId },

@@ -83,6 +83,7 @@ export async function DELETE(
     where: { id },
     include: { person: true },
   });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.salaryPayment.delete({ where: { id } });
 

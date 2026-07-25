@@ -49,6 +49,7 @@ export async function PATCH(
     where: { id },
     include: { salary_base: true },
   });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const person = await prisma.$transaction(async (tx) => {
     await tx.person.update({
@@ -117,6 +118,25 @@ export async function DELETE(
     where: { id },
     include: { salary_base: true },
   });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // SalaryPayment cascades on person_id, so deleting someone with payment
+  // history erases that history — the totals of already-closed months drop
+  // retroactively and the audit log only kept the Person's own fields, never
+  // the payments. Mirrors the guard roles/[id] already has.
+  const paymentCount = await prisma.salaryPayment.count({
+    where: { person_id: id },
+  });
+  if (paymentCount > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `Cannot delete: ${paymentCount} salary payment${paymentCount > 1 ? "s" : ""} recorded. ` +
+          `Set the person to inactive instead — that hides them and preserves the accounting history.`,
+      },
+      { status: 409 }
+    );
+  }
 
   await prisma.person.delete({ where: { id } });
 

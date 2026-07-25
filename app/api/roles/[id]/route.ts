@@ -20,6 +20,7 @@ export async function PATCH(
   }
 
   const before = await prisma.role.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const role = await prisma.role.update({ where: { id }, data: { name: parsed.data.name } });
 
   auditLog({
@@ -51,6 +52,7 @@ export async function DELETE(
   }
 
   const before = await prisma.role.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.role.delete({ where: { id } });
 
   if (before) {

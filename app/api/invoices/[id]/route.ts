@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { InvoiceSchema } from "@/lib/validations";
 import { lastDayOfMonth } from "@/lib/dates";
 import { auditLog, getActorEmail } from "@/lib/audit";
-import { deleteObject } from "@/lib/r2";
+import { deleteObject, isInvoiceKeyFor } from "@/lib/r2";
 import { requireSession } from "@/lib/api";
 
 async function safeDeleteR2(key: string | null | undefined) {
@@ -66,6 +66,7 @@ export async function PATCH(
     where: { id },
     include: { client: true, referrer: true },
   });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Use raw body keys — Zod .default() fills in values even with .partial()
   const sent = new Set(Object.keys(body));
@@ -83,7 +84,19 @@ export async function PATCH(
       : null;
   if (sent.has("notes")) data.notes = parsed.data.notes ?? null;
   if (sent.has("file_url")) data.file_url = parsed.data.file_url ?? null;
-  if (sent.has("file_key")) data.file_key = parsed.data.file_key ?? null;
+  if (sent.has("file_key")) {
+    // The key is client-supplied and later gets presigned and deleted, so it
+    // must belong to THIS invoice. Without this, pointing an invoice at another
+    // invoice's key hands out a signed URL for it — and the delete-previous
+    // branch below then removes that object from the bucket.
+    if (parsed.data.file_key && !isInvoiceKeyFor(parsed.data.file_key, id)) {
+      return NextResponse.json(
+        { error: "file_key does not belong to this invoice" },
+        { status: 400 }
+      );
+    }
+    data.file_key = parsed.data.file_key ?? null;
+  }
   if (sent.has("referrer_id")) data.referrer_id = parsed.data.referrer_id ?? null;
 
   const invoice = await prisma.invoice.update({
@@ -143,6 +156,7 @@ export async function DELETE(
     where: { id },
     include: { client: true, referrer: true },
   });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.invoice.delete({ where: { id } });
 
@@ -158,6 +172,7 @@ export async function DELETE(
       before: {
         invoice_number: before.invoice_number,
         client_id: before.client_id,
+        referrer_id: before.referrer_id,
         amount_cents: before.amount_cents,
         fee_cents: before.fee_cents,
         status: before.status,

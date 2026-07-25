@@ -26,6 +26,7 @@ export async function PATCH(
   }
 
   const before = await prisma.otherExpense.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: Record<string, unknown> = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
@@ -70,6 +71,7 @@ export async function DELETE(
   const { id } = await params;
 
   const before = await prisma.otherExpense.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.otherExpense.delete({ where: { id } });
 
   if (before) {

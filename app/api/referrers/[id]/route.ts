@@ -26,6 +26,7 @@ export async function PATCH(
   if (sent.has("color_hex")) data.color_hex = parsed.data.color_hex;
 
   const before = await prisma.referrer.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const referrer = await prisma.referrer.update({ where: { id }, data });
 
   auditLog({

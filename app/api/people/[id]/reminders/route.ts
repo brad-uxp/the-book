@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { SalaryIncreaseReminderSchema } from "@/lib/validations";
-import { requireSession } from "@/lib/api";
+import { ReminderActionSchema, SalaryIncreaseReminderSchema } from "@/lib/validations";
+import { requireSession, readJson, invalid } from "@/lib/api";
 
 export async function GET(
   _req: NextRequest,
@@ -55,16 +55,10 @@ export async function PATCH(
   const denied = await requireSession();
   if (denied) return denied;
   const { id } = await params;
-  const body = await req.json();
+  const parsed = ReminderActionSchema.safeParse(await readJson(req));
+  if (!parsed.success) return invalid(parsed.error);
   const { reminderId, action, new_effective_date, new_suggested_base_cents } =
-    body;
-
-  if (!reminderId || !action) {
-    return NextResponse.json(
-      { error: "reminderId and action are required" },
-      { status: 400 }
-    );
-  }
+    parsed.data;
 
   const reminder = await prisma.salaryIncreaseReminder.findFirst({
     where: { id: reminderId, person_id: id },
@@ -100,12 +94,6 @@ export async function PATCH(
   }
 
   if (action === "reschedule") {
-    if (!new_effective_date || !new_suggested_base_cents) {
-      return NextResponse.json(
-        { error: "new_effective_date and new_suggested_base_cents required for reschedule" },
-        { status: 400 }
-      );
-    }
     await prisma.$transaction(async (tx) => {
       await tx.salaryIncreaseReminder.update({
         where: { id: reminderId },
@@ -114,8 +102,8 @@ export async function PATCH(
       await tx.salaryIncreaseReminder.create({
         data: {
           person_id: id,
-          effective_date: new Date(new_effective_date),
-          suggested_new_base_cents: new_suggested_base_cents,
+          effective_date: new Date(new_effective_date!),
+          suggested_new_base_cents: new_suggested_base_cents!,
         },
       });
     });

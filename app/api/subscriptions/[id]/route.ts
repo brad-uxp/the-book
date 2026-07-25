@@ -44,6 +44,7 @@ export async function PATCH(
   const sent = new Set(Object.keys(body));
 
   const before = await prisma.subscription.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: Record<string, unknown> = {};
   if (sent.has("name")) data.name = parsed.data.name;
@@ -104,6 +105,26 @@ export async function DELETE(
   const { id } = await params;
 
   const before = await prisma.subscription.findUnique({ where: { id } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // SubscriptionPayment cascades on subscription_id. Note the irony this
+  // guards against: individual payments are soft-deleted so they can be
+  // undone, but deleting the parent hard-deletes all of them — including the
+  // ones already soft-deleted — and rewrites 13 months of expense series.
+  const paymentCount = await prisma.subscriptionPayment.count({
+    where: { subscription_id: id },
+  });
+  if (paymentCount > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `Cannot delete: ${paymentCount} payment${paymentCount > 1 ? "s" : ""} recorded. ` +
+          `Set the subscription to inactive instead — that stops the cron and preserves the history.`,
+      },
+      { status: 409 }
+    );
+  }
+
   await prisma.subscription.delete({ where: { id } });
 
   if (before) {
