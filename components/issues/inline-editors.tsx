@@ -49,6 +49,17 @@ export interface Issue {
   progress: number;
   due_date: string | null;
   description: string;
+  /** Position on the canvas view. Null until the card is first placed. */
+  canvas_x: number | null;
+  canvas_y: number | null;
+}
+
+/** An edge on the canvas view. Mirrors the IssueLink row. */
+export interface IssueLink {
+  id: string;
+  source_id: string;
+  target_id: string;
+  label: string | null;
 }
 
 // ── InlineProgress ───────────────────────────────────────────────────────────

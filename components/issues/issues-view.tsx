@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Filter, LayoutGrid, LayoutList, Plus, Search, X } from "lucide-react";
+import {
+  Filter,
+  LayoutGrid,
+  LayoutList,
+  Plus,
+  Search,
+  Waypoints,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,34 +36,59 @@ import {
 import dynamic from "next/dynamic";
 
 const IssueDetail = dynamic(() => import("./issue-detail").then((m) => m.IssueDetail), { ssr: false });
+
+/**
+ * React Flow and its stylesheet only load when the canvas is opened — the
+ * board and the list are the common case and should not pay for it.
+ */
+const IssuesCanvas = dynamic(
+  () => import("./issues-canvas").then((m) => m.IssuesCanvas),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[calc(100vh-15rem)] min-h-96 w-full animate-pulse rounded-xl border bg-muted/30" />
+    ),
+  }
+);
 import { IssuesBoard } from "./issues-board";
 import { IssuesList } from "./issues-list";
 import {
   type Issue,
+  type IssueLink,
   type Client,
   type IssueStatus,
   type IssueCategory,
   COLUMNS,
 } from "./inline-editors";
+import type { CanvasPosition } from "@/lib/issue-canvas";
+
+type ViewMode = "board" | "list" | "canvas";
+
+const VIEW_MODES: ViewMode[] = ["board", "list", "canvas"];
+
+/** How long to gather card movements before writing them as one batch. */
+const POSITION_FLUSH_MS = 400;
 
 interface Props {
   clients: Client[];
   initialIssues: Issue[];
+  initialLinks: IssueLink[];
 }
 
-export function IssuesView({ clients, initialIssues }: Props) {
-  const [view, setViewState] = useState<"board" | "list">(() => {
+export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
+  const [view, setViewState] = useState<ViewMode>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("issues-view-mode");
-      if (saved === "board" || saved === "list") return saved;
+      if ((VIEW_MODES as string[]).includes(saved ?? "")) return saved as ViewMode;
     }
     return "board";
   });
-  const setView = (v: "board" | "list") => {
+  const setView = (v: ViewMode) => {
     setViewState(v);
     localStorage.setItem("issues-view-mode", v);
   };
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
+  const [links] = useState<IssueLink[]>(initialLinks);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
@@ -124,6 +157,55 @@ export function IssuesView({ clients, initialIssues }: Props) {
     }, delay);
   };
 
+  // Card positions, gathered and written as one batch.
+  //
+  // Separate from updateIssue on purpose: a drag is not a change to the issue,
+  // it goes to its own endpoint, it is not audited, and one gesture can move a
+  // dozen cards at once. Keyed by id so repeated moves of the same card
+  // collapse into its latest position instead of queueing.
+  const pendingPositions = useRef<Map<string, CanvasPosition>>(new Map());
+  const positionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPositions = useCallback(() => {
+    if (positionTimer.current) {
+      clearTimeout(positionTimer.current);
+      positionTimer.current = null;
+    }
+    const nodes = [...pendingPositions.current.values()];
+    if (nodes.length === 0) return;
+    pendingPositions.current.clear();
+
+    fetch("/api/issues/canvas", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodes }),
+      // The layout has to survive the tab closing right after a drag.
+      keepalive: true,
+    }).catch(console.error);
+  }, []);
+
+  const moveIssues = useCallback(
+    (positions: CanvasPosition[]) => {
+      if (positions.length === 0) return;
+
+      const byId = new Map(positions.map((p) => [p.id, p]));
+      setIssues((prev) =>
+        prev.map((issue) => {
+          const p = byId.get(issue.id);
+          return p ? { ...issue, canvas_x: p.x, canvas_y: p.y } : issue;
+        })
+      );
+
+      for (const p of positions) pendingPositions.current.set(p.id, p);
+      if (positionTimer.current) clearTimeout(positionTimer.current);
+      positionTimer.current = setTimeout(flushPositions, POSITION_FLUSH_MS);
+    },
+    [flushPositions]
+  );
+
+  // Leaving the page within the debounce window must not lose the layout.
+  useEffect(() => flushPositions, [flushPositions]);
+
   const createIssue = async (status: IssueStatus = "pending", category: IssueCategory = "task") => {
     const res = await fetch("/api/issues", {
       method: "POST",
@@ -179,6 +261,14 @@ export function IssuesView({ clients, initialIssues }: Props) {
             onClick={() => setView("list")}
           >
             <LayoutList className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={view === "canvas" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8 rounded-none"
+            onClick={() => setView("canvas")}
+          >
+            <Waypoints className="h-4 w-4" />
           </Button>
         </div>
 
@@ -338,6 +428,15 @@ export function IssuesView({ clients, initialIssues }: Props) {
           onSelectIssue={setEditIssue}
           onDeleteIssue={setDeleteIssue}
           onConvertCategory={setConvertIssue}
+        />
+      )}
+
+      {effectiveView === "canvas" && (
+        <IssuesCanvas
+          issues={filteredIssues}
+          links={links}
+          onSelectIssue={setEditIssue}
+          onMoveIssues={moveIssues}
         />
       )}
 
