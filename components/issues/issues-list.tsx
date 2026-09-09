@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   type Issue,
   type Client,
@@ -31,13 +32,67 @@ interface Props {
   onSelectIssue: (issue: Issue) => void;
   onDeleteIssue: (issue: Issue) => void;
   onConvertCategory: (issue: Issue) => void;
+  /** Archived view: rows get a checkbox so several can be removed at once. */
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: (selectAll: boolean) => void;
 }
 
-export function IssuesList({ issues, clients, onSelectIssue, onDeleteIssue, onConvertCategory }: Props) {
+/** Stable identity so the columns memo does not rebuild every render. */
+const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+
+export function IssuesList({
+  issues,
+  clients,
+  onSelectIssue,
+  onDeleteIssue,
+  onConvertCategory,
+  selectable = false,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+}: Props) {
   const [sorting, setSorting] = useState<SortingState>([]);
+
+  const selected = selectedIds ?? EMPTY_SELECTION;
+  const allSelected = issues.length > 0 && issues.every((i) => selected.has(i.id));
+  const someSelected = !allSelected && issues.some((i) => selected.has(i.id));
 
   const columns = useMemo<ColumnDef<Issue>[]>(
     () => [
+      ...(selectable
+        ? [
+            {
+              id: "select",
+              header: () => (
+                <Checkbox
+                  aria-label="Select all archived issues"
+                  checked={
+                    allSelected ? true : someSelected ? "indeterminate" : false
+                  }
+                  onCheckedChange={(v) => onToggleSelectAll?.(v === true)}
+                  className="translate-y-[1px]"
+                />
+              ),
+              cell: ({ row }) => (
+                <span
+                  className="flex items-center"
+                  // The row opens the detail sheet; ticking a box must not.
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox
+                    aria-label={`Select ${row.original.title}`}
+                    checked={selected.has(row.original.id)}
+                    onCheckedChange={() => onToggleSelect?.(row.original.id)}
+                    className="translate-y-[1px]"
+                  />
+                </span>
+              ),
+              enableSorting: false,
+            } satisfies ColumnDef<Issue>,
+          ]
+        : []),
       {
         accessorKey: "title",
         header: ({ column }) => (
@@ -218,7 +273,16 @@ export function IssuesList({ issues, clients, onSelectIssue, onDeleteIssue, onCo
         ),
       },
     ],
-    [onDeleteIssue, onConvertCategory]
+    [
+      onDeleteIssue,
+      onConvertCategory,
+      selectable,
+      selected,
+      allSelected,
+      someSelected,
+      onToggleSelect,
+      onToggleSelectAll,
+    ]
   );
 
   const table = useReactTable({
@@ -260,7 +324,12 @@ export function IssuesList({ issues, clients, onSelectIssue, onDeleteIssue, onCo
             table.getRowModel().rows.map((row) => (
               <tr
                 key={row.id}
-                className="border-b last:border-b-0 hover:bg-muted/30 transition-colors cursor-pointer group/row"
+                className={cn(
+                  "group/row cursor-pointer border-b transition-colors last:border-b-0",
+                  selected.has(row.original.id)
+                    ? "bg-primary/5 hover:bg-primary/10"
+                    : "hover:bg-muted/30"
+                )}
                 onClick={() => onSelectIssue(row.original)}
               >
                 {row.getVisibleCells().map((cell) => (

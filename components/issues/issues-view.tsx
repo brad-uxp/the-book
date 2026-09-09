@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Archive,
   Filter,
   LayoutGrid,
   LayoutList,
   Plus,
   Search,
+  Trash2,
   Waypoints,
   X,
 } from "lucide-react";
@@ -19,6 +21,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -59,9 +62,10 @@ import {
   type Client,
   type IssueStatus,
   type IssueCategory,
-  COLUMNS,
+  BOARD_COLUMNS,
 } from "./inline-editors";
 import type { CanvasPosition } from "@/lib/issue-canvas";
+import { ARCHIVED_STATUS, isArchived } from "@/lib/issues";
 
 type ViewMode = "board" | "list" | "canvas";
 
@@ -69,6 +73,15 @@ const VIEW_MODES: ViewMode[] = ["board", "list", "canvas"];
 
 /** How long to gather card movements before writing them as one batch. */
 const POSITION_FLUSH_MS = 400;
+
+/**
+ * Status-filter value that switches the list into the archive.
+ *
+ * It is the `done` status itself, so the filter reads as one list of statuses,
+ * but it behaves as a mode: picking it shows the archived issues *instead of*
+ * the active ones, and it only exists in the list view.
+ */
+const ARCHIVE_FILTER = ARCHIVED_STATUS;
 
 interface Props {
   clients: Client[];
@@ -84,28 +97,53 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
     }
     return "board";
   });
-  const setView = (v: ViewMode) => {
-    setViewState(v);
-    localStorage.setItem("issues-view-mode", v);
-  };
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
   const [links, setLinks] = useState<IssueLink[]>(initialLinks);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [filterClient, setFilterClient] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Declared after every useState on purpose: it calls setters defined below
+  // it, and a binding used before its declaration stops the React Compiler
+  // from recognising them as the stable setters they are — which makes it give
+  // up on memoizing the whole component.
+  const setView = (v: ViewMode) => {
+    setViewState(v);
+    localStorage.setItem("issues-view-mode", v);
+    // The archive filter has no meaning outside the list; leaving it set would
+    // land the board and the canvas on nothing.
+    if (v !== "list") {
+      setFilterStatus((prev) => (prev === ARCHIVE_FILTER ? "all" : prev));
+      setSelectedIds(new Set());
+    }
+  };
+
   // On mobile (<sm), always show list view
   const isMobile = useMediaQuery("(max-width: 639px)");
   const effectiveView = isMobile ? "list" : view;
 
+  // The archive is a list-view mode. Switching to the board or the canvas
+  // while it is on would otherwise show them an empty screen, since neither
+  // draws archived work.
+  const archiveMode = effectiveView === "list" && filterStatus === ARCHIVE_FILTER;
+
   const filteredIssues = useMemo(() => {
     let result = issues;
+
+    // Archived work is out of sight everywhere until it is asked for.
+    result = archiveMode
+      ? result.filter(isArchived)
+      : result.filter((i) => !isArchived(i));
+
     if (search) {
       const q = search.toLowerCase();
       result = result.filter((i) => i.title.toLowerCase().includes(q));
@@ -115,11 +153,11 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
         filterClient === "none" ? !i.client_id : i.client_id === filterClient
       );
     }
-    if (filterStatus !== "all") {
+    if (!archiveMode && filterStatus !== "all") {
       result = result.filter((i) => i.status === filterStatus);
     }
     return result;
-  }, [issues, search, filterClient, filterStatus]);
+  }, [issues, search, filterClient, filterStatus, archiveMode]);
 
   // Deep-link: open issue detail from ?issue=<id>, once.
   // Opening the dialog is a state adjustment, so it happens during render;
@@ -327,11 +365,103 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
     setEditIssue(null);
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (selectAll: boolean) => {
+    // Everything currently on screen, not everything archived — the header box
+    // has to agree with the rows under it once a search or client filter is on.
+    setSelectedIds(
+      selectAll ? new Set(filteredIssues.map((i) => i.id)) : new Set()
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+
+    setBulkDeleting(true);
+    try {
+      const res = await fetch("/api/issues/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error(`bulk-delete ${res.status}`);
+      const { deleted, skipped } = (await res.json()) as {
+        deleted: number;
+        skipped: number;
+      };
+
+      // Drop exactly what the endpoint is scoped to remove: the selected rows
+      // that are actually archived. Anything it skipped stays on screen.
+      setIssues((prev) =>
+        prev.filter((i) => !(selectedIds.has(i.id) && isArchived(i)))
+      );
+      setSelectedIds(new Set());
+      setConfirmBulkDelete(false);
+      toast.success(
+        deleted === 1 ? "1 issue deleted" : `${deleted} issues deleted`
+      );
+      if (skipped > 0) {
+        toast.warning(
+          `${skipped} were left alone — they are no longer archived`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not delete the selected issues");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleConvertCategory = (issue: Issue) => {
     const newCategory: IssueCategory = issue.category === "task" ? "note" : "task";
     updateIssue(issue.id, { category: newCategory });
     setConvertIssue(null);
   };
+
+  // Built once and rendered into both Selects — the mobile popover and the
+  // desktop bar must never drift apart.
+  const statusOptions = (
+    <>
+      <SelectItem value="all">All status</SelectItem>
+      {BOARD_COLUMNS.map((col) => (
+        <SelectItem key={col.id} value={col.id}>
+          <span className="flex items-center gap-2">
+            <span
+              className="h-2 w-2 rounded-full shrink-0"
+              style={{ backgroundColor: col.color }}
+            />
+            {col.label}
+          </span>
+        </SelectItem>
+      ))}
+      {/*
+        The archive, set apart because it is not another status to filter by —
+        picking it swaps the list for what has been put away. Only in the list
+        view: the board and the canvas never draw archived work.
+      */}
+      {effectiveView === "list" && (
+        <>
+          <SelectSeparator />
+          <SelectItem value={ARCHIVE_FILTER}>
+            <span className="flex items-center gap-2">
+              <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+              Done · archived
+            </span>
+          </SelectItem>
+        </>
+      )}
+    </>
+  );
 
   return (
     <>
@@ -429,20 +559,7 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All status</SelectItem>
-                  {COLUMNS.map((col) => (
-                    <SelectItem key={col.id} value={col.id}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="h-2 w-2 rounded-full shrink-0"
-                          style={{ backgroundColor: col.color }}
-                        />
-                        {col.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+                <SelectContent>{statusOptions}</SelectContent>
               </Select>
             </div>
           </PopoverContent>
@@ -474,31 +591,22 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
           <SelectTrigger className="hidden sm:flex h-8 w-auto min-w-28 text-sm">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All status</SelectItem>
-            {COLUMNS.map((col) => (
-              <SelectItem key={col.id} value={col.id}>
-                <span className="flex items-center gap-2">
-                  <span
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ backgroundColor: col.color }}
-                  />
-                  {col.label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
+          <SelectContent>{statusOptions}</SelectContent>
         </Select>
 
         </div>
 
-        <Button
-          className="h-8 w-8 shrink-0 sm:w-auto sm:px-3"
-          onClick={() => createIssue("pending", effectiveView === "list" ? "note" : "task")}
-        >
-          <Plus className="h-4 w-4 sm:mr-2" />
-          <span className="hidden sm:inline">New Issue</span>
-        </Button>
+        {/* Creating from the archive would make a pending issue that vanishes
+            the moment it is created. */}
+        {!archiveMode && (
+          <Button
+            className="h-8 w-8 shrink-0 sm:w-auto sm:px-3"
+            onClick={() => createIssue("pending", effectiveView === "list" ? "note" : "task")}
+          >
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">New Issue</span>
+          </Button>
+        )}
       </div>
 
       {/* Views */}
@@ -516,13 +624,41 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
       )}
 
       {effectiveView === "list" && (
-        <IssuesList
-          issues={filteredIssues}
-          clients={clients}
-          onSelectIssue={setEditIssue}
-          onDeleteIssue={setDeleteIssue}
-          onConvertCategory={setConvertIssue}
-        />
+        <>
+          {archiveMode && (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+              <Archive className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                {selectedIds.size > 0
+                  ? `${selectedIds.size} selected`
+                  : `${filteredIssues.length} archived`}
+              </p>
+              <div className="flex-1" />
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                disabled={selectedIds.size === 0}
+                onClick={() => setConfirmBulkDelete(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5 sm:mr-2" />
+                <span className="hidden sm:inline">Delete</span>
+              </Button>
+            </div>
+          )}
+
+          <IssuesList
+            issues={filteredIssues}
+            clients={clients}
+            onSelectIssue={setEditIssue}
+            onDeleteIssue={setDeleteIssue}
+            onConvertCategory={setConvertIssue}
+            selectable={archiveMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
+          />
+        </>
       )}
 
       {effectiveView === "canvas" && (
@@ -563,6 +699,41 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
             </Button>
             <Button onClick={() => { if (convertIssue) handleConvertCategory(convertIssue); }}>
               Convert
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk delete confirmation — permanent, so it says the number out loud */}
+      <Dialog
+        open={confirmBulkDelete}
+        onOpenChange={(o) => { if (!o && !bulkDeleting) setConfirmBulkDelete(false); }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Delete {selectedIds.size} archived{" "}
+              {selectedIds.size === 1 ? "issue" : "issues"}?
+            </DialogTitle>
+            <DialogDescription>
+              This permanently removes them and everything on them — description,
+              mentions and canvas connections. It cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              disabled={bulkDeleting}
+              onClick={() => setConfirmBulkDelete(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDeleting}
+              onClick={handleBulkDelete}
+            >
+              {bulkDeleting ? "Deleting…" : "Delete permanently"}
             </Button>
           </div>
         </DialogContent>

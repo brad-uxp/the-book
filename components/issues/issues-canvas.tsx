@@ -6,9 +6,7 @@ import {
   Background,
   BackgroundVariant,
   ConnectionMode,
-  Controls,
   MarkerType,
-  MiniMap,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -19,6 +17,9 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { Maximize2, Minimize2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/use-now";
 import {
   GRID_SIZE,
@@ -32,7 +33,7 @@ import {
   FloatingEdge,
   type IssueNode,
 } from "./canvas-node";
-import { COLUMNS, type Issue, type IssueLink } from "./inline-editors";
+import { type Issue, type IssueLink } from "./inline-editors";
 
 /**
  * Defined once at module scope. React Flow warns loudly and re-mounts every
@@ -101,6 +102,22 @@ export function IssuesCanvas({
 }: Props) {
   const { theme = "system" } = useTheme();
   const now = useNow();
+  const [expanded, setExpanded] = useState(false);
+
+  // Escape leaves the expanded canvas — but not while the detail layer is
+  // open, where Escape belongs to it. The detail is a sheet at one size and a
+  // dialog at the other, so the guard looks for the role both render rather
+  // than for either component.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector("[role='dialog'][data-state='open']")) return;
+      setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<IssueNode>([]);
 
@@ -255,7 +272,17 @@ export function IssuesCanvas({
   }, []);
 
   return (
-    <div className="relative h-[calc(100vh-15rem)] min-h-96 w-full overflow-hidden rounded-xl border">
+    <div
+      className={cn(
+        "relative w-full overflow-hidden border",
+        expanded
+          ? // Above the sidebar (also z-50, but earlier in the DOM) and below
+            // the detail sheet, whose portal is appended last to <body> — so
+            // editing keeps working with the canvas filling the screen.
+            "fixed inset-0 z-50 rounded-none bg-background"
+          : "h-[calc(100vh-15rem)] min-h-96 rounded-xl"
+      )}
+    >
       <CanvasNowContext.Provider value={now}>
         <ReactFlow
           nodes={nodes}
@@ -291,20 +318,22 @@ export function IssuesCanvas({
           panOnScroll
         >
           <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE * 3} size={1} />
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor={(n) => {
-              const issue = (n.data as { issue?: Issue }).issue;
-              if (!issue) return "#94a3b8";
-              if (issue.category === "note") return "#a78bfa";
-              return COLUMNS.find((c) => c.id === issue.status)?.color ?? "#94a3b8";
-            }}
-            className="!bottom-3 !right-3 !bg-card"
-          />
-          {/* Zoom in/out and fit-view come built in. */}
-          <Controls showInteractive={false} className="!bottom-3 !left-3" />
         </ReactFlow>
+
+        <Button
+          variant="outline"
+          size="icon"
+          className="absolute top-3 right-3 z-10 h-8 w-8 bg-card shadow-sm"
+          title={expanded ? "Collapse canvas" : "Expand canvas"}
+          aria-label={expanded ? "Collapse canvas" : "Expand canvas"}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? (
+            <Minimize2 className="h-4 w-4" />
+          ) : (
+            <Maximize2 className="h-4 w-4" />
+          )}
+        </Button>
       </CanvasNowContext.Provider>
 
       {issues.length === 0 && (

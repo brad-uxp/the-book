@@ -199,6 +199,17 @@ export const IssueSchema = z.object({
 
 export type IssueInput = z.infer<typeof IssueSchema>;
 
+/**
+ * Ids to remove from the archive. Bounded because this is the one route that
+ * deletes many rows at once; an unbounded list is a request that can time out
+ * halfway through.
+ */
+export const BulkDeleteIssuesSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "Nothing selected").max(500),
+});
+
+export type BulkDeleteIssuesInput = z.infer<typeof BulkDeleteIssuesSchema>;
+
 // ─── Issues canvas ───────────────────────────────────────────────────────────
 
 /**

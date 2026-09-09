@@ -17,6 +17,7 @@ import {
 import { formatDateShort } from "@/lib/dates";
 import { MiniCalendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { ARCHIVED_STATUS } from "@/lib/issues";
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 
@@ -36,6 +37,13 @@ export const COLUMNS: { id: IssueStatus; label: string; color: string }[] = [
   { id: "blocked", label: "Blocked", color: "#f97316" },
   { id: "done", label: "Done", color: "#10b981" },
 ];
+
+/**
+ * The columns the board actually shows. `done` is the archive now: it stays a
+ * real status — the detail sheet still sets it, the list still surfaces it —
+ * but it is not a place you drag work to and then keep looking at.
+ */
+export const BOARD_COLUMNS = COLUMNS.filter((c) => c.id !== ARCHIVED_STATUS);
 
 export type IssueCategory = "task" | "note";
 

@@ -8,7 +8,7 @@ import {
   Draggable,
   type DropResult,
 } from "@hello-pangea/dnd";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { Archive, MoreHorizontal, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -21,11 +21,12 @@ import {
   type Issue,
   type Client,
   type IssueStatus,
-  COLUMNS,
+  BOARD_COLUMNS,
   InlineProgress,
   InlineDate,
   InlineClient,
 } from "./inline-editors";
+import { ARCHIVED_STATUS } from "@/lib/issues";
 
 // Re-export for external use
 export type { Issue };
@@ -123,8 +124,8 @@ export function IssuesBoard({
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {COLUMNS.map((col) => {
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {BOARD_COLUMNS.map((col) => {
           const colIssues = columnIssues(col.id);
           return (
             <div
@@ -195,6 +196,13 @@ export function IssuesBoard({
                                 </button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenuItem
+                                  onClick={() => onUpdateIssue(issue.id, { status: ARCHIVED_STATUS })}
+                                >
+                                  <Archive className="h-3.5 w-3.5" />
+                                  Archive
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => onConvertCategory(issue)}>
                                   Convert to note
                                 </DropdownMenuItem>
