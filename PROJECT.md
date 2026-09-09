@@ -54,7 +54,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 38 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 43 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -76,13 +76,14 @@ TheBook/
 │   ├── dashboard/                    # Charts, Metrics, UpcomingCards, CorporateChart
 │   ├── expenses/  invoices/  salaries/  subscriptions/
 │   ├── fees/                         # Referidores y comisiones
-│   ├── issues/                       # Board, lista, detalle, editores inline
+│   ├── issues/                       # Board, lista, canvas, detalle, editores inline
 │   ├── notifications/  settings/  admin-logs/
 ├── lib/
 │   ├── api.ts                        # requireSession, mapeo de errores, readJson
 │   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
 │   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
 │   ├── currency.ts                   # Centavos ↔ display (testeada)
+│   ├── issue-canvas.ts               # Geometría del canvas de issues (testeada)
 │   ├── daily-scheduler.ts            # Scheduler in-app
 │   ├── dates.ts                      # Fechas UTC + timezone Montevideo (testeada)
 │   ├── db.ts                         # Singleton de Prisma Client
@@ -155,7 +156,8 @@ guardan como **UTC midnight**.
 | Modelo         | Descripción                                                          |
 | -------------- | -------------------------------------------------------------------- |
 | `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
-| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente |
+| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente, posición en el canvas |
+| `IssueLink`    | Arista dirigida issue→issue del canvas; unique `(source_id, target_id)`, CHECK anti auto-enlace |
 
 ### Sistema
 
@@ -172,6 +174,9 @@ guardan como **UTC midnight**.
 - **Índice único parcial** en `SubscriptionPayment (subscription_id, due_date) WHERE deleted_at IS NULL` —
   evita cobrar dos veces el mismo período.
 - **Índice único funcional** en `Invoice (lower(invoice_number)) WHERE invoice_number IS NOT NULL`.
+- `IssueLink` cascadea en ambos extremos (una arista no es historia contable: sin su issue
+  no apunta a nada), tiene **unique `(source_id, target_id)`** —el check-then-insert de la API
+  no es atómico— y un **CHECK `source_id <> target_id`** contra el auto-enlace.
 
 ⚠️ Los dos últimos **no se pueden expresar en `schema.prisma`**, así que
 `prisma migrate dev` los ve como drift y genera un `DROP INDEX`.
@@ -223,6 +228,9 @@ no se puede revocar.
 | Issues            | GET/POST        | `/api/issues`                        |
 | Issue             | GET/PATCH/DEL   | `/api/issues/[id]`                   |
 | Issues counts     | GET             | `/api/issues/linked-counts`          |
+| Issue positions   | PATCH           | `/api/issues/canvas`                 |
+| Issue links       | GET/POST        | `/api/issues/links`                  |
+| Issue link        | DELETE          | `/api/issues/links/[id]`             |
 | Notifications     | GET/PATCH       | `/api/notifications`                 |
 | Notif. count      | GET             | `/api/notifications/count`           |
 | Mark all read     | POST            | `/api/notifications/mark-all-read`   |

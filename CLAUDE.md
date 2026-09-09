@@ -2,7 +2,7 @@
 
 Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book](https://github.com/brad-uxp/the-book). Desplegado en **Railway** (`book.bolstro.com`). La app vive en este directorio (`TheBook/`); el directorio padre `theBookApp/` es solo un contenedor (facturas, planes sueltos). **Lanza Claude Code desde aquí (`TheBook/`)** para que se carguen las skills y agentes del framework.
 
-**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 38 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
+**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 43 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
 
 ## Stack (resumen operativo)
 
@@ -43,7 +43,7 @@ pnpm typecheck      # tsc --noEmit
 
 - Docs de estado: [`TRACKER.md`](./TRACKER.md), [`TASKS_SERVICE.md`](./TASKS_SERVICE.md), [`PLAN-NOTIFICATIONS.md`](./PLAN-NOTIFICATIONS.md).
 - **Tests**: vitest cableado (`vitest.config.ts`, entorno node, alias `@/`). Cubre la lógica pura: `lib/currency.ts`, `lib/dates.ts`, las reglas de notificación del job diario (`lib/cron-helpers.ts`) y un guard sobre las migraciones (`prisma/migrations.test.ts`). **Falta**: rutas API, capa de I/O del scheduler, componentes. Al tocar un área, deja su test (la skill `tdd` guía).
-- ⚠️ **`pnpm start` corre `prisma migrate deploy`**: cada arranque aplica migraciones a producción sin intervención humana. Y dos índices críticos (el unique parcial de `SubscriptionPayment` y el unique funcional de `invoice_number`) no se pueden expresar en `schema.prisma`, así que `prisma migrate dev` genera su `DROP INDEX`. `prisma/migrations.test.ts` falla el build si eso se commitea — pero revisá el SQL generado antes.
+- ⚠️ **`pnpm start` corre `prisma migrate deploy`**: cada arranque aplica migraciones a producción sin intervención humana. Y varios objetos críticos (el unique parcial de `SubscriptionPayment`, el unique funcional de `invoice_number`, los CHECK del singleton y de `IssueLink`) no se pueden expresar en `schema.prisma`, así que `prisma migrate dev` genera su `DROP`. `prisma/migrations.test.ts` falla el build si eso se commitea, y además rechaza cualquier migración con `DROP TABLE` / `DROP COLUMN` / `TRUNCATE` / `DELETE FROM` salvo que el SQL lleve el comentario `ACEPTO PERDER ESTOS DATOS` con el motivo — pero revisá el SQL generado antes.
 - **Gate `pre-commit` fail-closed instalado** (`.git/hooks/pre-commit`): typecheck + `vitest run` antes de cada commit; aborta si falla. Es la propiedad mecánica #3 del framework. Bypass consciente: `git commit --no-verify`. (No se versiona — reinstalar por máquina.)
 
 ## Git (workflow de Brad)

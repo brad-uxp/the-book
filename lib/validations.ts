@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isInvoiceKey } from "./r2";
+import { CANVAS_BOUND } from "./issue-canvas";
 
 /**
  * A URL safe to put in an href or an img src. Plain z.string() would accept
@@ -197,3 +198,53 @@ export const IssueSchema = z.object({
 });
 
 export type IssueInput = z.infer<typeof IssueSchema>;
+
+// ─── Issues canvas ───────────────────────────────────────────────────────────
+
+/**
+ * A canvas coordinate. Rejects NaN and Infinity — both survive JSON.parse as
+ * `null`/a number in some clients and would persist a card the user can never
+ * pan back to.
+ */
+const CanvasCoord = z
+  .number()
+  .refine(Number.isFinite, { message: "Must be a finite number" })
+  .refine((v) => Math.abs(v) <= CANVAS_BOUND, { message: "Out of bounds" });
+
+/**
+ * Batch position update. Dragging a multi-card selection has to be one
+ * request: a PATCH per node would put a dozen writes on the wire for a single
+ * gesture.
+ */
+export const CanvasPositionsSchema = z.object({
+  nodes: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        x: CanvasCoord,
+        y: CanvasCoord,
+      })
+    )
+    .min(1, "No positions to save")
+    .max(1000),
+});
+
+export type CanvasPositionsInput = z.infer<typeof CanvasPositionsSchema>;
+
+/**
+ * An edge between two issues. The self-link check is duplicated in the
+ * database as a CHECK constraint — this one produces a readable 400, that one
+ * is the backstop.
+ */
+export const IssueLinkSchema = z
+  .object({
+    source_id: z.string().min(1),
+    target_id: z.string().min(1),
+    label: z.string().trim().max(80).nullable().optional(),
+  })
+  .refine((d) => d.source_id !== d.target_id, {
+    message: "An issue cannot link to itself",
+    path: ["target_id"],
+  });
+
+export type IssueLinkInput = z.infer<typeof IssueLinkSchema>;

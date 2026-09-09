@@ -18,6 +18,8 @@ datasource db {
 //     (partial unique index WHERE deleted_at IS NULL)
 //   - settings_singleton_check
 //     (CHECK constraint on Settings.id = 'singleton')
+//   - IssueLink_no_self_link
+//     (CHECK constraint on IssueLink.source_id <> target_id)
 //
 // Because `prisma migrate dev` diffs the schema against the live DB, any
 // such object will appear "extra" and Prisma will try to DROP it on the
@@ -371,12 +373,46 @@ model Issue {
   created_at  DateTime      @default(now())
   updated_at  DateTime      @updatedAt
 
-  client Client? @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  /// Coordinates on the canvas view. Null means "never placed": the canvas
+  /// lays the issue out on a grid the first time it renders and persists the
+  /// result, so an issue created from the board or the list still shows up.
+  /// Float rather than Int because pan/zoom produces fractional drops.
+  canvas_x Float?
+  canvas_y Float?
+
+  client        Client?     @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  links_out     IssueLink[] @relation("IssueLinkSource")
+  links_in      IssueLink[] @relation("IssueLinkTarget")
 
   @@map("Task")
   @@index([status])
   @@index([client_id])
   @@index([category])
+}
+
+/**
+ * A directed edge between two issues, drawn on the canvas view.
+ *
+ * Not to be confused with the "linked issues" surfaced on people and invoices:
+ * those are @mentions parsed out of the description HTML, an issue→person or
+ * issue→invoice relation. This is issue→issue and it is a real, indexed row.
+ *
+ * Cascade on both sides — unlike payments, an edge is not accounting history
+ * and an orphan edge points at nothing. Self-links are blocked by a CHECK
+ * constraint that lives only in the migration (Prisma cannot express it).
+ */
+model IssueLink {
+  id         String   @id @default(uuid())
+  source_id  String
+  target_id  String
+  label      String?
+  created_at DateTime @default(now())
+
+  source Issue @relation("IssueLinkSource", fields: [source_id], references: [id], onDelete: Cascade)
+  target Issue @relation("IssueLinkTarget", fields: [target_id], references: [id], onDelete: Cascade)
+
+  @@unique([source_id, target_id])
+  @@index([target_id])
 }
 
 // ============================================================
