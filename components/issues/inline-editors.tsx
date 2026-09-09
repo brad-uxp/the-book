@@ -60,6 +60,12 @@ export interface IssueLink {
   source_id: string;
   target_id: string;
   label: string | null;
+  /**
+   * True while the row is still being written. The id is a placeholder until
+   * the server answers, so the edge is drawn but cannot be selected or
+   * deleted — there is nothing to delete yet.
+   */
+  pending?: boolean;
 }
 
 // ── InlineProgress ───────────────────────────────────────────────────────────

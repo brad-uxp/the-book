@@ -12,7 +12,7 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { Calendar, ClipboardList, StickyNote } from "lucide-react";
+import { Calendar, ClipboardList, StickyNote, X } from "lucide-react";
 import { formatDateShort } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import {
@@ -38,9 +38,19 @@ export const CanvasNowContext = createContext(0);
 export type IssueNodeData = { issue: Issue };
 export type IssueNode = Node<IssueNodeData, "issue">;
 
+/** Carried on the edge so a selected connection can remove itself. */
+export type FloatingEdgeData = { onDelete?: (id: string) => void };
+
 const DUE_SOON_MS = 3 * 24 * 60 * 60 * 1000;
 
 const NOTE_COLOR = "#a78bfa";
+
+const CONNECT_HANDLES = [
+  { id: "top", position: Position.Top },
+  { id: "right", position: Position.Right },
+  { id: "bottom", position: Position.Bottom },
+  { id: "left", position: Position.Left },
+] as const;
 
 function statusColor(issue: Issue): string {
   if (issue.category === "note") return NOTE_COLOR;
@@ -77,7 +87,7 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
     <div
       style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}
       className={cn(
-        "relative overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow",
+        "group/card relative rounded-lg border bg-card shadow-sm transition-shadow",
         selected
           ? "border-primary/40 ring-2 ring-primary/30"
           : "hover:border-primary/20 hover:shadow-md"
@@ -85,7 +95,7 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
     >
       {/* Status stripe — the one place colour carries meaning on the card. */}
       <span
-        className="absolute inset-y-0 left-0 w-1"
+        className="absolute inset-y-0 left-0 w-1 overflow-hidden rounded-l-lg"
         style={{ backgroundColor: color }}
       />
 
@@ -133,7 +143,7 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
       {/* Progress, as the card's own bottom edge. */}
       {!isNote && issue.progress > 0 && (
         <span
-          className="absolute bottom-0 left-0 h-0.5 transition-[width]"
+          className="absolute bottom-0 left-0 h-0.5 rounded-bl-lg transition-[width]"
           style={{
             width: `${Math.min(100, issue.progress)}%`,
             backgroundColor: color,
@@ -142,20 +152,23 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
       )}
 
       {/*
-        Edges float — they compute their own anchors from the two boxes — so
-        these exist only because React Flow needs a handle to attach to. They
-        become the connection targets in the next step.
+        Where a connection is dragged from. All four are `source`: React Flow
+        resolves an edge's source from `handleBounds.source` even in loose
+        mode, so a node with only target handles would render no edge at all.
+        Loose mode is what lets one of these also be dropped on.
+
+        Hidden until the card is hovered — four dots on every card at rest
+        would turn the canvas into a pegboard.
       */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!pointer-events-none !h-0 !w-0 !min-w-0 !border-0 !bg-transparent !opacity-0"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!pointer-events-none !h-0 !w-0 !min-w-0 !border-0 !bg-transparent !opacity-0"
-      />
+      {CONNECT_HANDLES.map(({ id, position }) => (
+        <Handle
+          key={id}
+          id={id}
+          type="source"
+          position={position}
+          className="!h-2.5 !w-2.5 !rounded-full !border-2 !border-background !bg-muted-foreground !opacity-0 transition-opacity group-hover/card:!opacity-100"
+        />
+      ))}
     </div>
   );
 });
@@ -196,10 +209,12 @@ export const FloatingEdge = memo(function FloatingEdge({
   markerEnd,
   style,
   label,
+  data,
   selected,
 }: EdgeProps) {
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
+  const onDelete = (data as FloatingEdgeData | undefined)?.onDelete;
 
   if (!sourceNode || !targetNode) return null;
 
@@ -233,16 +248,34 @@ export const FloatingEdge = memo(function FloatingEdge({
       {/*
         A custom edge draws only the path it is given, so a label set through
         the API would otherwise be stored and never shown.
+
+        The × appears on the selected edge: Delete works, but a connection you
+        can only remove from the keyboard is a connection most people cannot
+        remove.
       */}
-      {label && (
+      {(label || selected) && (
         <EdgeLabelRenderer>
           <div
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}
-            className="pointer-events-none absolute rounded border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm"
+            className="absolute flex items-center gap-1"
           >
-            {label}
+            {label && (
+              <span className="pointer-events-none rounded border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm">
+                {label}
+              </span>
+            )}
+            {selected && (
+              <button
+                type="button"
+                aria-label="Remove connection"
+                onClick={() => onDelete?.(id)}
+                className="nodrag nopan pointer-events-auto flex h-5 w-5 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm transition-colors hover:border-destructive/40 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
         </EdgeLabelRenderer>
       )}

@@ -12,6 +12,7 @@ import {
   Waypoints,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -88,7 +89,7 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
     localStorage.setItem("issues-view-mode", v);
   };
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
-  const [links] = useState<IssueLink[]>(initialLinks);
+  const [links, setLinks] = useState<IssueLink[]>(initialLinks);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
@@ -205,6 +206,99 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
 
   // Leaving the page within the debounce window must not lose the layout.
   useEffect(() => flushPositions, [flushPositions]);
+
+  // Read inside callbacks that must not be rebuilt when a link changes.
+  // Assigned after commit, never during render: a render can be discarded.
+  const linksRef = useRef(links);
+  useEffect(() => {
+    linksRef.current = links;
+  });
+
+  const connectIssues = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    if (
+      linksRef.current.some(
+        (l) => l.source_id === sourceId && l.target_id === targetId
+      )
+    ) {
+      return;
+    }
+
+    // Drawn immediately, under a placeholder id, and reconciled with the real
+    // row when the server answers. The line has to appear the instant the drag
+    // is released or the canvas feels broken.
+    const tempId = `pending:${sourceId}:${targetId}`;
+    setLinks((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        source_id: sourceId,
+        target_id: targetId,
+        label: null,
+        pending: true,
+      },
+    ]);
+
+    fetch("/api/issues/links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_id: sourceId, target_id: targetId }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`POST /api/issues/links ${res.status}`);
+        const created = (await res.json()) as IssueLink;
+        setLinks((prev) =>
+          prev.map((l) =>
+            l.id === tempId
+              ? {
+                  id: created.id,
+                  source_id: sourceId,
+                  target_id: targetId,
+                  label: created.label ?? null,
+                }
+              : l
+          )
+        );
+      })
+      .catch((err) => {
+        console.error(err);
+        setLinks((prev) => prev.filter((l) => l.id !== tempId));
+        toast.error("Could not connect these issues");
+      });
+  }, []);
+
+  const disconnectLinks = useCallback((ids: string[]) => {
+    const doomed = new Set(ids);
+    // Captured before the optimistic removal so a failed delete can put the
+    // connection back exactly as it was.
+    const removed = linksRef.current.filter((l) => doomed.has(l.id));
+    if (removed.length === 0) return;
+
+    setLinks((prev) => prev.filter((l) => !doomed.has(l.id)));
+
+    Promise.allSettled(
+      removed.map((link) =>
+        fetch(`/api/issues/links/${link.id}`, { method: "DELETE" }).then(
+          (res) => {
+            // Already gone is the outcome we wanted.
+            if (!res.ok && res.status !== 404) {
+              throw new Error(`DELETE ${link.id} ${res.status}`);
+            }
+          }
+        )
+      )
+    ).then((results) => {
+      const failed = removed.filter((_, i) => results[i].status === "rejected");
+      if (failed.length === 0) return;
+      console.error("[canvas] could not delete links", failed);
+      setLinks((prev) => [...prev, ...failed]);
+      toast.error(
+        failed.length === 1
+          ? "Could not remove the connection"
+          : `Could not remove ${failed.length} connections`
+      );
+    });
+  }, []);
 
   const createIssue = async (status: IssueStatus = "pending", category: IssueCategory = "task") => {
     const res = await fetch("/api/issues", {
@@ -437,6 +531,8 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
           links={links}
           onSelectIssue={setEditIssue}
           onMoveIssues={moveIssues}
+          onConnectIssues={connectIssues}
+          onDisconnectLinks={disconnectLinks}
         />
       )}
 

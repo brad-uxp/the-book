@@ -5,12 +5,15 @@ import { useTheme } from "next-themes";
 import {
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
   MarkerType,
   MiniMap,
   ReactFlow,
+  useEdgesState,
   useNodesState,
   type ColorMode,
+  type Connection,
   type Edge,
   type OnNodeDrag,
   type Viewport,
@@ -73,12 +76,19 @@ const ARROW = {
   color: "#94a3b8",
 } as const;
 
+/** Ordered pair, the same key the database enforces as unique. */
+function linkKey(source: string, target: string): string {
+  return `${source}->${target}`;
+}
+
 interface Props {
   issues: Issue[];
   links: IssueLink[];
   onSelectIssue: (issue: Issue) => void;
   /** Persists positions. Must be referentially stable — it drives an effect. */
   onMoveIssues: (positions: CanvasPosition[]) => void;
+  onConnectIssues: (sourceId: string, targetId: string) => void;
+  onDisconnectLinks: (linkIds: string[]) => void;
 }
 
 export function IssuesCanvas({
@@ -86,6 +96,8 @@ export function IssuesCanvas({
   links,
   onSelectIssue,
   onMoveIssues,
+  onConnectIssues,
+  onDisconnectLinks,
 }: Props) {
   const { theme = "system" } = useTheme();
   const now = useNow();
@@ -131,20 +143,90 @@ export function IssuesCanvas({
     if (placements.size > 0) onMoveIssues([...placements.values()]);
   }, [issues, setNodes, onMoveIssues]);
 
-  const edges = useMemo<Edge[]>(() => {
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  const deleteLink = useCallback(
+    (id: string) => onDisconnectLinks([id]),
+    [onDisconnectLinks]
+  );
+
+  useEffect(() => {
     // An edge to a card the filters hid would render as a line into nowhere.
     const visible = new Set(issues.map((i) => i.id));
-    return links
-      .filter((l) => visible.has(l.source_id) && visible.has(l.target_id))
-      .map((l) => ({
-        id: l.id,
-        source: l.source_id,
-        target: l.target_id,
-        type: "floating",
-        label: l.label ?? undefined,
-        markerEnd: ARROW,
-      }));
-  }, [issues, links]);
+
+    setEdges((prev) => {
+      // Rebuilding from props would otherwise drop the selection mid-click,
+      // and the × lives on the selected edge.
+      const selected = new Set(prev.filter((e) => e.selected).map((e) => e.id));
+
+      return links
+        .filter((l) => visible.has(l.source_id) && visible.has(l.target_id))
+        .map((l) => ({
+          id: l.id,
+          source: l.source_id,
+          target: l.target_id,
+          type: "floating",
+          label: l.label ?? undefined,
+          markerEnd: ARROW,
+          selected: selected.has(l.id),
+          // An edge still being written cannot be deleted: there is no row to
+          // delete yet, and its temporary id would 404.
+          deletable: !l.pending,
+          selectable: !l.pending,
+          data: { onDelete: deleteLink },
+        }));
+    });
+  }, [issues, links, setEdges, deleteLink]);
+
+  /** Ordered pairs that already exist, so a duplicate never leaves the client. */
+  const existingKeys = useMemo(
+    () => new Set(links.map((l) => linkKey(l.source_id, l.target_id))),
+    [links]
+  );
+
+  const isValidConnection = useCallback(
+    (c: Connection | Edge) => {
+      const source = "source" in c ? c.source : null;
+      const target = "target" in c ? c.target : null;
+      if (!source || !target) return false;
+      // Both are also enforced in the database — a CHECK and a unique index.
+      if (source === target) return false;
+      return !existingKeys.has(linkKey(source, target));
+    },
+    [existingKeys]
+  );
+
+  const handleConnect = useCallback(
+    (c: Connection) => {
+      if (!c.source || !c.target || c.source === c.target) return;
+      onConnectIssues(c.source, c.target);
+    },
+    [onConnectIssues]
+  );
+
+  /**
+   * Delete removes connections, never cards.
+   *
+   * React Flow's delete key takes selected nodes with it by default, and a
+   * node here IS an issue — a stray keystroke would erase work through a path
+   * with no confirmation dialog. Deleting an issue stays where it already is:
+   * the three-dot menu, behind a confirmation.
+   */
+  const handleBeforeDelete = useCallback(
+    async ({ edges: doomed }: { nodes: IssueNode[]; edges: Edge[] }) => ({
+      nodes: [],
+      edges: doomed,
+    }),
+    []
+  );
+
+  const handleEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      const ids = deleted.map((e) => e.id);
+      if (ids.length > 0) onDisconnectLinks(ids);
+    },
+    [onDisconnectLinks]
+  );
 
   const handleDragStop = useCallback<OnNodeDrag<IssueNode>>(
     (_event, _node, dragged) => {
@@ -179,6 +261,7 @@ export function IssuesCanvas({
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           colorMode={theme as ColorMode}
@@ -192,11 +275,17 @@ export function IssuesCanvas({
           snapGrid={[GRID_SIZE, GRID_SIZE]}
           minZoom={0.2}
           maxZoom={2}
-          // Connecting and deleting arrive with the next step. Until the
-          // handlers exist, letting React Flow mutate its own state would drift
-          // from the database with nothing writing the change back.
-          nodesConnectable={false}
-          deleteKeyCode={null}
+          onConnect={handleConnect}
+          isValidConnection={isValidConnection}
+          onBeforeDelete={handleBeforeDelete}
+          onEdgesDelete={handleEdgesDelete}
+          // Loose: a connection can be dropped on any handle, not only on one
+          // declared as a target. All four dots on a card are sources.
+          connectionMode={ConnectionMode.Loose}
+          // Generous, so dropping near a card counts as dropping on it.
+          connectionRadius={40}
+          connectionLineStyle={{ strokeWidth: 2, stroke: "#94a3b8" }}
+          deleteKeyCode={["Backspace", "Delete"]}
           // Trackpad-first: two fingers pan, pinch zooms, shift+drag boxes a
           // selection. Wheel-to-zoom fights every gesture on a laptop.
           panOnScroll
