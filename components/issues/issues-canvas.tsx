@@ -17,7 +17,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/use-now";
@@ -90,6 +90,7 @@ interface Props {
   onMoveIssues: (positions: CanvasPosition[]) => void;
   onConnectIssues: (sourceId: string, targetId: string) => void;
   onDisconnectLinks: (linkIds: string[]) => void;
+  onCreateIssue: () => void;
 }
 
 export function IssuesCanvas({
@@ -99,6 +100,7 @@ export function IssuesCanvas({
   onMoveIssues,
   onConnectIssues,
   onDisconnectLinks,
+  onCreateIssue,
 }: Props) {
   const { theme = "system" } = useTheme();
   const now = useNow();
@@ -313,6 +315,7 @@ export function IssuesCanvas({
           connectionRadius={40}
           connectionLineStyle={{ strokeWidth: 2, stroke: "#94a3b8" }}
           deleteKeyCode={["Backspace", "Delete"]}
+          proOptions={{ hideAttribution: true }}
           // Trackpad-first: two fingers pan, pinch zooms, shift+drag boxes a
           // selection. Wheel-to-zoom fights every gesture on a laptop.
           panOnScroll
@@ -320,20 +323,35 @@ export function IssuesCanvas({
           <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE * 3} size={1} />
         </ReactFlow>
 
-        <Button
-          variant="outline"
-          size="icon"
-          className="absolute top-3 right-3 z-10 h-8 w-8 bg-card shadow-sm"
-          title={expanded ? "Collapse canvas" : "Expand canvas"}
-          aria-label={expanded ? "Collapse canvas" : "Expand canvas"}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? (
-            <Minimize2 className="h-4 w-4" />
-          ) : (
-            <Maximize2 className="h-4 w-4" />
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+          {/* Expanded covers the page header, so the only way to add an issue
+              would otherwise be to collapse first. */}
+          {expanded && (
+            <Button
+              size="icon"
+              className="h-8 w-8 shadow-sm"
+              title="New issue"
+              aria-label="New issue"
+              onClick={onCreateIssue}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           )}
-        </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 bg-card shadow-sm"
+            title={expanded ? "Collapse canvas" : "Expand canvas"}
+            aria-label={expanded ? "Collapse canvas" : "Expand canvas"}
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? (
+              <Minimize2 className="h-4 w-4" />
+            ) : (
+              <Maximize2 className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </CanvasNowContext.Provider>
 
       {issues.length === 0 && (

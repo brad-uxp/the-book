@@ -11,9 +11,15 @@
  * Card footprint, in canvas units. Matches the CSS of the canvas node.
  * Width, height and gap are all multiples of GRID_SIZE so auto-layout lands
  * on the same grid the drag snaps to.
+ *
+ * CARD_HEIGHT is the TALLEST a card gets — a two-line title with a footer.
+ * The card itself grows to its content, so a one-line title makes a shorter
+ * card; this is the upper bound, which is what auto-layout needs to space rows
+ * without ever overlapping, and what edge geometry falls back to before React
+ * Flow has measured the real node.
  */
 export const CARD_WIDTH = 240;
-export const CARD_HEIGHT = 104;
+export const CARD_HEIGHT = 80;
 
 /** Gap between auto-placed cards. */
 export const CARD_GAP = 32;

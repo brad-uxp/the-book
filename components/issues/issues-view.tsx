@@ -669,6 +669,7 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
           onMoveIssues={moveIssues}
           onConnectIssues={connectIssues}
           onDisconnectLinks={disconnectLinks}
+          onCreateIssue={() => createIssue("pending", "task")}
         />
       )}
 

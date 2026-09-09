@@ -85,7 +85,9 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
 
   return (
     <div
-      style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}
+      // Width is fixed so the canvas reads as a grid; height follows the
+      // content and tops out at CARD_HEIGHT, because the title is clamped.
+      style={{ width: CARD_WIDTH }}
       className={cn(
         "group/card relative rounded-lg border bg-card shadow-sm transition-shadow",
         selected
@@ -99,15 +101,16 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
         style={{ backgroundColor: color }}
       />
 
-      <div className="flex h-full flex-col py-2 pl-3.5 pr-2.5">
+      <div className="flex flex-col gap-1 py-1.5 pl-3.5 pr-2.5">
         <div className="flex items-start gap-1.5">
-          <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <p className="line-clamp-2 text-sm leading-snug font-medium wrap-break-word">
+          <Icon className="mt-[3px] h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {/* Two lines, then an ellipsis. A card is a label, not the issue. */}
+          <p className="line-clamp-2 text-sm leading-tight font-medium wrap-break-word">
             {issue.title}
           </p>
         </div>
 
-        <div className="mt-auto flex items-center gap-2 overflow-hidden text-xs">
+        <div className="flex items-center gap-2 overflow-hidden text-xs">
           {issue.client ? (
             <span className="flex min-w-0 items-center gap-1.5">
               <span
@@ -166,7 +169,7 @@ export const CanvasIssueNode = memo(function CanvasIssueNode({
           id={id}
           type="source"
           position={position}
-          className="!h-2.5 !w-2.5 !rounded-full !border-2 !border-background !bg-muted-foreground !opacity-0 transition-opacity group-hover/card:!opacity-100"
+          className="!h-3.5 !w-3.5 !rounded-full !border-2 !border-background !bg-muted-foreground !opacity-0 transition-all hover:!bg-primary group-hover/card:!opacity-100"
         />
       ))}
     </div>
