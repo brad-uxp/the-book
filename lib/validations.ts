@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { isInvoiceKey } from "./r2";
 import { CANVAS_BOUND } from "./issue-canvas";
+import {
+  DEFAULT_LABEL_COLOR,
+  LABEL_COLOR_KEYS,
+  LABEL_MAX_LENGTH,
+} from "./canvas-labels";
 
 /**
  * A URL safe to put in an href or an img src. Plain z.string() would accept
@@ -222,25 +227,57 @@ const CanvasCoord = z
   .refine(Number.isFinite, { message: "Must be a finite number" })
   .refine((v) => Math.abs(v) <= CANVAS_BOUND, { message: "Out of bounds" });
 
+const NodePosition = z.object({
+  id: z.string().min(1),
+  x: CanvasCoord,
+  y: CanvasCoord,
+});
+
 /**
  * Batch position update. Dragging a multi-card selection has to be one
  * request: a PATCH per node would put a dozen writes on the wire for a single
  * gesture.
+ *
+ * Issues and labels travel together for the same reason — one selection can
+ * hold both, and splitting the gesture into two requests would let half of it
+ * land.
  */
-export const CanvasPositionsSchema = z.object({
-  nodes: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        x: CanvasCoord,
-        y: CanvasCoord,
-      })
-    )
-    .min(1, "No positions to save")
-    .max(1000),
-});
+export const CanvasPositionsSchema = z
+  .object({
+    nodes: z.array(NodePosition).max(1000).optional(),
+    labels: z.array(NodePosition).max(1000).optional(),
+  })
+  .refine((d) => (d.nodes?.length ?? 0) + (d.labels?.length ?? 0) > 0, {
+    message: "No positions to save",
+  });
 
 export type CanvasPositionsInput = z.infer<typeof CanvasPositionsSchema>;
+
+// ─── Canvas labels ───────────────────────────────────────────────────────────
+
+const LabelColorKey = z.enum(LABEL_COLOR_KEYS as [string, ...string[]]);
+
+/** A new chip. Text starts empty: it is typed straight into the node. */
+export const CanvasLabelSchema = z.object({
+  text: z.string().max(LABEL_MAX_LENGTH).default(""),
+  color: LabelColorKey.default(DEFAULT_LABEL_COLOR),
+  x: CanvasCoord,
+  y: CanvasCoord,
+});
+
+/**
+ * An edit. Every field optional, and the route only writes the keys the
+ * client actually sent — same rule the issue PATCH follows, so changing a
+ * colour cannot silently blank the text.
+ */
+export const CanvasLabelPatchSchema = z.object({
+  text: z.string().max(LABEL_MAX_LENGTH).optional(),
+  color: LabelColorKey.optional(),
+  x: CanvasCoord.optional(),
+  y: CanvasCoord.optional(),
+});
+
+export type CanvasLabelInput = z.infer<typeof CanvasLabelSchema>;
 
 /**
  * An edge between two issues. The self-link check is duplicated in the

@@ -4,7 +4,7 @@ import { IssuesView } from "@/components/issues/issues-view";
 export const dynamic = "force-dynamic";
 
 export default async function IssuesPage() {
-  const [clients, issues, links] = await Promise.all([
+  const [clients, issues, links, labels] = await Promise.all([
     prisma.client.findMany({ orderBy: { name: "asc" } }),
     prisma.issue.findMany({
       orderBy: [{ sort_order: "asc" }, { created_at: "desc" }],
@@ -16,6 +16,16 @@ export default async function IssuesPage() {
     prisma.issueLink.findMany({
       orderBy: { created_at: "asc" },
       select: { id: true, source_id: true, target_id: true, label: true },
+    }),
+    prisma.canvasLabel.findMany({
+      orderBy: { created_at: "asc" },
+      select: {
+        id: true,
+        text: true,
+        color: true,
+        canvas_x: true,
+        canvas_y: true,
+      },
     }),
   ]);
 
@@ -39,6 +49,7 @@ export default async function IssuesPage() {
         clients={clients}
         initialIssues={serializedIssues}
         initialLinks={links}
+        initialLabels={labels}
       />
     </div>
   );

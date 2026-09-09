@@ -2,7 +2,7 @@
 
 Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book](https://github.com/brad-uxp/the-book). Desplegado en **Railway** (`book.bolstro.com`). La app vive en este directorio (`TheBook/`); el directorio padre `theBookApp/` es solo un contenedor (facturas, planes sueltos). **Lanza Claude Code desde aquí (`TheBook/`)** para que se carguen las skills y agentes del framework.
 
-**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 44 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
+**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 46 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
 
 ## Stack (resumen operativo)
 

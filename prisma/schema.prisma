@@ -415,6 +415,32 @@ model IssueLink {
   @@index([target_id])
 }
 
+/**
+ * A free-text chip on the canvas — a heading over a cluster, a note to self.
+ * Organisational only: it is not work, it has no status, and it never appears
+ * on the board or in the list.
+ *
+ * A separate table rather than a third IssueCategory. As an Issue it would
+ * inherit status, progress, due_date, client and sort_order — all meaningless
+ * for a chip — and leak into the board, the list, the daily notification job,
+ * the audit trail and the documented /api/issues payload that machine clients
+ * read. Here the blast radius stops at the canvas.
+ *
+ * `color` is a palette key (see lib/canvas-labels.ts), not a hex: it keeps the
+ * chip legible in both themes and stops an unreadable colour being chosen.
+ * Unknown keys fall back to the default rather than failing to render, so no
+ * database constraint guards it.
+ */
+model CanvasLabel {
+  id         String   @id @default(uuid())
+  text       String   @default("") @db.VarChar(200)
+  color      String   @default("slate")
+  canvas_x   Float
+  canvas_y   Float
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
 // ============================================================
 // Audit Logs
 // ============================================================

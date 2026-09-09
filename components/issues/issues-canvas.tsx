@@ -8,8 +8,10 @@ import {
   ConnectionMode,
   MarkerType,
   ReactFlow,
+  ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type ColorMode,
   type Connection,
   type Edge,
@@ -17,7 +19,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Maximize2, Minimize2, Plus } from "lucide-react";
+import { Maximize2, Minimize2, Plus, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/use-now";
@@ -25,6 +27,7 @@ import {
   GRID_SIZE,
   isPlaced,
   layoutUnplaced,
+  snapToGrid,
   type CanvasPosition,
 } from "@/lib/issue-canvas";
 import {
@@ -33,13 +36,22 @@ import {
   FloatingEdge,
   type IssueNode,
 } from "./canvas-node";
+import { CanvasLabelNode, type LabelNode } from "./canvas-label-node";
+import { type CanvasLabel } from "@/lib/canvas-labels";
 import { type Issue, type IssueLink } from "./inline-editors";
+
+/**
+ * The canvas holds two kinds of node. Issue cards are work; labels are the
+ * headings someone wrote over them. Everything that reacts to a node — drag,
+ * click, delete — has to say which it means.
+ */
+type CanvasNode = IssueNode | LabelNode;
 
 /**
  * Defined once at module scope. React Flow warns loudly and re-mounts every
  * node if these objects change identity between renders.
  */
-const nodeTypes = { issue: CanvasIssueNode };
+const nodeTypes = { issue: CanvasIssueNode, label: CanvasLabelNode };
 const edgeTypes = { floating: FloatingEdge };
 
 /**
@@ -85,22 +97,46 @@ function linkKey(source: string, target: string): string {
 interface Props {
   issues: Issue[];
   links: IssueLink[];
+  labels: CanvasLabel[];
   onSelectIssue: (issue: Issue) => void;
-  /** Persists positions. Must be referentially stable — it drives an effect. */
-  onMoveIssues: (positions: CanvasPosition[]) => void;
+  /**
+   * Persists positions for both kinds in one write — a selection can hold
+   * cards and chips, and one gesture must not become two requests. Must be
+   * referentially stable: it drives an effect.
+   */
+  onMoveNodes: (issues: CanvasPosition[], labels: CanvasPosition[]) => void;
   onConnectIssues: (sourceId: string, targetId: string) => void;
   onDisconnectLinks: (linkIds: string[]) => void;
   onCreateIssue: () => void;
+  onCreateLabel: (x: number, y: number) => void;
+  onUpdateLabel: (id: string, patch: Partial<CanvasLabel>) => void;
+  onDeleteLabels: (ids: string[]) => void;
 }
 
-export function IssuesCanvas({
+/**
+ * Wrapped so the inner canvas can use useReactFlow — reading the viewport is
+ * how a new chip lands in front of the user instead of at the origin.
+ */
+export function IssuesCanvas(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <Canvas {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function Canvas({
   issues,
   links,
+  labels,
   onSelectIssue,
-  onMoveIssues,
+  onMoveNodes,
   onConnectIssues,
   onDisconnectLinks,
   onCreateIssue,
+  onCreateLabel,
+  onUpdateLabel,
+  onDeleteLabels,
 }: Props) {
   const { theme = "system" } = useTheme();
   const now = useNow();
@@ -121,7 +157,9 @@ export function IssuesCanvas({
     return () => window.removeEventListener("keydown", onKey);
   }, [expanded]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<IssueNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
+  const { screenToFlowPosition } = useReactFlow();
+  const paneRef = useRef<HTMLDivElement>(null);
 
   // Distinguishes "let go of a card" from "clicked a card". React Flow fires a
   // click at the end of a drag too, and opening the detail sheet every time
@@ -134,6 +172,21 @@ export function IssuesCanvas({
   // client-side.
   const [initialViewport] = useState<Viewport | null>(readViewport);
 
+  // Stable, because they ride inside node data: rebuilding them every render would
+  // change every chip's data and re-render the lot.
+  const commitLabelText = useCallback(
+    (id: string, text: string) => onUpdateLabel(id, { text }),
+    [onUpdateLabel]
+  );
+  const setLabelColor = useCallback(
+    (id: string, color: string) => onUpdateLabel(id, { color }),
+    [onUpdateLabel]
+  );
+  const deleteLabel = useCallback(
+    (id: string) => onDeleteLabels([id]),
+    [onDeleteLabels]
+  );
+
   useEffect(() => {
     // Issues that have never been placed get a spot below everything already
     // on the canvas, and that spot is written back so the next visit is
@@ -142,7 +195,8 @@ export function IssuesCanvas({
 
     setNodes((prev) => {
       const live = new Map(prev.map((n) => [n.id, n.position]));
-      return issues.map((issue) => {
+
+      const issueNodes: CanvasNode[] = issues.map((issue) => {
         const fresh = placements.get(issue.id);
         return {
           id: issue.id,
@@ -157,10 +211,39 @@ export function IssuesCanvas({
           data: { issue },
         };
       });
+
+      const labelNodes: CanvasNode[] = labels.map((label) => ({
+        id: label.id,
+        type: "label" as const,
+        position: live.get(label.id) ?? {
+          x: label.canvas_x,
+          y: label.canvas_y,
+        },
+        connectable: false,
+        data: {
+          label,
+          onCommitText: commitLabelText,
+          onSetColor: setLabelColor,
+          onDelete: deleteLabel,
+        },
+      }));
+
+      // Chips first, so they paint behind the cards: a heading should never
+      // cover the work it labels. Array order decides this, not a z-index —
+      // a negative one risks landing behind the background pattern.
+      return [...labelNodes, ...issueNodes];
     });
 
-    if (placements.size > 0) onMoveIssues([...placements.values()]);
-  }, [issues, setNodes, onMoveIssues]);
+    if (placements.size > 0) onMoveNodes([...placements.values()], []);
+  }, [
+    issues,
+    labels,
+    setNodes,
+    onMoveNodes,
+    commitLabelText,
+    setLabelColor,
+    deleteLabel,
+  ]);
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
@@ -224,19 +307,38 @@ export function IssuesCanvas({
   );
 
   /**
-   * Delete removes connections, never cards.
+   * Delete removes connections and labels — never an issue card.
    *
-   * React Flow's delete key takes selected nodes with it by default, and a
-   * node here IS an issue — a stray keystroke would erase work through a path
-   * with no confirmation dialog. Deleting an issue stays where it already is:
-   * the three-dot menu, behind a confirmation.
+   * React Flow's delete key takes every selected node with it by default, and
+   * an issue node IS work: a stray keystroke would erase it through a path
+   * with no confirmation dialog. Deleting an issue stays where it already is,
+   * in the three-dot menu behind a confirmation. A label is a word someone
+   * typed, cheap to retype, so the key may have it.
+   *
+   * The filter is the guarantee. It is written as an allow-list of the `label`
+   * type rather than a deny-list of `issue`, so a node type added later is
+   * undeletable until someone decides otherwise.
    */
   const handleBeforeDelete = useCallback(
-    async ({ edges: doomed }: { nodes: IssueNode[]; edges: Edge[] }) => ({
-      nodes: [],
-      edges: doomed,
+    async ({
+      nodes: doomedNodes,
+      edges: doomedEdges,
+    }: {
+      nodes: CanvasNode[];
+      edges: Edge[];
+    }) => ({
+      nodes: doomedNodes.filter((n) => n.type === "label"),
+      edges: doomedEdges,
     }),
     []
+  );
+
+  const handleNodesDelete = useCallback(
+    (deleted: CanvasNode[]) => {
+      const ids = deleted.filter((n) => n.type === "label").map((n) => n.id);
+      if (ids.length > 0) onDeleteLabels(ids);
+    },
+    [onDeleteLabels]
   );
 
   const handleEdgesDelete = useCallback(
@@ -247,23 +349,50 @@ export function IssuesCanvas({
     [onDisconnectLinks]
   );
 
-  const handleDragStop = useCallback<OnNodeDrag<IssueNode>>(
+  const handleDragStop = useCallback<OnNodeDrag<CanvasNode>>(
     (_event, _node, dragged) => {
       draggedAt.current = Date.now();
-      onMoveIssues(
-        dragged.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }))
+      const at = (n: CanvasNode): CanvasPosition => ({
+        id: n.id,
+        x: n.position.x,
+        y: n.position.y,
+      });
+      // One gesture, one write, even when the selection mixes the two.
+      onMoveNodes(
+        dragged.filter((n) => n.type === "issue").map(at),
+        dragged.filter((n) => n.type === "label").map(at)
       );
     },
-    [onMoveIssues]
+    [onMoveNodes]
   );
 
   const handleNodeClick = useCallback(
-    (_event: React.MouseEvent, node: IssueNode) => {
+    (_event: React.MouseEvent, node: CanvasNode) => {
       if (Date.now() - draggedAt.current < 150) return;
+      // A chip has no detail to open; clicking it just selects it, which is
+      // what brings up its colour bar.
+      if (node.type !== "issue") return;
       onSelectIssue(node.data.issue);
     },
     [onSelectIssue]
   );
+
+  /**
+   * A new chip lands in the middle of what the user is looking at.
+   *
+   * Not at the origin: on a canvas that has been panned, a chip created off
+   * screen looks like nothing happened at all.
+   */
+  const createLabelHere = useCallback(() => {
+    const box = paneRef.current?.getBoundingClientRect();
+    const point = box
+      ? screenToFlowPosition({
+          x: box.left + box.width / 2,
+          y: box.top + box.height / 3,
+        })
+      : { x: 0, y: 0 };
+    onCreateLabel(snapToGrid(point.x), snapToGrid(point.y));
+  }, [onCreateLabel, screenToFlowPosition]);
 
   const handleMoveEnd = useCallback((_event: unknown, viewport: Viewport) => {
     try {
@@ -275,6 +404,7 @@ export function IssuesCanvas({
 
   return (
     <div
+      ref={paneRef}
       className={cn(
         "relative w-full overflow-hidden border",
         expanded
@@ -308,6 +438,7 @@ export function IssuesCanvas({
           isValidConnection={isValidConnection}
           onBeforeDelete={handleBeforeDelete}
           onEdgesDelete={handleEdgesDelete}
+          onNodesDelete={handleNodesDelete}
           // Loose: a connection can be dropped on any handle, not only on one
           // declared as a target. All four dots on a card are sources.
           connectionMode={ConnectionMode.Loose}
@@ -324,6 +455,16 @@ export function IssuesCanvas({
         </ReactFlow>
 
         <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 bg-card shadow-sm"
+            title="New label"
+            aria-label="New label"
+            onClick={createLabelHere}
+          >
+            <Tag className="h-4 w-4" />
+          </Button>
           {/* Expanded covers the page header, so the only way to add an issue
               would otherwise be to collapse first. */}
           {expanded && (
@@ -354,7 +495,7 @@ export function IssuesCanvas({
         </div>
       </CanvasNowContext.Provider>
 
-      {issues.length === 0 && (
+      {issues.length === 0 && labels.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <p className="text-sm text-muted-foreground/60">
             No issues to show on the canvas.

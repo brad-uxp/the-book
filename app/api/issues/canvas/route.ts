@@ -4,11 +4,11 @@ import { CanvasPositionsSchema } from "@/lib/validations";
 import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
 
 /**
- * Persists where cards sit on the canvas.
+ * Persists where things sit on the canvas — issue cards and text chips alike.
  *
- * Batched on purpose: dragging a selection of cards is one gesture and has to
- * be one request. It is also why this is a route of its own rather than a
- * field on PATCH /api/issues/[id].
+ * Batched on purpose: dragging a selection is one gesture and has to be one
+ * request, and a selection can hold both kinds. It is also why this is a route
+ * of its own rather than a field on PATCH /api/issues/[id].
  *
  * Deliberately NOT audited. Moving a card is not a change to the issue — it is
  * view state — and one audit row per drag would bury the history that matters
@@ -25,18 +25,25 @@ export async function PATCH(req: NextRequest) {
   const parsed = CanvasPositionsSchema.safeParse(await readJson(req));
   if (!parsed.success) return invalid(parsed.error);
 
-  // Last write wins for a repeated id, so the batch holds one update per card.
-  const byId = new Map(parsed.data.nodes.map((n) => [n.id, n]));
+  // Last write wins for a repeated id, so the batch holds one update each.
+  const issues = new Map((parsed.data.nodes ?? []).map((n) => [n.id, n]));
+  const labels = new Map((parsed.data.labels ?? []).map((n) => [n.id, n]));
 
   try {
-    const results = await prisma.$transaction(
-      [...byId.values()].map((n) =>
+    const results = await prisma.$transaction([
+      ...[...issues.values()].map((n) =>
         prisma.issue.updateMany({
           where: { id: n.id },
           data: { canvas_x: n.x, canvas_y: n.y },
         })
-      )
-    );
+      ),
+      ...[...labels.values()].map((n) =>
+        prisma.canvasLabel.updateMany({
+          where: { id: n.id },
+          data: { canvas_x: n.x, canvas_y: n.y },
+        })
+      ),
+    ]);
 
     const updated = results.reduce((sum, r) => sum + r.count, 0);
     return NextResponse.json({ updated });

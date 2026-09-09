@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   BulkDeleteIssuesSchema,
+  CanvasLabelPatchSchema,
+  CanvasLabelSchema,
   CanvasPositionsSchema,
   IssueLinkSchema,
 } from "./validations";
+import { DEFAULT_LABEL_COLOR } from "./canvas-labels";
 import { CANVAS_BOUND } from "./issue-canvas";
 
 describe("CanvasPositionsSchema", () => {
@@ -55,6 +58,82 @@ describe("CanvasPositionsSchema", () => {
       y: 0,
     }));
     expect(CanvasPositionsSchema.safeParse({ nodes }).success).toBe(false);
+  });
+});
+
+describe("CanvasPositionsSchema — lote mixto", () => {
+  it("acepta issues y chips en la misma escritura", () => {
+    const parsed = CanvasPositionsSchema.safeParse({
+      nodes: [{ id: "a", x: 0, y: 0 }],
+      labels: [{ id: "l1", x: 40, y: 40 }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("acepta solo chips", () => {
+    expect(
+      CanvasPositionsSchema.safeParse({ labels: [{ id: "l1", x: 0, y: 0 }] })
+        .success
+    ).toBe(true);
+  });
+
+  it("rechaza el lote donde ninguno de los dos trae nada", () => {
+    expect(CanvasPositionsSchema.safeParse({}).success).toBe(false);
+    expect(
+      CanvasPositionsSchema.safeParse({ nodes: [], labels: [] }).success
+    ).toBe(false);
+  });
+
+  it("aplica el mismo límite de coordenadas a los chips", () => {
+    expect(
+      CanvasPositionsSchema.safeParse({
+        labels: [{ id: "l1", x: NaN, y: 0 }],
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("CanvasLabelSchema", () => {
+  it("un chip nuevo puede nacer sin texto y con el color por defecto", () => {
+    const parsed = CanvasLabelSchema.safeParse({ x: 0, y: 0 });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.text).toBe("");
+      expect(parsed.data.color).toBe(DEFAULT_LABEL_COLOR);
+    }
+  });
+
+  it("rechaza un color fuera de la paleta", () => {
+    expect(
+      CanvasLabelSchema.safeParse({ x: 0, y: 0, color: "chartreuse" }).success
+    ).toBe(false);
+  });
+
+  it("acota el largo del texto", () => {
+    expect(
+      CanvasLabelSchema.safeParse({ x: 0, y: 0, text: "x".repeat(200) }).success
+    ).toBe(true);
+    expect(
+      CanvasLabelSchema.safeParse({ x: 0, y: 0, text: "x".repeat(201) }).success
+    ).toBe(false);
+  });
+
+  it("exige posición — un chip sin coordenadas no se puede dibujar", () => {
+    expect(CanvasLabelSchema.safeParse({ text: "hola" }).success).toBe(false);
+  });
+});
+
+describe("CanvasLabelPatchSchema", () => {
+  it("permite cambiar solo el color, sin tocar el texto", () => {
+    const parsed = CanvasLabelPatchSchema.safeParse({ color: "blue" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.text).toBeUndefined();
+  });
+
+  it("rechaza un color inventado también al editar", () => {
+    expect(CanvasLabelPatchSchema.safeParse({ color: "nope" }).success).toBe(
+      false
+    );
   });
 });
 

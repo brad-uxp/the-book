@@ -54,7 +54,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 44 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 46 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -158,6 +158,7 @@ guardan como **UTC midnight**.
 | `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
 | `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente, posición en el canvas. `status = done` **es el archivo**: no se muestra en board ni canvas, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva |
 | `IssueLink`    | Arista dirigida issue→issue del canvas; unique `(source_id, target_id)`, CHECK anti auto-enlace |
+| `CanvasLabel`  | Chip de texto del canvas: solo organizativo, no es trabajo. Color por clave de paleta (`lib/canvas-labels.ts`), sin conexiones |
 
 ### Sistema
 
@@ -230,6 +231,8 @@ no se puede revocar.
 | Issues counts     | GET             | `/api/issues/linked-counts`          |
 | Issues bulk del.  | POST            | `/api/issues/bulk-delete`            |
 | Issue positions   | PATCH           | `/api/issues/canvas`                 |
+| Canvas labels     | GET/POST        | `/api/issues/canvas/labels`          |
+| Canvas label      | PATCH/DELETE    | `/api/issues/canvas/labels/[id]`     |
 | Issue links       | GET/POST        | `/api/issues/links`                  |
 | Issue link        | DELETE          | `/api/issues/links/[id]`             |
 | Notifications     | GET/PATCH       | `/api/notifications`                 |

@@ -65,6 +65,10 @@ import {
   BOARD_COLUMNS,
 } from "./inline-editors";
 import type { CanvasPosition } from "@/lib/issue-canvas";
+import {
+  DEFAULT_LABEL_COLOR,
+  type CanvasLabel,
+} from "@/lib/canvas-labels";
 import { ARCHIVED_STATUS, isArchived } from "@/lib/issues";
 
 type ViewMode = "board" | "list" | "canvas";
@@ -87,9 +91,15 @@ interface Props {
   clients: Client[];
   initialIssues: Issue[];
   initialLinks: IssueLink[];
+  initialLabels: CanvasLabel[];
 }
 
-export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
+export function IssuesView({
+  clients,
+  initialIssues,
+  initialLinks,
+  initialLabels,
+}: Props) {
   const [view, setViewState] = useState<ViewMode>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("issues-view-mode");
@@ -99,6 +109,7 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
   });
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
   const [links, setLinks] = useState<IssueLink[]>(initialLinks);
+  const [labels, setLabels] = useState<CanvasLabel[]>(initialLabels);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
@@ -202,7 +213,8 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
   // it goes to its own endpoint, it is not audited, and one gesture can move a
   // dozen cards at once. Keyed by id so repeated moves of the same card
   // collapse into its latest position instead of queueing.
-  const pendingPositions = useRef<Map<string, CanvasPosition>>(new Map());
+  const pendingIssuePositions = useRef<Map<string, CanvasPosition>>(new Map());
+  const pendingLabelPositions = useRef<Map<string, CanvasPosition>>(new Map());
   const positionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushPositions = useCallback(() => {
@@ -210,32 +222,49 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
       clearTimeout(positionTimer.current);
       positionTimer.current = null;
     }
-    const nodes = [...pendingPositions.current.values()];
-    if (nodes.length === 0) return;
-    pendingPositions.current.clear();
+    const nodes = [...pendingIssuePositions.current.values()];
+    const labelNodes = [...pendingLabelPositions.current.values()];
+    if (nodes.length === 0 && labelNodes.length === 0) return;
+    pendingIssuePositions.current.clear();
+    pendingLabelPositions.current.clear();
 
     fetch("/api/issues/canvas", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nodes }),
+      body: JSON.stringify({
+        ...(nodes.length > 0 ? { nodes } : {}),
+        ...(labelNodes.length > 0 ? { labels: labelNodes } : {}),
+      }),
       // The layout has to survive the tab closing right after a drag.
       keepalive: true,
     }).catch(console.error);
   }, []);
 
-  const moveIssues = useCallback(
-    (positions: CanvasPosition[]) => {
-      if (positions.length === 0) return;
+  const moveNodes = useCallback(
+    (issuePositions: CanvasPosition[], labelPositions: CanvasPosition[]) => {
+      if (issuePositions.length === 0 && labelPositions.length === 0) return;
 
-      const byId = new Map(positions.map((p) => [p.id, p]));
-      setIssues((prev) =>
-        prev.map((issue) => {
-          const p = byId.get(issue.id);
-          return p ? { ...issue, canvas_x: p.x, canvas_y: p.y } : issue;
-        })
-      );
+      if (issuePositions.length > 0) {
+        const byId = new Map(issuePositions.map((p) => [p.id, p]));
+        setIssues((prev) =>
+          prev.map((issue) => {
+            const p = byId.get(issue.id);
+            return p ? { ...issue, canvas_x: p.x, canvas_y: p.y } : issue;
+          })
+        );
+      }
+      if (labelPositions.length > 0) {
+        const byId = new Map(labelPositions.map((p) => [p.id, p]));
+        setLabels((prev) =>
+          prev.map((label) => {
+            const p = byId.get(label.id);
+            return p ? { ...label, canvas_x: p.x, canvas_y: p.y } : label;
+          })
+        );
+      }
 
-      for (const p of positions) pendingPositions.current.set(p.id, p);
+      for (const p of issuePositions) pendingIssuePositions.current.set(p.id, p);
+      for (const p of labelPositions) pendingLabelPositions.current.set(p.id, p);
       if (positionTimer.current) clearTimeout(positionTimer.current);
       positionTimer.current = setTimeout(flushPositions, POSITION_FLUSH_MS);
     },
@@ -303,6 +332,95 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
         setLinks((prev) => prev.filter((l) => l.id !== tempId));
         toast.error("Could not connect these issues");
       });
+  }, []);
+
+  // ── Canvas labels ────────────────────────────────────────────────────────
+  //
+  // Same shape as the connections above: drawn straight away under a
+  // placeholder id, reconciled with the row the server returns, rolled back
+  // with a toast if the write fails.
+
+  const labelsRef = useRef(labels);
+  useEffect(() => {
+    labelsRef.current = labels;
+  });
+
+  /**
+   * Deliberately NOT optimistic, unlike every other write on the canvas.
+   *
+   * A chip is born in edit mode with the cursor in it. Drawing a placeholder
+   * first would mean swapping its id when the server answers, and React Flow
+   * keys nodes by id: the node would unmount and remount mid-keystroke,
+   * throwing away whatever had been typed. One round trip on a button click is
+   * cheaper than losing the words.
+   */
+  const createLabel = useCallback((x: number, y: number) => {
+    fetch("/api/issues/canvas/labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ x, y, color: DEFAULT_LABEL_COLOR }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`POST label ${res.status}`);
+        const created = (await res.json()) as CanvasLabel;
+        setLabels((prev) => [...prev, created]);
+      })
+      .catch((err) => {
+        console.error(err);
+        toast.error("Could not create the label");
+      });
+  }, []);
+
+  const updateLabel = useCallback(
+    (id: string, patch: Partial<CanvasLabel>) => {
+      const before = labelsRef.current.find((l) => l.id === id);
+      if (!before) return;
+
+      setLabels((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, ...patch } : l))
+      );
+
+      fetch(`/api/issues/canvas/labels/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`PATCH label ${res.status}`);
+        })
+        .catch((err) => {
+          console.error(err);
+          setLabels((prev) => prev.map((l) => (l.id === id ? before : l)));
+          toast.error("Could not save the label");
+        });
+    },
+    []
+  );
+
+  const deleteLabels = useCallback((ids: string[]) => {
+    const doomed = new Set(ids);
+    const removed = labelsRef.current.filter((l) => doomed.has(l.id));
+    if (removed.length === 0) return;
+
+    setLabels((prev) => prev.filter((l) => !doomed.has(l.id)));
+
+    Promise.allSettled(
+      removed.map((label) =>
+        fetch(`/api/issues/canvas/labels/${label.id}`, {
+          method: "DELETE",
+        }).then((res) => {
+          if (!res.ok && res.status !== 404) {
+            throw new Error(`DELETE label ${label.id} ${res.status}`);
+          }
+        })
+      )
+    ).then((results) => {
+      const failed = removed.filter((_, i) => results[i].status === "rejected");
+      if (failed.length === 0) return;
+      console.error("[canvas] could not delete labels", failed);
+      setLabels((prev) => [...prev, ...failed]);
+      toast.error("Could not remove the label");
+    });
   }, []);
 
   const disconnectLinks = useCallback((ids: string[]) => {
@@ -665,11 +783,15 @@ export function IssuesView({ clients, initialIssues, initialLinks }: Props) {
         <IssuesCanvas
           issues={filteredIssues}
           links={links}
+          labels={labels}
           onSelectIssue={setEditIssue}
-          onMoveIssues={moveIssues}
+          onMoveNodes={moveNodes}
           onConnectIssues={connectIssues}
           onDisconnectLinks={disconnectLinks}
           onCreateIssue={() => createIssue("pending", "task")}
+          onCreateLabel={createLabel}
+          onUpdateLabel={updateLabel}
+          onDeleteLabels={deleteLabels}
         />
       )}
 
