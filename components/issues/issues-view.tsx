@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -11,7 +11,6 @@ import {
   Plus,
   Search,
   Trash2,
-  Waypoints,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,42 +40,24 @@ import dynamic from "next/dynamic";
 
 const IssueDetail = dynamic(() => import("./issue-detail").then((m) => m.IssueDetail), { ssr: false });
 
-/**
- * React Flow and its stylesheet only load when the canvas is opened — the
- * board and the list are the common case and should not pay for it.
- */
-const IssuesCanvas = dynamic(
-  () => import("./issues-canvas").then((m) => m.IssuesCanvas),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-[calc(100vh-15rem)] min-h-96 w-full animate-pulse rounded-xl border bg-muted/30" />
-    ),
-  }
-);
 import { IssuesBoard } from "./issues-board";
 import { IssuesList } from "./issues-list";
 import {
   type Issue,
-  type IssueLink,
   type Client,
   type IssueStatus,
   type IssueCategory,
   BOARD_COLUMNS,
 } from "./inline-editors";
-import type { CanvasPosition } from "@/lib/issue-canvas";
-import {
-  DEFAULT_LABEL_COLOR,
-  type CanvasLabel,
-} from "@/lib/canvas-labels";
 import { ARCHIVED_STATUS, isArchived } from "@/lib/issues";
 
-type ViewMode = "board" | "list" | "canvas";
+type ViewMode = "board" | "list";
 
-const VIEW_MODES: ViewMode[] = ["board", "list", "canvas"];
-
-/** How long to gather card movements before writing them as one batch. */
-const POSITION_FLUSH_MS = 400;
+/**
+ * A saved "canvas" — the global canvas view that no longer exists — is not in
+ * this list, so it falls back to the board.
+ */
+const VIEW_MODES: ViewMode[] = ["board", "list"];
 
 /**
  * Status-filter value that switches the list into the archive.
@@ -90,15 +71,11 @@ const ARCHIVE_FILTER = ARCHIVED_STATUS;
 interface Props {
   clients: Client[];
   initialIssues: Issue[];
-  initialLinks: IssueLink[];
-  initialLabels: CanvasLabel[];
 }
 
 export function IssuesView({
   clients,
   initialIssues,
-  initialLinks,
-  initialLabels,
 }: Props) {
   const [view, setViewState] = useState<ViewMode>(() => {
     if (typeof window !== "undefined") {
@@ -108,8 +85,6 @@ export function IssuesView({
     return "board";
   });
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
-  const [links, setLinks] = useState<IssueLink[]>(initialLinks);
-  const [labels, setLabels] = useState<CanvasLabel[]>(initialLabels);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
@@ -131,7 +106,7 @@ export function IssuesView({
     setViewState(v);
     localStorage.setItem("issues-view-mode", v);
     // The archive filter has no meaning outside the list; leaving it set would
-    // land the board and the canvas on nothing.
+    // land the board on nothing.
     if (v !== "list") {
       setFilterStatus((prev) => (prev === ARCHIVE_FILTER ? "all" : prev));
       setSelectedIds(new Set());
@@ -142,9 +117,9 @@ export function IssuesView({
   const isMobile = useMediaQuery("(max-width: 639px)");
   const effectiveView = isMobile ? "list" : view;
 
-  // The archive is a list-view mode. Switching to the board or the canvas
-  // while it is on would otherwise show them an empty screen, since neither
-  // draws archived work.
+  // The archive is a list-view mode. Switching to the board while it is on
+  // would otherwise show an empty screen, since the board never draws archived
+  // work.
   const archiveMode = effectiveView === "list" && filterStatus === ARCHIVE_FILTER;
 
   const filteredIssues = useMemo(() => {
@@ -206,255 +181,6 @@ export function IssuesView({
       }).catch(console.error);
     }, delay);
   };
-
-  // Card positions, gathered and written as one batch.
-  //
-  // Separate from updateIssue on purpose: a drag is not a change to the issue,
-  // it goes to its own endpoint, it is not audited, and one gesture can move a
-  // dozen cards at once. Keyed by id so repeated moves of the same card
-  // collapse into its latest position instead of queueing.
-  const pendingIssuePositions = useRef<Map<string, CanvasPosition>>(new Map());
-  const pendingLabelPositions = useRef<Map<string, CanvasPosition>>(new Map());
-  const positionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flushPositions = useCallback(() => {
-    if (positionTimer.current) {
-      clearTimeout(positionTimer.current);
-      positionTimer.current = null;
-    }
-    const nodes = [...pendingIssuePositions.current.values()];
-    const labelNodes = [...pendingLabelPositions.current.values()];
-    if (nodes.length === 0 && labelNodes.length === 0) return;
-    pendingIssuePositions.current.clear();
-    pendingLabelPositions.current.clear();
-
-    fetch("/api/issues/canvas", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(nodes.length > 0 ? { nodes } : {}),
-        ...(labelNodes.length > 0 ? { labels: labelNodes } : {}),
-      }),
-      // The layout has to survive the tab closing right after a drag.
-      keepalive: true,
-    }).catch(console.error);
-  }, []);
-
-  const moveNodes = useCallback(
-    (issuePositions: CanvasPosition[], labelPositions: CanvasPosition[]) => {
-      if (issuePositions.length === 0 && labelPositions.length === 0) return;
-
-      if (issuePositions.length > 0) {
-        const byId = new Map(issuePositions.map((p) => [p.id, p]));
-        setIssues((prev) =>
-          prev.map((issue) => {
-            const p = byId.get(issue.id);
-            return p ? { ...issue, canvas_x: p.x, canvas_y: p.y } : issue;
-          })
-        );
-      }
-      if (labelPositions.length > 0) {
-        const byId = new Map(labelPositions.map((p) => [p.id, p]));
-        setLabels((prev) =>
-          prev.map((label) => {
-            const p = byId.get(label.id);
-            return p ? { ...label, canvas_x: p.x, canvas_y: p.y } : label;
-          })
-        );
-      }
-
-      for (const p of issuePositions) pendingIssuePositions.current.set(p.id, p);
-      for (const p of labelPositions) pendingLabelPositions.current.set(p.id, p);
-      if (positionTimer.current) clearTimeout(positionTimer.current);
-      positionTimer.current = setTimeout(flushPositions, POSITION_FLUSH_MS);
-    },
-    [flushPositions]
-  );
-
-  // Leaving the page within the debounce window must not lose the layout.
-  useEffect(() => flushPositions, [flushPositions]);
-
-  // Read inside callbacks that must not be rebuilt when a link changes.
-  // Assigned after commit, never during render: a render can be discarded.
-  const linksRef = useRef(links);
-  useEffect(() => {
-    linksRef.current = links;
-  });
-
-  const connectIssues = useCallback((sourceId: string, targetId: string) => {
-    if (sourceId === targetId) return;
-    if (
-      linksRef.current.some(
-        (l) => l.source_id === sourceId && l.target_id === targetId
-      )
-    ) {
-      return;
-    }
-
-    // Drawn immediately, under a placeholder id, and reconciled with the real
-    // row when the server answers. The line has to appear the instant the drag
-    // is released or the canvas feels broken.
-    const tempId = `pending:${sourceId}:${targetId}`;
-    setLinks((prev) => [
-      ...prev,
-      {
-        id: tempId,
-        source_id: sourceId,
-        target_id: targetId,
-        label: null,
-        pending: true,
-      },
-    ]);
-
-    fetch("/api/issues/links", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_id: sourceId, target_id: targetId }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`POST /api/issues/links ${res.status}`);
-        const created = (await res.json()) as IssueLink;
-        setLinks((prev) =>
-          prev.map((l) =>
-            l.id === tempId
-              ? {
-                  id: created.id,
-                  source_id: sourceId,
-                  target_id: targetId,
-                  label: created.label ?? null,
-                }
-              : l
-          )
-        );
-      })
-      .catch((err) => {
-        console.error(err);
-        setLinks((prev) => prev.filter((l) => l.id !== tempId));
-        toast.error("Could not connect these issues");
-      });
-  }, []);
-
-  // ── Canvas labels ────────────────────────────────────────────────────────
-  //
-  // Same shape as the connections above: drawn straight away under a
-  // placeholder id, reconciled with the row the server returns, rolled back
-  // with a toast if the write fails.
-
-  const labelsRef = useRef(labels);
-  useEffect(() => {
-    labelsRef.current = labels;
-  });
-
-  /**
-   * Deliberately NOT optimistic, unlike every other write on the canvas.
-   *
-   * A chip is born in edit mode with the cursor in it. Drawing a placeholder
-   * first would mean swapping its id when the server answers, and React Flow
-   * keys nodes by id: the node would unmount and remount mid-keystroke,
-   * throwing away whatever had been typed. One round trip on a button click is
-   * cheaper than losing the words.
-   */
-  const createLabel = useCallback((x: number, y: number) => {
-    fetch("/api/issues/canvas/labels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ x, y, color: DEFAULT_LABEL_COLOR }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`POST label ${res.status}`);
-        const created = (await res.json()) as CanvasLabel;
-        setLabels((prev) => [...prev, created]);
-      })
-      .catch((err) => {
-        console.error(err);
-        toast.error("Could not create the label");
-      });
-  }, []);
-
-  const updateLabel = useCallback(
-    (id: string, patch: Partial<CanvasLabel>) => {
-      const before = labelsRef.current.find((l) => l.id === id);
-      if (!before) return;
-
-      setLabels((prev) =>
-        prev.map((l) => (l.id === id ? { ...l, ...patch } : l))
-      );
-
-      fetch(`/api/issues/canvas/labels/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(`PATCH label ${res.status}`);
-        })
-        .catch((err) => {
-          console.error(err);
-          setLabels((prev) => prev.map((l) => (l.id === id ? before : l)));
-          toast.error("Could not save the label");
-        });
-    },
-    []
-  );
-
-  const deleteLabels = useCallback((ids: string[]) => {
-    const doomed = new Set(ids);
-    const removed = labelsRef.current.filter((l) => doomed.has(l.id));
-    if (removed.length === 0) return;
-
-    setLabels((prev) => prev.filter((l) => !doomed.has(l.id)));
-
-    Promise.allSettled(
-      removed.map((label) =>
-        fetch(`/api/issues/canvas/labels/${label.id}`, {
-          method: "DELETE",
-        }).then((res) => {
-          if (!res.ok && res.status !== 404) {
-            throw new Error(`DELETE label ${label.id} ${res.status}`);
-          }
-        })
-      )
-    ).then((results) => {
-      const failed = removed.filter((_, i) => results[i].status === "rejected");
-      if (failed.length === 0) return;
-      console.error("[canvas] could not delete labels", failed);
-      setLabels((prev) => [...prev, ...failed]);
-      toast.error("Could not remove the label");
-    });
-  }, []);
-
-  const disconnectLinks = useCallback((ids: string[]) => {
-    const doomed = new Set(ids);
-    // Captured before the optimistic removal so a failed delete can put the
-    // connection back exactly as it was.
-    const removed = linksRef.current.filter((l) => doomed.has(l.id));
-    if (removed.length === 0) return;
-
-    setLinks((prev) => prev.filter((l) => !doomed.has(l.id)));
-
-    Promise.allSettled(
-      removed.map((link) =>
-        fetch(`/api/issues/links/${link.id}`, { method: "DELETE" }).then(
-          (res) => {
-            // Already gone is the outcome we wanted.
-            if (!res.ok && res.status !== 404) {
-              throw new Error(`DELETE ${link.id} ${res.status}`);
-            }
-          }
-        )
-      )
-    ).then((results) => {
-      const failed = removed.filter((_, i) => results[i].status === "rejected");
-      if (failed.length === 0) return;
-      console.error("[canvas] could not delete links", failed);
-      setLinks((prev) => [...prev, ...failed]);
-      toast.error(
-        failed.length === 1
-          ? "Could not remove the connection"
-          : `Could not remove ${failed.length} connections`
-      );
-    });
-  }, []);
 
   const createIssue = async (status: IssueStatus = "pending", category: IssueCategory = "task") => {
     const res = await fetch("/api/issues", {
@@ -565,7 +291,7 @@ export function IssuesView({
       {/*
         The archive, set apart because it is not another status to filter by —
         picking it swaps the list for what has been put away. Only in the list
-        view: the board and the canvas never draw archived work.
+        view: the board never draws archived work.
       */}
       {effectiveView === "list" && (
         <>
@@ -603,14 +329,6 @@ export function IssuesView({
             onClick={() => setView("list")}
           >
             <LayoutList className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={view === "canvas" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8 rounded-none"
-            onClick={() => setView("canvas")}
-          >
-            <Waypoints className="h-4 w-4" />
           </Button>
         </div>
 
@@ -779,22 +497,6 @@ export function IssuesView({
         </>
       )}
 
-      {effectiveView === "canvas" && (
-        <IssuesCanvas
-          issues={filteredIssues}
-          links={links}
-          labels={labels}
-          onSelectIssue={setEditIssue}
-          onMoveNodes={moveNodes}
-          onConnectIssues={connectIssues}
-          onDisconnectLinks={disconnectLinks}
-          onCreateIssue={() => createIssue("pending", "task")}
-          onCreateLabel={createLabel}
-          onUpdateLabel={updateLabel}
-          onDeleteLabels={deleteLabels}
-        />
-      )}
-
       {/* Detail sidebar */}
       <IssueDetail
         issue={editIssue}
@@ -839,8 +541,8 @@ export function IssuesView({
               {selectedIds.size === 1 ? "issue" : "issues"}?
             </DialogTitle>
             <DialogDescription>
-              This permanently removes them and everything on them — description,
-              mentions and canvas connections. It cannot be undone.
+              This permanently removes them and everything on them — description
+              and mentions. It cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-2">

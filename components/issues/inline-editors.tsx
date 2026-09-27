@@ -57,23 +57,6 @@ export interface Issue {
   progress: number;
   due_date: string | null;
   description: string;
-  /** Position on the canvas view. Null until the card is first placed. */
-  canvas_x: number | null;
-  canvas_y: number | null;
-}
-
-/** An edge on the canvas view. Mirrors the IssueLink row. */
-export interface IssueLink {
-  id: string;
-  source_id: string;
-  target_id: string;
-  label: string | null;
-  /**
-   * True while the row is still being written. The id is a placeholder until
-   * the server answers, so the edge is drawn but cannot be selected or
-   * deleted — there is nothing to delete yet.
-   */
-  pending?: boolean;
 }
 
 // ── InlineProgress ───────────────────────────────────────────────────────────

@@ -373,10 +373,9 @@ model Issue {
   created_at  DateTime      @default(now())
   updated_at  DateTime      @updatedAt
 
-  /// Coordinates on the canvas view. Null means "never placed": the canvas
-  /// lays the issue out on a grid the first time it renders and persists the
-  /// result, so an issue created from the board or the list still shows up.
-  /// Float rather than Int because pan/zoom produces fractional drops.
+  /// DORMANT. Positions for the global canvas view, retired on 2026-09-27
+  /// (canvases now live inside a note — see CanvasNode). Nothing reads or
+  /// writes them; they stay until a reviewed migration drops them.
   canvas_x Float?
   canvas_y Float?
 
@@ -391,6 +390,9 @@ model Issue {
 }
 
 /**
+ * DORMANT since 2026-09-27, when the global canvas view was retired. No route
+ * reads or writes it; it stays until a reviewed migration drops it.
+ *
  * A directed edge between two issues, drawn on the canvas view.
  *
  * Not to be confused with the "linked issues" surfaced on people and invoices:
@@ -416,6 +418,9 @@ model IssueLink {
 }
 
 /**
+ * DORMANT since 2026-09-27, when the global canvas view was retired. No route
+ * reads or writes it; it stays until a reviewed migration drops it.
+ *
  * A free-text chip on the canvas — a heading over a cluster, a note to self.
  * Organisational only: it is not work, it has no status, and it never appears
  * on the board or in the list.
