@@ -258,7 +258,8 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 | Botón `+` | nodo nuevo en el centro de la vista, ya en edición |
 | Arrastrar desde el punto de un nodo y soltar sobre otro nodo | conexión |
 | Arrastrar desde el punto de un nodo y soltar en el vacío | **nodo nuevo conectado** ahí, en edición (el gesto de mapa mental) |
-| Clic en un nodo | lo selecciona: aparecen las manijas de ancho (izquierda y derecha) y la barra de color |
+| Pasar el mouse por un nodo | muestra sus cuatro puntos de conexión |
+| Clic en un nodo | lo selecciona: aparecen los cuatro puntos de conexión, las manijas de ancho (izquierda y derecha) y la barra de color |
 | Doble clic / Enter en un nodo | edición inline con bubble menu, @ y # |
 | Escape / clic afuera | sale de la edición |
 | Delete / Backspace (sin estar editando) | borra lo seleccionado; toast **"Undo"** durante ~6 s |

@@ -125,9 +125,10 @@ export const IdeaNodeView = memo(function IdeaNodeView({
     <>
       {/*
         Width only, from either side: the whole edge is a grab area, with a
-        visible grip near its bottom — not in the middle, where the
+        visible grip at its bottom end — not in the middle, where the
         connection dot of that side sits and a drag would start a connection
-        instead. `resizeDirection="horizontal"` is what keeps React Flow from
+        instead. Short and low enough to clear that dot on a one-line card,
+        and high enough to stay off the rounded corner. `resizeDirection="horizontal"` is what keeps React Flow from
         writing a fixed height onto the node — with it, a resize sets the
         width attribute alone and the height stays measured.
       */}
@@ -146,7 +147,7 @@ export const IdeaNodeView = memo(function IdeaNodeView({
             }
             className="!border-transparent !border-[5px]"
           >
-            <span className="pointer-events-none absolute bottom-2 left-1/2 h-4 w-1.5 -translate-x-1/2 rounded-full bg-primary/60" />
+            <span className="pointer-events-none absolute bottom-[3px] left-1/2 h-2 w-1.5 -translate-x-1/2 rounded-full bg-primary/60" />
           </NodeResizeControl>
         ))}
 
@@ -263,9 +264,18 @@ export const IdeaNodeView = memo(function IdeaNodeView({
         mode, so a node with only target handles would render no edge at all.
         Loose mode is what lets one of these also be dropped on.
 
-        Hidden until the card is hovered — four dots on every card at rest
-        would turn the canvas into a pegboard. Siblings of the card, not
-        children: the card clips its overflow, and a dot sits half outside.
+        Shown on a hovered or selected card — four dots on every card at rest
+        would turn the canvas into a pegboard. Selected is what a touch
+        screen has instead of hover. The dot is 12 px, and its ::before
+        widens the target to 24 px, so it does not have to be hunted for.
+        Siblings of the card, not children: the card clips its overflow, and
+        a dot sits half outside.
+
+        Hover goes through the `group/idea` class toNode puts on React
+        Flow's node wrapper. Not an arbitrary selector: Tailwind turns the
+        underscores of `.react-flow__node` into spaces, which is how an
+        earlier version never showed the dots at all. `!` only where React
+        Flow's own (unlayered) handle CSS sets the same property.
       */}
       {CONNECT_HANDLES.map(({ id: handleId, position }) => (
         <Handle
@@ -273,7 +283,13 @@ export const IdeaNodeView = memo(function IdeaNodeView({
           id={handleId}
           type="source"
           position={position}
-          className="!h-3.5 !w-3.5 !rounded-full !border-2 !border-background !bg-muted-foreground !opacity-0 transition-all hover:!bg-primary [.react-flow__node:hover_&]:!opacity-100"
+          className={cn(
+            "!h-3 !w-3 !rounded-full !border-2 !border-background !bg-primary shadow-sm transition-[opacity,scale] hover:scale-150",
+            "before:absolute before:-inset-1.5 before:rounded-full",
+            selected
+              ? "opacity-100"
+              : "opacity-0 group-hover/idea:opacity-100"
+          )}
         />
       ))}
     </>

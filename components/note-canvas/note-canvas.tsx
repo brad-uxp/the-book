@@ -100,6 +100,9 @@ function toNode(idea: CanvasIdea, selected = false): IdeaNode {
   return {
     id: idea.id,
     type: "idea",
+    // On React Flow's own wrapper, so a card's connection dots can show on
+    // hover (`group-hover/idea:` in IdeaNodeView).
+    className: "group/idea",
     position: { x: idea.x, y: idea.y },
     width: idea.width,
     selected,
