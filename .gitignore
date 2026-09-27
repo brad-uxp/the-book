@@ -46,8 +46,3 @@ next-env.d.ts
 
 /app/generated/prisma
 
-# serwist (generated service worker)
-public/sw.js
-public/sw.js.map
-public/swe-worker-*.js
-public/swe-worker-*.js.map

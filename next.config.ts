@@ -1,11 +1,4 @@
 import type { NextConfig } from "next";
-import withSerwistInit from "@serwist/next";
-
-const withSerwist = withSerwistInit({
-  swSrc: "app/sw.ts",
-  swDest: "public/sw.js",
-  disable: process.env.NODE_ENV === "development",
-});
 
 // CSP origin for the storage backend.
 // In production R2 derives from R2_ACCOUNT_ID → use the wildcard.
@@ -44,6 +37,16 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Vary", value: "Origin" }],
       },
       {
+        // The kill-switch worker that removes the retired PWA (see its header).
+        // Browsers already bypass the HTTP cache when re-checking a worker
+        // script, but a proxy or CDN in between would not — and a stale copy
+        // of the old worker there would keep it alive.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+      {
         // Static assets in /public — short cache + revalidate so deploys show changes fast
         source: "/:path*.(svg|png|jpg|jpeg|ico|webp)",
         headers: [
@@ -80,4 +83,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSerwist(nextConfig);
+export default nextConfig;

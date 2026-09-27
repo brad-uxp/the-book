@@ -43,7 +43,12 @@ export const config = {
     // Static assets are excluded so they are not gated. `/api/:path*` is listed
     // unconditionally afterwards because the image-extension exclusion below
     // would otherwise let any API path ending in .png/.svg/… skip the proxy.
-    "/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|swe-worker-.*\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    //
+    // sw.js is the kill switch for the retired PWA worker and must stay
+    // reachable without a session: a browser re-checking it and getting a
+    // redirect to /login keeps the old worker. Drop the exclusion together
+    // with public/sw.js.
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
     "/api/:path*",
   ],
 };
