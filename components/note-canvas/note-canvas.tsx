@@ -37,6 +37,8 @@ import { isBlankHtml } from "@/lib/notes";
 import {
   NODE_DEFAULT_HEIGHT,
   NODE_DEFAULT_WIDTH,
+  NODE_MAX_SIZE,
+  NODE_MIN_HEIGHT,
   nodeOriginAt,
   type CanvasConnection,
   type CanvasIdea,
@@ -74,21 +76,28 @@ const LAYOUT_FLUSH_MS = 400;
 /** Long enough to reach for, short enough not to linger over the canvas. */
 const UNDO_MS = 6000;
 
+/**
+ * What a gesture changes on a card: where it is and, after a resize, how wide.
+ * Never its height — the height is its content's, measured by React Flow.
+ */
 type LayoutEntry = {
   id: string;
   x: number;
   y: number;
   width?: number;
-  height?: number;
 };
 
+/**
+ * The stored `height` is deliberately not applied: a card is as tall as its
+ * content (see IdeaNodeView). Setting it here would pin the height and bring
+ * back the scrolling cards this replaced.
+ */
 function toNode(idea: CanvasIdea, selected = false): IdeaNode {
   return {
     id: idea.id,
     type: "idea",
     position: { x: idea.x, y: idea.y },
     width: idea.width,
-    height: idea.height,
     selected,
     data: { content: idea.content, color: idea.color, rev: 0 },
   };
@@ -561,7 +570,12 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         x: n.position.x,
         y: n.position.y,
         width: n.width ?? n.measured?.width ?? NODE_DEFAULT_WIDTH,
-        height: n.height ?? n.measured?.height ?? NODE_DEFAULT_HEIGHT,
+        // Only stored, never applied (the card sizes to its content) — but it
+        // travels in the re-create, so keep it inside what the API accepts.
+        height: Math.min(
+          NODE_MAX_SIZE,
+          Math.max(NODE_MIN_HEIGHT, Math.round(n.measured?.height ?? NODE_DEFAULT_HEIGHT))
+        ),
       }));
       const connections: CanvasConnection[] = goneEdges.map((e) => ({
         id: e.id,
@@ -674,9 +688,8 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
 
   const onResizeEnd = useCallback(
     (id: string, box: IdeaBox) => {
-      queueLayout([
-        { id, x: box.x, y: box.y, width: box.width, height: box.height },
-      ]);
+      // Resizing from the left edge moves x as well as the width.
+      queueLayout([{ id, x: box.x, y: box.y, width: box.width }]);
     },
     [queueLayout]
   );

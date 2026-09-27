@@ -137,7 +137,9 @@ not exist, `404`.
   `content` is HTML in the same format as `description` (mentions included).
   `color` is a palette key (`slate`, `blue`, `green`, `amber`, `red`, `violet`,
   `pink`) or `null`. Width 160–4000, height 64–4000, content up to 200 000
-  characters.
+  characters. `width` is the card's real width; `height` is stored but not
+  used to draw — the web sizes every card to its content, so a client should
+  treat width as the only layout dimension.
 - **Create** with `{ x, y, content?, color?, width?, height?, id? }`. `id` is
   optional; if you send one it must be a UUID, and a duplicate is a `409`
   rather than an overwrite.

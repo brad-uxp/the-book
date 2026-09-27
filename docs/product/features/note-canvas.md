@@ -258,14 +258,16 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 | Botón `+` | nodo nuevo en el centro de la vista, ya en edición |
 | Arrastrar desde el punto de un nodo y soltar sobre otro nodo | conexión |
 | Arrastrar desde el punto de un nodo y soltar en el vacío | **nodo nuevo conectado** ahí, en edición (el gesto de mapa mental) |
-| Clic en un nodo | lo selecciona: aparecen las manijas de resize y la barra de color |
+| Clic en un nodo | lo selecciona: aparecen las manijas de ancho (izquierda y derecha) y la barra de color |
 | Doble clic / Enter en un nodo | edición inline con bubble menu, @ y # |
 | Escape / clic afuera | sale de la edición |
 | Delete / Backspace (sin estar editando) | borra lo seleccionado; toast **"Undo"** durante ~6 s |
 | Dos dedos / pinch / shift+arrastrar | paneo, zoom, selección múltiple (como hoy) |
 
-- El texto que no entra en el nodo hace scroll **dentro** del nodo (`nowheel`). El tamaño
-  lo decide el usuario (NodeResizer), con snap a la grilla de 8.
+- **Las tarjetas no tienen scroll.** El ancho lo decide el usuario (manijas a izquierda y
+  derecha); el alto se calcula solo según el contenido, siempre con el mismo padding
+  inferior. Al ensanchar una tarjeta baja su alto; al angostarla, crece. La columna
+  `height` de `CanvasNode` sigue existiendo, pero ningún cliente la usa para dibujar.
 - Las aristas flotan: se reutiliza `FloatingEdge` y `edgeAnchor` (con sus tests). Llevan
   flecha y no tienen etiqueta en v1.
 - El título y el cliente se editan en el header con los mismos `InlineTitle` e
