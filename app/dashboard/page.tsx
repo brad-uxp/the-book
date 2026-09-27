@@ -54,6 +54,7 @@ export default async function DashboardPage() {
         workExpensesByItem={workExpensesByItem}
         sentTotal={awaiting.netCents}
         sentCount={awaiting.count}
+        pastDueCount={awaiting.pastDueCount}
       />
 
       {/* Upcoming section — always live, outside filter scope */}

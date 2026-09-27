@@ -45,9 +45,11 @@ interface Props {
   workExpensesByItem: WorkExpensesByItem;
   sentTotal: number;
   sentCount: number;
+  /** Sent invoices whose due date has gone by (lib/metrics isPastDue). */
+  pastDueCount: number;
 }
 
-export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, workExpensesByItem, sentTotal, sentCount }: Props) {
+export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, workExpensesByItem, sentTotal, sentCount, pastDueCount }: Props) {
   const [preset, setPreset] = useState<Preset>("ytd");
 
   // Every number below comes from lib/metrics, the same code GET /api/metrics
@@ -99,6 +101,9 @@ export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIn
           </p>
           <p className="mt-1.5 text-xs text-muted-foreground">
             {sentCount} invoice{sentCount !== 1 ? "s" : ""} awaiting payment
+            {pastDueCount > 0 && (
+              <span className="font-medium text-destructive"> · {pastDueCount} past due</span>
+            )}
           </p>
         </Link>
 

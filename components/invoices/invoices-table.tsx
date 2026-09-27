@@ -53,7 +53,8 @@ import {
 import { Plus, ArrowUpDown, ArrowUp, ArrowDown, X, FileText, FileX2, ChevronDown, Pencil, Link2, Check, ChevronsUpDown, UserCheck, Download, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/currency";
-import { formatDate, formatMonth } from "@/lib/dates";
+import { formatDate, formatMonth, getTodayInTZ } from "@/lib/dates";
+import { isPastDue } from "@/lib/metrics";
 import { InvoiceForm } from "./invoice-form";
 import { ClientManager } from "./client-manager";
 import type { InvoiceInput } from "@/lib/validations";
@@ -97,6 +98,10 @@ const STATUS_CLASSES: Record<string, string> = {
   sent: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
   paid: "bg-green-100 text-green-800 border-green-300 hover:bg-green-100 dark:bg-green-900/25 dark:text-green-500 dark:border-green-900",
 };
+
+/** Set apart from the status colours: it is a warning, not a fifth status. */
+const PAST_DUE_CLASS =
+  "bg-red-50 text-red-700 border-red-200 hover:bg-red-50 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pending",
@@ -482,6 +487,10 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
   }, [filtered]);
 
 
+  // Montevideo's today, for "past due" (lib/metrics). Read once per render:
+  // it only changes at midnight.
+  const today = getTodayInTZ();
+
   const columns: ColumnDef<Invoice>[] = [
     {
       accessorKey: "invoice_number",
@@ -599,9 +608,17 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
-        <Badge variant="outline" className={STATUS_CLASSES[row.original.status]}>
-          {STATUS_LABELS[row.original.status]}
-        </Badge>
+        <span className="flex items-center gap-1.5">
+          <Badge variant="outline" className={STATUS_CLASSES[row.original.status]}>
+            {STATUS_LABELS[row.original.status]}
+          </Badge>
+          {/* Sent, and its month has ended without being paid. */}
+          {isPastDue(row.original, today) && (
+            <Badge variant="outline" className={PAST_DUE_CLASS}>
+              Past due
+            </Badge>
+          )}
+        </span>
       ),
     },
     {
