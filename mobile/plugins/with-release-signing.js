@@ -8,13 +8,16 @@
 //             The generated project would otherwise sign debug builds with
 //             the template's own android/app/debug.keystore — a different
 //             SHA-1, and Google would refuse sign-in with DEVELOPER_ERROR.
-//  - release: ~/.android/book-release.jks. Its password lives in the macOS
-//             Keychain and reaches Gradle only as environment variables set by
-//             scripts/android-release.sh — never a file, never the repo.
+//  - release: ~/.android/book-release.jks. Gradle never sees it: the release
+//             build type is left UNSIGNED, and scripts/android-release.sh
+//             signs the finished APK with apksigner, feeding the password from
+//             the macOS Keychain through a pipe. So the password never enters
+//             the environment of Gradle, its plugins, Metro or CMake — only
+//             apksigner's stdin.
 //
-// Fail closed: a release build without those variables has no store file and
-// Gradle refuses to package it, so an APK signed with a debug key cannot ship
-// by accident.
+// Fail closed: the template signs release with the debug key; that line is
+// removed, so a release APK out of Gradle is unsigned and cannot be installed
+// until the script signs it with the release key.
 const { withAppBuildGradle } = require("expo/config-plugins");
 
 const DEBUG_KEYSTORE = `storeFile file('debug.keystore')`;
@@ -23,38 +26,22 @@ const DEBUG_KEYSTORE_STANDARD = [
   `            storeFile standardDebugKeystore.exists() ? standardDebugKeystore : file('debug.keystore')`,
 ].join("\n");
 
-const RELEASE_SIGNING = `
-        release {
-            // Set only by scripts/android-release.sh. Absent => release cannot be signed.
-            def releaseStore = System.getenv("BOOK_RELEASE_KEYSTORE")
-            if (releaseStore) {
-                storeFile file(releaseStore)
-                storePassword System.getenv("BOOK_RELEASE_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("BOOK_RELEASE_KEY_ALIAS")
-                keyPassword System.getenv("BOOK_RELEASE_KEYSTORE_PASSWORD")
-            }
-        }`;
+const MARKER = "// book.: release left unsigned — signed by scripts/android-release.sh";
 
 function applySigning(gradle) {
-  if (gradle.includes("BOOK_RELEASE_KEYSTORE")) return gradle;
+  if (gradle.includes(MARKER)) return gradle;
 
   if (!gradle.includes(DEBUG_KEYSTORE)) {
     throw new Error("with-release-signing: debug signing config not found in app/build.gradle");
   }
   gradle = gradle.replace(DEBUG_KEYSTORE, DEBUG_KEYSTORE_STANDARD);
 
-  const signingBlock = /signingConfigs \{\n(\s+debug \{[\s\S]*?\n\s+\})/;
-  if (!signingBlock.test(gradle)) {
-    throw new Error("with-release-signing: signingConfigs block not found");
-  }
-  gradle = gradle.replace(signingBlock, (m) => `${m}${RELEASE_SIGNING}`);
-
   const releaseUsesDebug =
     /(release \{\n(?:\s*\/\/[^\n]*\n)*\s*)signingConfig signingConfigs\.debug/;
   if (!releaseUsesDebug.test(gradle)) {
     throw new Error("with-release-signing: release buildType signing line not found");
   }
-  return gradle.replace(releaseUsesDebug, "$1signingConfig signingConfigs.release");
+  return gradle.replace(releaseUsesDebug, `$1${MARKER}`);
 }
 
 module.exports = function withReleaseSigning(config) {
