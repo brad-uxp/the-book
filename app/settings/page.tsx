@@ -1,11 +1,18 @@
 import { prisma } from "@/lib/db";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { ApiTokens } from "@/components/settings/api-tokens";
+import { CorporateExclusions } from "@/components/settings/corporate-exclusions";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const settings = await prisma.settings.findUnique({ where: { id: "singleton" } });
+  const [settings, clients] = await Promise.all([
+    prisma.settings.findUnique({ where: { id: "singleton" } }),
+    prisma.client.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, color_hex: true },
+    }),
+  ]);
 
   const initial = {
     days_before_subscription: settings?.days_before_subscription ?? 2,
@@ -22,6 +29,10 @@ export default async function SettingsPage() {
         </p>
       </div>
       <SettingsForm initial={initial} />
+      <CorporateExclusions
+        clients={clients}
+        initial={settings?.corporate_excluded_client_ids ?? []}
+      />
       <ApiTokens />
     </div>
   );

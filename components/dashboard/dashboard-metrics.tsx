@@ -47,9 +47,11 @@ interface Props {
   sentCount: number;
   /** Sent invoices whose due date has gone by (lib/metrics isPastDue). */
   pastDueCount: number;
+  /** Clients left out of corporate profitability, as saved in Settings. */
+  excludedClientIds: string[];
 }
 
-export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, workExpensesByItem, sentTotal, sentCount, pastDueCount }: Props) {
+export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, workExpensesByItem, sentTotal, sentCount, pastDueCount, excludedClientIds }: Props) {
   const [preset, setPreset] = useState<Preset>("ytd");
 
   // Every number below comes from lib/metrics, the same code GET /api/metrics
@@ -191,6 +193,7 @@ export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIn
         incomeByClient={incomeByClientFiltered}
         clientsIndex={clientsIndex}
         workExpensesByItem={workExpensesByItem}
+        savedExcluded={excludedClientIds}
       />
     </div>
   );

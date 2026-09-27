@@ -309,3 +309,26 @@ export const CanvasEdgeSchema = z
 export type CanvasNodeInput = z.infer<typeof CanvasNodeSchema>;
 export type CanvasLayoutInput = z.infer<typeof CanvasLayoutSchema>;
 export type CanvasEdgeInput = z.infer<typeof CanvasEdgeSchema>;
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+/**
+ * A partial update of the Settings singleton. Every field optional; the route
+ * writes only what was sent.
+ *
+ * `corporate_excluded_client_ids` is replaced as a whole, deduplicated. Ids
+ * are checked against existing clients in the route: a typo'd id would
+ * exclude nothing while the report claims a client is left out.
+ */
+export const SettingsPatchSchema = z.object({
+  days_before_subscription: z.number().int().min(0).max(30).optional(),
+  days_before_salary: z.number().int().min(0).max(30).optional(),
+  days_before_invoice: z.number().int().min(0).max(30).optional(),
+  corporate_excluded_client_ids: z
+    .array(z.string().min(1))
+    .max(200)
+    .transform((ids) => [...new Set(ids)])
+    .optional(),
+});
+
+export type SettingsPatchInput = z.infer<typeof SettingsPatchSchema>;

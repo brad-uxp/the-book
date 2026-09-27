@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   LineChart,
   Line,
@@ -294,9 +295,14 @@ interface Props {
   incomeByClient: MonthIncomeByClient[];
   clientsIndex: Record<string, ClientInfo>;
   workExpensesByItem: WorkExpensesByItem;
+  /** Excluded clients as saved in Settings — the chart starts from these. */
+  savedExcluded: string[];
 }
 
-export function CorporateChart({ data, incomeByClient, clientsIndex, workExpensesByItem }: Props) {
+/** Gather quick toggles into one save instead of racing several PATCHes. */
+const SAVE_EXCLUSIONS_MS = 500;
+
+export function CorporateChart({ data, incomeByClient, clientsIndex, workExpensesByItem, savedExcluded }: Props) {
   const [visible, setVisible] = useState<Record<LineKey, boolean>>({
     income: true,
     workExpenses: true,
@@ -304,20 +310,71 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
     workSubs: true,
     corporateNet: true,
   });
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // Starts from the saved exclusion and edits it: the popover is the same
+  // setting as Settings → Corporate profitability, so the web dashboard and
+  // the mobile app never show two different corporate nets.
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set(savedExcluded));
+  const lastSaved = useRef<string[]>(savedExcluded);
+  const pending = useRef<string[] | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushExcluded = (keepalive = false) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const ids = pending.current;
+    if (!ids) return;
+    pending.current = null;
+    fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ corporate_excluded_client_ids: ids }),
+      keepalive,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`PATCH settings ${res.status}`);
+        lastSaved.current = ids;
+      })
+      .catch((err) => {
+        console.error(err);
+        // Back to what is actually saved, so the chart never shows a number
+        // the setting does not produce.
+        setExcluded(new Set(lastSaved.current));
+        toast.error("Could not save the excluded clients");
+      });
+  };
+
+  const persistExcluded = (next: Set<string>) => {
+    pending.current = [...next];
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => flushExcluded(), SAVE_EXCLUSIONS_MS);
+  };
+
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const toggle = (key: LineKey) =>
     setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const toggleExcluded = (clientId: string) =>
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(clientId)) next.delete(clientId);
-      else next.add(clientId);
-      return next;
-    });
+  // Leaving the dashboard mid-debounce still saves the last choice.
+  const flushRef = useRef(flushExcluded);
+  useEffect(() => {
+    flushRef.current = flushExcluded;
+  });
+  useEffect(() => () => flushRef.current(true), []);
+
+  const toggleExcluded = (clientId: string) => {
+    const next = new Set(excluded);
+    if (next.has(clientId)) next.delete(clientId);
+    else next.add(clientId);
+    setExcluded(next);
+    persistExcluded(next);
+  };
+
+  const clearExcluded = () => {
+    const next = new Set<string>();
+    setExcluded(next);
+    persistExcluded(next);
+  };
 
   // Clients that have any income across the visible months — sorted by total desc.
   const visibleClients = useMemo(() => {
@@ -739,11 +796,11 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
             <PopoverContent align="end" className="w-64 p-2">
               <div className="flex items-center justify-between px-1 py-1">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Exclude from Income
+                  Exclude from income · saved
                 </p>
                 {excluded.size > 0 && (
                   <button
-                    onClick={() => setExcluded(new Set())}
+                    onClick={clearExcluded}
                     className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     Clear

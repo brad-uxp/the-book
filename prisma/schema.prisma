@@ -245,6 +245,11 @@ model Settings {
   days_before_subscription Int      @default(2)
   days_before_salary       Int      @default(4)
   days_before_invoice      Int      @default(0)
+  /// Clients whose income is left out of corporate profitability and the
+  /// partner split (the dashboard's corporate chart and GET /api/metrics).
+  /// Chosen in Settings. Not a relation: a stale id of a deleted client simply
+  /// excludes nothing.
+  corporate_excluded_client_ids String[] @default([])
   updated_at               DateTime @updatedAt
 }
 

@@ -6,6 +6,7 @@ import {
   CanvasNodePatchSchema,
   CanvasNodeSchema,
   IssueSchema,
+  SettingsPatchSchema,
 } from "./validations";
 import { CANVAS_BOUND } from "./canvas-geometry";
 import {
@@ -170,5 +171,27 @@ describe("CanvasEdgeSchema", () => {
   it("rechaza el auto-enlace — el CHECK de la DB es el backstop, esto es el 400", () => {
     const parsed = CanvasEdgeSchema.safeParse({ source_id: "a", target_id: "a" });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("SettingsPatchSchema", () => {
+  it("acepta cambiar solo los clientes excluidos", () => {
+    const parsed = SettingsPatchSchema.safeParse({ corporate_excluded_client_ids: ["c1"] });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.days_before_invoice).toBeUndefined();
+  });
+
+  it("deduplica la lista de excluidos", () => {
+    const parsed = SettingsPatchSchema.safeParse({ corporate_excluded_client_ids: ["c1", "c1", "c2"] });
+    expect(parsed.success && parsed.data.corporate_excluded_client_ids).toEqual(["c1", "c2"]);
+  });
+
+  it("una lista vacía es válida: no excluir a nadie", () => {
+    expect(SettingsPatchSchema.safeParse({ corporate_excluded_client_ids: [] }).success).toBe(true);
+  });
+
+  it("rechaza ids vacíos y días fuera de rango", () => {
+    expect(SettingsPatchSchema.safeParse({ corporate_excluded_client_ids: [""] }).success).toBe(false);
+    expect(SettingsPatchSchema.safeParse({ days_before_salary: 31 }).success).toBe(false);
   });
 });

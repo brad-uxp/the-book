@@ -82,6 +82,15 @@ export async function loadSentInvoices() {
   });
 }
 
+/** Clients whose income is left out of corporate profitability (Settings). */
+export async function loadCorporateExclusions(): Promise<string[]> {
+  const settings = await prisma.settings.findUnique({
+    where: { id: "singleton" },
+    select: { corporate_excluded_client_ids: true },
+  });
+  return settings?.corporate_excluded_client_ids ?? [];
+}
+
 /**
  * Subscriptions and salaries falling due in the next few days that have no
  * payment yet, and invoices not yet paid that fall due in the same window.

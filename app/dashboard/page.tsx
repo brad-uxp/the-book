@@ -8,6 +8,7 @@ import {
   workExpensesByItemOf,
 } from "@/lib/metrics";
 import {
+  loadCorporateExclusions,
   loadMonthlyRows,
   loadSentInvoices,
   loadUpcoming,
@@ -27,10 +28,11 @@ export default async function DashboardPage() {
   // these same months, trimmed of empty ones at both ends.
   const months = recentMonths(today);
 
-  const [rows, sent, upcoming] = await Promise.all([
+  const [rows, sent, upcoming, excludedClientIds] = await Promise.all([
     loadMonthlyRows(months),
     loadSentInvoices(),
     loadUpcoming(today),
+    loadCorporateExclusions(),
   ]);
 
   const { monthly, incomeByClient } = bucketByMonth(months, rows);
@@ -55,6 +57,7 @@ export default async function DashboardPage() {
         sentTotal={awaiting.netCents}
         sentCount={awaiting.count}
         pastDueCount={awaiting.pastDueCount}
+        excludedClientIds={excludedClientIds}
       />
 
       {/* Upcoming section — always live, outside filter scope */}
