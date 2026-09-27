@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CanvasNodePatchSchema } from "@/lib/validations";
-import { auditLog, getActorEmail } from "@/lib/audit";
+import { getActorEmail } from "@/lib/audit";
 import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
-import { plainTextSnippet } from "@/lib/mentions";
-import { isBlankHtml } from "@/lib/notes";
-import { EDGE_SELECT, NODE_SELECT } from "@/lib/note-canvas-server";
+import { deleteNode, updateNode } from "@/lib/canvas-service";
+import { inTransaction } from "@/lib/issues-service";
 
 type Params = { params: Promise<{ id: string; nodeId: string }> };
 
@@ -39,11 +38,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   try {
-    const node = await prisma.canvasNode.update({
-      where: { id: nodeId, issue_id: id },
-      data,
-      select: NODE_SELECT,
-    });
+    const node = await updateNode(prisma, id, nodeId, data);
     return NextResponse.json(node);
   } catch (err) {
     return toApiResponse(err);
@@ -68,36 +63,9 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id, nodeId } = await params;
 
   try {
-    // Read first: after the delete the edges are gone with it, and a record
-    // of a removed idea should say what it was connected to.
-    const edges = await prisma.canvasEdge.findMany({
-      where: {
-        issue_id: id,
-        OR: [{ source_id: nodeId }, { target_id: nodeId }],
-      },
-      select: EDGE_SELECT,
-    });
-
-    const node = await prisma.canvasNode.delete({
-      where: { id: nodeId, issue_id: id },
-      select: { ...NODE_SELECT, issue: { select: { title: true } } },
-    });
-
-    const { issue, ...removed } = node;
-    if (isBlankHtml(removed.content)) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const snippet = plainTextSnippet(removed.content);
-    auditLog({
-      entity_type: "canvas_node",
-      entity_id: nodeId,
-      entity_name: snippet ? `${issue.title} › ${snippet}` : issue.title,
-      action: "delete",
-      actor_email: await getActorEmail(),
-      before: { issue_id: id, ...removed, edges },
-    });
-
+    await inTransaction(await getActorEmail(), (tx, ctx) =>
+      deleteNode(tx, id, nodeId, ctx)
+    );
     return NextResponse.json({ ok: true });
   } catch (err) {
     // P2025 becomes a 404, which is the right answer for "already gone".

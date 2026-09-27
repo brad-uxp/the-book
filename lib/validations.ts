@@ -211,6 +211,14 @@ export const IssueSchema = z.object({
 export type IssueInput = z.infer<typeof IssueSchema>;
 
 /**
+ * A new issue. The id may come from the client: the phone creates notes
+ * offline and has to know their id before the server does. A UUID, so a
+ * client cannot pick one that collides by accident — a duplicate is a 409,
+ * never an overwrite.
+ */
+export const IssueCreateSchema = IssueSchema.extend({ id: z.uuid().optional() });
+
+/**
  * Ids to remove from the archive. Bounded because this is the one route that
  * deletes many rows at once; an unbounded list is a request that can time out
  * halfway through.
