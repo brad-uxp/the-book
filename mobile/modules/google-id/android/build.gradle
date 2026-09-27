@@ -1,0 +1,28 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.bolstro.book.googleid'
+version = '0.1.0'
+
+android {
+  namespace "com.bolstro.book.googleid"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+    consumerProguardFiles 'proguard-rules.pro'
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // Credential Manager, stable line, and Google's ID token option for it.
+  implementation "androidx.credentials:credentials:1.6.0"
+  implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
+  // 1.2.1 is built with Kotlin 2.4 metadata, which the Kotlin 2.1 compiler of
+  // React Native 0.86 can't read. 1.2.0 has the same API (nonce included).
+  implementation "com.google.android.libraries.identity.googleid:googleid:1.2.0"
+}

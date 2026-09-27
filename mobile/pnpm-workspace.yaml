@@ -1,0 +1,11 @@
+# mobile/ is its own pnpm project, not a member of the web's workspace.
+#
+# This file is what makes that true: pnpm stops at the nearest
+# pnpm-workspace.yaml, so installs here use mobile/pnpm-lock.yaml and never
+# touch the root lockfile Railway installs from — and root installs never
+# see these dependencies.
+#
+# Hoisted, as Expo recommends when a React Native library trips over isolated
+# node_modules during native builds. This project has nothing else to hoist
+# into, so it costs nothing.
+nodeLinker: hoisted

@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "book.",
+    "slug": "book",
+    "scheme": "book",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "../brand/png/icon-1024.png",
+    "ios": {
+      "bundleIdentifier": "com.bolstro.book",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.bolstro.book",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "../brand/png/android-foreground-1024.png",
+        "monochromeImage": "../brand/png/android-monochrome-1024.png",
+        "backgroundColor": "#18181B"
+      },
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "../brand/png/splash-icon-1024.png",
+          "backgroundColor": "#0C0C0E",
+          "imageWidth": 180
+        }
+      ],
+      "./plugins/with-release-signing",
+      "./plugins/with-gradle-project-name"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
