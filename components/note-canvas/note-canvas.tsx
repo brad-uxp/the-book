@@ -396,11 +396,20 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
   );
 
   /**
+   * Cards removed for being empty. A card pulled out of another's handle is
+   * still having its connection written when it is discarded, and that write
+   * can lose the race to the DELETE — which is expected here, not a failure
+   * to tell anyone about.
+   */
+  const discarded = useRef(new Set<string>());
+
+  /**
    * Removes a card that was never written in — no toast, no undo. An empty
    * card is a smudge that would otherwise have to be hunted down by hand.
    */
   const discardIdea = useCallback(
     (id: string) => {
+      discarded.current.add(id);
       const timer = contentTimers.current.get(id);
       if (timer) clearTimeout(timer);
       contentTimers.current.delete(id);
@@ -486,6 +495,7 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
       postIdea(idea)
         .then(() => (connection ? postConnection(connection) : undefined))
         .catch((err) => {
+          if (discarded.current.has(idea.id)) return;
           console.error(err);
           setNodes((prev) => prev.filter((n) => n.id !== idea.id));
           setEdges((prev) =>
@@ -513,13 +523,20 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
   // ── Deleting, with undo ──────────────────────────────────────────────────
 
   const restore = useCallback(
-    (ideas: CanvasIdea[], connections: CanvasConnection[]) => {
+    (
+      ideas: CanvasIdea[],
+      connections: CanvasConnection[],
+      deleted: Promise<unknown>
+    ) => {
       for (const idea of ideas) latestContent.current.set(idea.id, idea.content);
       setNodes((prev) => [...prev, ...ideas.map((idea) => toNode(idea))]);
       setEdges((prev) => [...prev, ...connections.map(toEdge)]);
 
       // Same ids as before: undo is the rows coming back, not copies of them.
-      Promise.all(ideas.map(postIdea))
+      // After the delete has landed — a quick Undo would otherwise race it,
+      // re-create the row, and then watch the DELETE remove it again.
+      deleted
+        .then(() => Promise.all(ideas.map(postIdea)))
         .then(() => Promise.all(connections.map(postConnection)))
         .catch((err) => {
           console.error(err);
@@ -587,7 +604,8 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         })
       );
 
-      Promise.allSettled(requests).then((results) => {
+      const settled = Promise.allSettled(requests);
+      settled.then((results) => {
         if (results.every((r) => r.status === "fulfilled")) return;
         console.error("[note-canvas] delete failed", results);
         toast.error("Could not delete — reload to see what is saved");
@@ -608,7 +626,10 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
 
       toast(label, {
         duration: UNDO_MS,
-        action: { label: "Undo", onClick: () => restore(ideas, connections) },
+        action: {
+          label: "Undo",
+          onClick: () => restore(ideas, connections, settled),
+        },
       });
     },
     [base, contentOf, restore, whenCreated]
