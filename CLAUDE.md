@@ -13,7 +13,7 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Job diario in-app** a las 13:00 UTC (`instrumentation.ts` → `lib/daily-scheduler.ts`). No hay cron de plataforma; `/api/cron/daily` es el disparo manual, con `CRON_SECRET`.
 - **No hay email ni auth mobile** — existieron y se eliminaron. Si ves menciones a Nodemailer, Gmail, `jose` o `/api/auth/mobile`, son de una versión anterior.
 
-## Convenciones que no se negocian (código = inglés, copy UI = español)
+## Convenciones que no se negocian (código = inglés, copy UI = inglés)
 
 - **Dinero en centavos** (integer) siempre — nunca floats. Formateo en `lib/currency.ts`.
 - **Timezone** `America/Montevideo` (UTC-3); fechas guardadas como UTC midnight. Utilidades en `lib/dates.ts`. Day-clamping (pay_day=31 en feb → 28/29).
@@ -22,6 +22,8 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Audit logs** fire-and-forget (nunca bloquean el request), nombre de entidad desnormalizado (`lib/audit.ts`).
 - **Soft-delete** vía `deleted_at` en pagos de suscripción (permite undo).
 - **Settings singleton** (una fila global). **Auth single-user**: `ALLOWED_EMAILS` en `auth.ts`.
+- **Copy de la UI en inglés**, en la web y en la app mobile (decidido el 2026-09-27; antes era español).
+- **Números del dashboard** solo en `lib/metrics.ts` (puro, testeado contra la implementación anterior). El dashboard y `GET /api/metrics` (la app mobile) lo usan; nunca dupliques una fórmula. Las consultas viven en `lib/metrics-server.ts`.
 - **Prisma client** singleton en `lib/db.ts`.
 
 ## Comandos de desarrollo

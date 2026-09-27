@@ -60,7 +60,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 45 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 46 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -94,7 +94,9 @@ TheBook/
 │   ├── canvas-palette.ts             # Paleta de colores de las tarjetas (testeada)
 │   ├── notes.ts                      # Formatos de nota y conversiones permitidas (testeada)
 │   ├── note-canvas.ts                # Tamaños y límites de las ideas (testeada)
-│   ├── mentions.ts                   # Menciones en HTML: búsqueda y conteo (testeada)
+│   ├── mentions.ts                   # Menciones en HTML: búsqueda, conteo, sufijo de borradas (testeada)
+│   ├── metrics.ts                    # Todos los números del dashboard y de /api/metrics (puro, testeado)
+│   ├── metrics-server.ts             # Las consultas que alimentan lib/metrics
 │   ├── daily-scheduler.ts            # Scheduler in-app
 │   ├── dates.ts                      # Fechas UTC + timezone Montevideo (testeada)
 │   ├── db.ts                         # Singleton de Prisma Client
@@ -126,7 +128,7 @@ guardan como **UTC midnight**.
 
 | Modelo             | Descripción                                                              |
 | ------------------ | ------------------------------------------------------------------------ |
-| `Settings`         | Configuración global (singleton, `CHECK (id = 'singleton')`)             |
+| `Settings`         | Configuración global (singleton, `CHECK (id = 'singleton')`): días de anticipación de las alertas y `corporate_excluded_client_ids`, los clientes que quedan fuera de la rentabilidad corporativa (dashboard y `/api/metrics`) |
 | `PushSubscription` | **Inactiva** desde 2026-09-27: suscripciones del web push retirado. Nada la lee ni escribe; el plan de la app React Native decide si se borra (push nativo usa tokens con otra forma) |
 
 ### Suscripciones
@@ -160,6 +162,10 @@ guardan como **UTC midnight**.
 > del ingreso) y la vista de referidores usa `Math.abs` (total adeudado). Las dos
 > lecturas son correctas bajo esa convención; una factura con fee positivo las
 > rompería en direcciones opuestas.
+
+> **Past due** (derivado, no se guarda): una factura `sent` cuyo vencimiento —siempre el
+> último día del mes— ya pasó en Montevideo (`isPastDue` en `lib/metrics.ts`). Se marca
+> en la tabla de facturas y se cuenta en la tarjeta "awaiting payment".
 
 ### Gastos e Issues
 
@@ -200,7 +206,7 @@ editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (45)
+## Rutas API (46)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]` y `cron/daily`, que se protege con `CRON_SECRET`.
@@ -255,6 +261,7 @@ no se puede revocar.
 | Mark all read     | POST            | `/api/notifications/mark-all-read`   |
 | Audit Logs        | GET             | `/api/audit-logs`                    |
 | Settings          | GET/PATCH       | `/api/settings`                      |
+| Metrics           | GET             | `/api/metrics`                       |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---
@@ -300,6 +307,7 @@ No hay entrega push desde el 2026-09-27; vuelve con la app React Native.
 | Validación                  | Zod en toda API, errores con `.flatten()`                              |
 | Autorización                | `requireSession()` en cada handler, además del `proxy.ts`              |
 | Settings singleton          | Una fila, con CHECK en la base                                         |
+| Métricas                    | `lib/metrics.ts` único: dashboard y `/api/metrics` usan las mismas fórmulas |
 | Auth single-user            | `ALLOWED_EMAILS` en `auth.ts`, re-chequeado en cada refresh del token  |
 
 ---

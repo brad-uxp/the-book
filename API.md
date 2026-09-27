@@ -12,7 +12,7 @@ Two credentials are accepted, checked in every handler:
 | Browser | NextAuth session cookie (Google OAuth) |
 | Machine | `Authorization: Bearer tb_…` |
 
-Create a token in **Settings → Tokens de API**. It is shown once and never
+Create a token in **Settings → API tokens**. It is shown once and never
 again — only its SHA-256 is stored. Tokens expire in 90 days by default and can
 be revoked instantly from the same screen.
 
@@ -66,7 +66,10 @@ keeps the history.
 
 `invoice_number` is optional but unique, case-insensitive. `fee_cents` is the
 referrer commission and is stored **negative** — it is a deduction, and the
-dashboard adds it to the amount.
+dashboard adds it to the amount. `status` is `pending`, `accounting`, `sent` or
+`paid`; `due_date` is always the last day of a month. An invoice is **past
+due** when it is `sent` and its due date is before today (Montevideo) —
+derived, not a stored field.
 
 ### Issues (tasks and notes)
 | Method | Path |
@@ -161,6 +164,56 @@ Payments are soft-deleted, so a delete is undoable.
 | GET/PATCH | `/api/notifications` · GET `/api/notifications/count` · POST `/api/notifications/mark-all-read` |
 | GET | `/api/audit-logs` |
 | GET/PATCH | `/api/settings` |
+
+`PATCH /api/settings` writes only the fields sent: `days_before_subscription`,
+`days_before_salary`, `days_before_invoice` (0–30) and
+`corporate_excluded_client_ids` — the clients left out of corporate
+profitability, replaced as a whole. Every id must be an existing client
+(`400` otherwise). Changes are audited.
+
+### Metrics
+| Method | Path |
+|---|---|
+| GET | `/api/metrics?period=this_year` (default) · `last_12_months` · `all_time` |
+| GET | `/api/metrics?month=YYYY-MM` — one month instead of a preset |
+
+The dashboard's numbers, computed by the same code. `period` and `month`
+together are a `400`. `all_time` is the dashboard's: the 13 most recent
+months, trimmed of empty months at both ends. All amounts are integer cents.
+
+```json
+{
+  "period": { "kind": "this_year", "months": ["2026-01", "…", "2026-09"] },
+  "today": "2026-09-27",
+  "awaiting_payment": { "count": 7, "net_cents": 1845000, "past_due_count": 2 },
+  "income_cents": 0,
+  "expenses": {
+    "salary_cents": 0, "subscriptions_cents": 0,
+    "subscriptions_work_cents": 0, "subscriptions_personal_cents": 0,
+    "subscriptions_essential_cents": 0,
+    "other_cents": 0, "other_work_cents": 0, "other_personal_cents": 0,
+    "total_cents": 0
+  },
+  "net_income_cents": 0,
+  "monthly_averages": { "months": 9, "salary_cents": 0, "…": 0, "net_income_cents": 0 },
+  "corporate": {
+    "income_cents": 0, "excluded_income_cents": 0,
+    "excluded_clients": [{ "id": "…", "name": "…", "color_hex": "#…" }],
+    "work_expenses_cents": 0, "net_cents": 0,
+    "partner_a_cents": 0, "partner_b_cents": 0,
+    "split": { "partner_a": 0.6, "partner_b": 0.4 }
+  },
+  "upcoming": { "days": 5, "payments": [], "invoices": [] }
+}
+```
+
+- **Income** is paid invoices (amount + fee) in the months of their due date.
+  Payments count in the month they were paid.
+- **Net income** = income − (salaries + subscriptions + other expenses).
+- **Corporate** = income without the excluded clients (Settings) − work
+  expenses (salaries + work subscriptions + work other expenses), split
+  60/40 between the partners, rounded to the cent as the dashboard shows it.
+- **Awaiting payment** and **upcoming** are live and ignore the period.
 
 ## Example
 
