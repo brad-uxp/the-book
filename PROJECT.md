@@ -104,6 +104,7 @@ TheBook/
 │   ├── run-daily.ts                  # Orquestación del job diario
 │   ├── validations.ts                # Esquemas Zod
 │   └── utils.ts
+├── brand/                            # Marca book.: SVG maestros, PNG de app, spec y fuentes (ver brand/README.md)
 ├── prisma/
 │   ├── schema.prisma
 │   ├── migrations/                   # Migraciones escritas a mano
