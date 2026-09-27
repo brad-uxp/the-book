@@ -10,6 +10,8 @@ const config = [
   {
     ignores: [
       "app/generated/**",
+      // The React Native app has its own toolchain and lint setup.
+      "mobile/**",
       ".next/**",
       "public/sw.js",
       "public/swe-worker-*.js",

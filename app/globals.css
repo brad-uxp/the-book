@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* The React Native app is not styled by Tailwind; don't scan it for classes. */
+@source not "../mobile";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

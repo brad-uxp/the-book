@@ -15,7 +15,8 @@ export default defineConfig({
     // Cuando se agreguen tests de componentes React, cambiar a jsdom/happy-dom.
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: ["node_modules", ".next", "app/generated"],
+    // mobile/ is the React Native app: its own project, its own test runner.
+    exclude: ["node_modules", ".next", "app/generated", "mobile/**"],
     coverage: {
       provider: "v8",
       include: ["lib/**/*.ts", "app/api/**/*.ts"],
