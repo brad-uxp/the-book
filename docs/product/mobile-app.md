@@ -1,6 +1,7 @@
 # App mobile de book
 
-> Estado: **plan aprobado** (2026-09-27). Fase 0 en curso.
+> Estado: **fase 1 construida** (2026-09-27) en la rama `feat/mobile-phase1`, en `dev`.
+> **No va a producción** hasta la revisión de seguridad del login mobile.
 >
 > - Prototipo de estructura aprobado: https://claude.ai/artifact/SB2xQjdXzmKYnW2xgZQ7C6
 > - Estudio de logo (elegida la **F · Full stop**, `book.` con punto violeta): https://claude.ai/artifact/ExsVzSCnKmK5DGUYeS97pD
@@ -24,9 +25,9 @@ demás.
 | **Notas sin conexión**: SQLite en el teléfono y sincronización propia (traer cambios desde un momento; empujar una cola de cambios con UUIDs generados en el teléfono). Gana la última escritura por fila; en conflicto sobre el texto de una nota, la otra versión se guarda como copia. | Escribir sin señal era un requisito. Un solo usuario con pocos datos no justifica un servicio de sync externo. |
 | **Editor**: TipTap dentro de una WebView (10tap-editor), empaquetado en la app, con las mismas extensiones de @persona y #factura que la web. | Mismo editor y mismo HTML que la web. Al ir empaquetado, funciona sin conexión. |
 | **Canvas**: Gesture Handler + Reanimated, con los gestos del prototipo. Zoom solo por pinch; doble toque con dos dedos para encuadrar. | 60 fps en el hilo de UI; los gestos ya se probaron en el prototipo. |
-| **Login**: Google Sign-In nativo. El servidor verifica el ID token de Google contra `ALLOWED_EMAILS` y emite un `ApiToken`, revocable desde Settings. | Reusa los tokens que ya existen. ⚠️ Reabre el login mobile que se eliminó: **revisión de seguridad antes de producción**. |
+| **Login**: Google Sign-In nativo (Credential Manager de Android). El servidor verifica el ID token de Google contra `ALLOWED_EMAILS` y emite un `ApiToken`, revocable desde Settings. Detalle en [Login](#login). | Reusa los tokens que ya existen. ⚠️ Reabre el login mobile que se eliminó: **revisión de seguridad antes de producción**. |
 | **Copy de la UI en inglés**, web y app. | Una sola lengua en las dos plataformas. |
-| **Mismo repo**: la app va en `mobile/` como miembro del workspace de pnpm; la web queda en la raíz. | Railway no cambia. La app reusa la lógica pura de `lib/` (centavos, fechas, reglas de notas, geometría del canvas, métricas). |
+| **Mismo repo, proyecto pnpm aparte**: la app va en `mobile/` con su propio lockfile (`mobile/pnpm-workspace.yaml` corta ahí); la web queda en la raíz. La raíz excluye `mobile/` de tsconfig, ESLint, Vitest y Tailwind. | Railway instala solo el lockfile de la raíz, sin ninguna dependencia de la app. La app reusa la lógica pura de `lib/` vía `@shared/*` (solo módulos sin imports: issues, notes, mentions, currency). |
 
 ## Fases
 
@@ -52,6 +53,15 @@ Cada fase termina con algo que se instala y se usa.
 
 **Backend:** `POST` de intercambio de sesión mobile (ID token de Google → `ApiToken`).
 **Se ve:** tu lista de notas real en el teléfono.
+
+**Hecho:** Notes lista los issues de `GET /api/issues` (tarjetas compactas, filtros All /
+Notes / Canvas / Tasks con conteos, archivados ocultos con la regla de `lib/issues.ts`,
+cliente, estado y vencimiento de las tasks, canvas marcado, pull to refresh). Invoices,
+Salaries y Metrics dicen honestamente que llegan en la fase 4. Salir, desde el menú de la
+cuenta, revoca el token del teléfono. Sin FAB todavía: crear notas es de la fase 2.
+
+**Pendiente para la fase 5:** el ícono monocromo de las notificaciones. En el SDK 57 solo
+se configura con el plugin de `expo-notifications`, que trae FCM, y eso es de esa fase.
 
 ### 2 · Notas y sincronización
 
@@ -90,6 +100,47 @@ Estas tres tabs muestran lo último sincronizado cuando no hay señal.
   schema de Prisma, en el deploy siguiente la migración.
 
 **Se ve:** avisos de vencimientos en el teléfono.
+
+## Login
+
+1. La app pide un **nonce** a `POST /api/mobile/nonce` (aleatorio, de un solo uso, vive 5
+   minutos, en memoria: hay una sola réplica).
+2. Credential Manager abre la hoja de Google y devuelve un **ID token** emitido para el
+   cliente OAuth **web** de book (`AUTH_GOOGLE_ID`) y con ese nonce adentro. Los clientes
+   OAuth de Android no aparecen en el código: Google solo los usa para comprobar que el APK
+   es `com.bolstro.book` firmado con un certificado registrado.
+3. `POST /api/mobile/sign-in` verifica con `jose` la firma contra las claves públicas de
+   Google, el emisor, `aud === AUTH_GOOGLE_ID`, la expiración, `email_verified` y el
+   allowlist, y consume el nonce. Si todo pasa, emite un `ApiToken` (se guarda solo el
+   hash) llamado `mobile · <modelo del teléfono>`, que **vence a los 90 días**, y lo audita
+   con el email verificado. El teléfono lo guarda en `expo-secure-store` (Keystore).
+4. Salir llama a `POST /api/mobile/sign-out`, que revoca solo ese token. También se puede
+   revocar desde Settings → API tokens.
+
+**Límites por IP** (en memoria): 10 intentos por minuto, 5 fallos en 15 minutos, 20 nonces
+por minuto; y un tope global de 50 fallos por hora.
+
+**Google Cloud**: proyecto `uxprogramming-crm`. Hay dos clientes OAuth de Android para
+`com.bolstro.book`: el de debug (SHA-1 `AF:25:E5:…:38:E6`, `~/.android/debug.keystore`) y
+el de release (SHA-1 `01:D7:8A:…:D1:79`). Un `DEVELOPER_ERROR` al entrar es casi siempre un
+SHA-1 o un package que no coincide.
+
+## Compilar
+
+Todo en local con el SDK de Android Studio y un **JDK 21** (Temurin, en
+`~/Library/Java/JavaVirtualMachines`; los scripts lo buscan con `/usr/libexec/java_home -v 21`).
+El JDK 25 que trae Android Studio no sirve: imprime un aviso de acceso nativo que el
+plugin de Android de React Native 0.86 toma por error, y el build nativo falla.
+`mobile/android/` se genera y no se versiona. Desde `mobile/`:
+
+- `pnpm android`: debug en el emulador o el teléfono conectado. Con
+  `EXPO_PUBLIC_API_URL=http://10.0.2.2:3001 pnpm start` habla con la web local (solo en
+  debug, que además muestra un formulario "Use API token" para no depender de Google).
+- `pnpm android:release`: APK firmado en `~/Downloads/book-<versión>-<code>.apk`. La clave
+  es `~/.android/book-release.jks` (alias `book`); la contraseña sale del Llavero de macOS
+  (`book. Android release keystore`) directo al entorno de Gradle. El script se niega a
+  copiar el APK si el certificado no es el de release. **Sin esa clave no se pueden
+  publicar actualizaciones: guarda un respaldo fuera de esta máquina.**
 
 ## Riesgos
 

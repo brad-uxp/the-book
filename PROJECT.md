@@ -104,9 +104,12 @@ TheBook/
 │   ├── db.ts                         # Singleton de Prisma Client
 │   ├── r2.ts                         # Cloudflare R2 + validación de object keys
 │   ├── run-daily.ts                  # Orquestación del job diario
+│   ├── google-id-token.ts            # Verificación del ID token de Google del login mobile (testeada)
+│   ├── mobile-auth.ts  mobile-nonce.ts  # Límites, IP y nonces de un solo uso del login mobile (testeadas)
 │   ├── validations.ts                # Esquemas Zod
 │   └── utils.ts
 ├── brand/                            # Marca book.: SVG maestros, PNG de app, spec y fuentes (ver brand/README.md)
+├── mobile/                           # App Android (Expo), proyecto pnpm aparte — ver mobile/AGENTS.md y docs/product/mobile-app.md
 ├── prisma/
 │   ├── schema.prisma
 │   ├── migrations/                   # Migraciones escritas a mano
