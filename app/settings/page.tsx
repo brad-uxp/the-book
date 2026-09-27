@@ -25,7 +25,7 @@ export default async function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Configuración de notificaciones y correo electrónico.
+          Notifications, corporate profitability and API access.
         </p>
       </div>
       <SettingsForm initial={initial} />

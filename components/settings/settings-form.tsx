@@ -41,7 +41,7 @@ export function SettingsForm({ initial }: Props) {
   const validateDays = (val: string, field: keyof FormFields, label: string): boolean => {
     const n = parseInt(val, 10);
     if (isNaN(n) || n < 0 || n > 30) {
-      setError(field, { message: `${label}: número entre 0 y 30` });
+      setError(field, { message: `${label}: a number from 0 to 30` });
       return false;
     }
     return true;
@@ -49,9 +49,9 @@ export function SettingsForm({ initial }: Props) {
 
   const validate = (values: FormFields): boolean => {
     let ok = true;
-    if (!validateDays(values.days_before_subscription, "days_before_subscription", "Subscripciones")) ok = false;
-    if (!validateDays(values.days_before_salary,       "days_before_salary",       "Salarios"))       ok = false;
-    if (!validateDays(values.days_before_invoice,      "days_before_invoice",      "Facturas"))       ok = false;
+    if (!validateDays(values.days_before_subscription, "days_before_subscription", "Subscriptions")) ok = false;
+    if (!validateDays(values.days_before_salary,       "days_before_salary",       "Salaries"))       ok = false;
+    if (!validateDays(values.days_before_invoice,      "days_before_invoice",      "Invoices"))       ok = false;
     return ok;
   };
 
@@ -82,15 +82,15 @@ export function SettingsForm({ initial }: Props) {
       {/* Notification timing */}
       <div className="rounded-md border bg-card p-6 space-y-4">
         <div>
-          <h2 className="text-sm font-semibold">Anticipación de notificaciones</h2>
+          <h2 className="text-sm font-semibold">Notification timing</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Con cuántos días de anticipación enviar cada tipo de alerta.
+            How many days ahead to send each kind of alert.
           </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-1.5">
-            <Label htmlFor="days_before_subscription">Subscripciones</Label>
+            <Label htmlFor="days_before_subscription">Subscriptions</Label>
             <Input
               id="days_before_subscription"
               type="number"
@@ -103,11 +103,11 @@ export function SettingsForm({ initial }: Props) {
                 {errors.days_before_subscription.message}
               </p>
             )}
-            <p className="text-xs text-muted-foreground">días antes</p>
+            <p className="text-xs text-muted-foreground">days before</p>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="days_before_salary">Salarios</Label>
+            <Label htmlFor="days_before_salary">Salaries</Label>
             <Input
               id="days_before_salary"
               type="number"
@@ -120,11 +120,11 @@ export function SettingsForm({ initial }: Props) {
                 {errors.days_before_salary.message}
               </p>
             )}
-            <p className="text-xs text-muted-foreground">días antes · agrupados</p>
+            <p className="text-xs text-muted-foreground">days before · grouped</p>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="days_before_invoice">Facturas</Label>
+            <Label htmlFor="days_before_invoice">Invoices</Label>
             <Input
               id="days_before_invoice"
               type="number"
@@ -137,14 +137,14 @@ export function SettingsForm({ initial }: Props) {
                 {errors.days_before_invoice.message}
               </p>
             )}
-            <p className="text-xs text-muted-foreground">días antes · 0 = hoy</p>
+            <p className="text-xs text-muted-foreground">days before · 0 = same day</p>
           </div>
         </div>
       </div>
 
       <Button type="submit" disabled={saving}>
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Guardar cambios
+        Save changes
       </Button>
     </form>
   );

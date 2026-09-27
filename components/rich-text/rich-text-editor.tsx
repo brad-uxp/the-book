@@ -33,6 +33,7 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { deletedMentionLabel } from "@/lib/mentions";
 import { InvoiceMention, PersonMention } from "./mention-extensions";
 import { useMentionData } from "./mention-data";
 import {
@@ -705,15 +706,18 @@ export function RichTextEditor({
             });
             changed = true;
           }
-        } else if (!node.attrs.deleted) {
-          // Entity was deleted — mark chip
-          const deletedLabel = node.attrs.label.replace(/ \(eliminado\)$/, "") + " (eliminado)";
-          tr.setNodeMarkup(pos, undefined, {
-            ...node.attrs,
-            label: deletedLabel,
-            deleted: true,
-          });
-          changed = true;
+        } else {
+          // Entity was deleted — mark the chip, and bring an older
+          // " (eliminado)" to the current suffix.
+          const deletedLabel = deletedMentionLabel(node.attrs.label);
+          if (!node.attrs.deleted || node.attrs.label !== deletedLabel) {
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              label: deletedLabel,
+              deleted: true,
+            });
+            changed = true;
+          }
         }
       }
     });
@@ -739,14 +743,16 @@ export function RichTextEditor({
             });
             changed = true;
           }
-        } else if (!node.attrs.deleted) {
-          const deletedLabel = node.attrs.label.replace(/ \(eliminado\)$/, "") + " (eliminado)";
-          tr.setNodeMarkup(pos, undefined, {
-            ...node.attrs,
-            label: deletedLabel,
-            deleted: true,
-          });
-          changed = true;
+        } else {
+          const deletedLabel = deletedMentionLabel(node.attrs.label);
+          if (!node.attrs.deleted || node.attrs.label !== deletedLabel) {
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              label: deletedLabel,
+              deleted: true,
+            });
+            changed = true;
+          }
         }
       }
     });

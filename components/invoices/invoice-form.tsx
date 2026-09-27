@@ -145,7 +145,7 @@ export function InvoiceForm({
       return;
     }
     if (file.size > MAX_PDF_BYTES) {
-      setFileError("El archivo supera los 10 MB");
+      setFileError("The file is larger than 10 MB");
       return;
     }
     setFileError(null);
@@ -468,7 +468,7 @@ export function InvoiceForm({
             <p className="text-sm text-destructive">{fileError}</p>
           ) : hasExistingFile && !pendingFile ? (
             <p className="text-xs text-muted-foreground">
-              Ya hay un archivo cargado. Sube uno nuevo para reemplazarlo.
+              A file is already attached. Upload a new one to replace it.
             </p>
           ) : null}
         </FormItem>

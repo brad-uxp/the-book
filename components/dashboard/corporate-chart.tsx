@@ -899,7 +899,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
             <div className="flex gap-6">
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Socio A · 60%
+                  Partner A · 60%
                 </p>
                 <p className="mt-1 text-base font-semibold tabular-nums leading-none">
                   {formatCents(Math.round(cumulativeCorporateNet * PARTNER_SPLIT.a))}
@@ -907,7 +907,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
               </div>
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Socio B · 40%
+                  Partner B · 40%
                 </p>
                 <p className="mt-1 text-base font-semibold tabular-nums leading-none">
                   {formatCents(Math.round(cumulativeCorporateNet * PARTNER_SPLIT.b))}

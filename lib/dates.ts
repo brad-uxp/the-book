@@ -88,7 +88,7 @@ export function formatDate(date: Date | string): string {
 export function formatDateLong(date: Date | string): string {
   const str = typeof date === "string" ? date : date.toISOString();
   const [year, month, day] = str.slice(0, 10).split("-").map(Number);
-  return format(new Date(year, month - 1, day), "d 'de' MMMM yyyy");
+  return format(new Date(year, month - 1, day), "d MMMM yyyy");
 }
 
 /**

@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { countMentions, mentionNeedle, plainTextSnippet } from "./mentions";
+import {
+  countMentions,
+  deletedMentionLabel,
+  mentionNeedle,
+  plainTextSnippet,
+  stripDeletedSuffix,
+} from "./mentions";
 
 const person = (id: string) =>
   `<span class="mention" data-mention-id="${id}" data-mention-label="x">x</span>`;
@@ -69,5 +75,23 @@ describe("plainTextSnippet", () => {
 
   it("un nodo vacío da un texto vacío", () => {
     expect(plainTextSnippet("<p></p>")).toBe("");
+  });
+});
+
+describe("sufijo de mención borrada", () => {
+  it("marca una mención borrada con (deleted)", () => {
+    expect(deletedMentionLabel("Ana Pérez")).toBe("Ana Pérez (deleted)");
+  });
+  it("una nota vieja con (eliminado) pasa al sufijo nuevo, sin duplicar", () => {
+    expect(deletedMentionLabel("Ana Pérez (eliminado)")).toBe("Ana Pérez (deleted)");
+  });
+  it("marcar dos veces no agrega un segundo sufijo", () => {
+    expect(deletedMentionLabel(deletedMentionLabel("Ana"))).toBe("Ana (deleted)");
+  });
+  it("quita sufijos acumulados de ambas versiones", () => {
+    expect(stripDeletedSuffix("Inv 0142 (eliminado) (deleted)")).toBe("Inv 0142");
+  });
+  it("no toca un nombre que solo contiene la palabra", () => {
+    expect(stripDeletedSuffix("Deleted Scenes Ltd")).toBe("Deleted Scenes Ltd");
   });
 });

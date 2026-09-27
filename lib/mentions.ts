@@ -74,3 +74,32 @@ export function plainTextSnippet(html: string, max = 60): string {
     .trim();
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
+
+/**
+ * The word a mention chip carries once its person or invoice is gone.
+ *
+ * The label is written into the stored HTML, so older notes still say
+ * " (eliminado)" from when the UI was in Spanish. Both are recognised and
+ * replaced, so a note is normalised the next time it is opened and a chip
+ * never ends up with two suffixes.
+ */
+export const DELETED_MENTION_SUFFIX = " (deleted)";
+const DELETED_SUFFIXES = [" (deleted)", " (eliminado)"];
+
+export function stripDeletedSuffix(label: string): string {
+  let out = label;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const suffix of DELETED_SUFFIXES) {
+      if (out.endsWith(suffix)) {
+        out = out.slice(0, -suffix.length);
+        changed = true;
+      }
+    }
+  }
+  return out;
+}
+
+export function deletedMentionLabel(label: string): string {
+  return stripDeletedSuffix(label) + DELETED_MENTION_SUFFIX;
+}

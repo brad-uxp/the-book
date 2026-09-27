@@ -178,7 +178,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
   const uploadInvoicePdf = async (invoiceId: string, file: File): Promise<string | null> => {
     const urlRes = await fetch(`/api/invoices/${invoiceId}/upload-url`, { method: "POST" });
     if (!urlRes.ok) {
-      alert("No se pudo obtener URL de subida");
+      alert("Could not get an upload URL");
       return null;
     }
     const { uploadUrl, key } = (await urlRes.json()) as { uploadUrl: string; key: string };
@@ -199,7 +199,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
       body: JSON.stringify({ file_key: key }),
     });
     if (!patchRes.ok) {
-      alert("Error guardando referencia del archivo");
+      alert("Could not save the file reference");
       return null;
     }
     return key;
@@ -283,7 +283,7 @@ export function InvoicesTable({ initialData, initialClients, initialReferrers }:
       return;
     }
     if (file.size > MAX_PDF_BYTES) {
-      alert("El archivo supera los 10 MB");
+      alert("The file is larger than 10 MB");
       return;
     }
     setUploading(true);

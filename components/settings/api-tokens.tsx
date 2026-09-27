@@ -34,10 +34,10 @@ interface ApiToken {
 const DEFAULT_EXPIRY_DAYS = 90;
 
 function statusOf(t: ApiToken): { label: string; variant: "default" | "secondary" | "destructive" } {
-  if (t.revoked_at) return { label: "Revocado", variant: "destructive" };
+  if (t.revoked_at) return { label: "Revoked", variant: "destructive" };
   if (t.expires_at && new Date(t.expires_at) <= new Date())
-    return { label: "Expirado", variant: "destructive" };
-  return { label: "Activo", variant: "default" };
+    return { label: "Expired", variant: "destructive" };
+  return { label: "Active", variant: "default" };
 }
 
 export function ApiTokens() {
@@ -58,7 +58,7 @@ export function ApiTokens() {
 
   const create = async () => {
     if (!name.trim()) {
-      toast.error("Ponele un nombre al token");
+      toast.error("Give the token a name");
       return;
     }
     setCreating(true);
@@ -73,7 +73,7 @@ export function ApiTokens() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error?.formErrors?.[0] ?? "No se pudo crear el token");
+        toast.error(err.error?.formErrors?.[0] ?? "Could not create the token");
         return;
       }
       const created = await res.json();
@@ -89,10 +89,10 @@ export function ApiTokens() {
   const revoke = async (id: string) => {
     const res = await fetch(`/api/settings/tokens/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      toast.error("No se pudo revocar");
+      toast.error("Could not revoke the token");
       return;
     }
-    toast.success("Token revocado");
+    toast.success("Token revoked");
     refresh();
   };
 
@@ -100,16 +100,17 @@ export function ApiTokens() {
     if (!freshToken) return;
     await navigator.clipboard.writeText(freshToken);
     setCopied(true);
-    toast.success("Copiado");
+    toast.success("Copied");
   };
 
   return (
     <div className="rounded-md border bg-card p-6 space-y-4 max-w-lg">
       <div>
-        <h2 className="text-sm font-semibold">Tokens de API</h2>
+        <h2 className="text-sm font-semibold">API tokens</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Credenciales para clientes que no son el navegador. Tienen el mismo
-          acceso que vos, así que revocá el que no uses.
+          Credentials for clients other than this browser, such as the mobile
+          app or scripts. They have the same access as you, so revoke any you
+          no longer use.
         </p>
       </div>
 
@@ -117,7 +118,7 @@ export function ApiTokens() {
       {freshToken && (
         <div className="rounded-md border border-amber-500/50 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
           <p className="text-xs font-medium">
-            Copialo ahora — no se vuelve a mostrar.
+            Copy it now. It won’t be shown again.
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate rounded bg-background px-2 py-1.5 text-xs font-mono">
@@ -138,14 +139,14 @@ export function ApiTokens() {
             className="h-7 text-xs"
             onClick={() => setFreshToken(null)}
           >
-            Ya lo guardé
+            I’ve saved it
           </Button>
         </div>
       )}
 
       <div className="flex items-end gap-2">
         <div className="flex-1 space-y-1.5">
-          <Label htmlFor="token_name">Nombre</Label>
+          <Label htmlFor="token_name">Name</Label>
           <Input
             id="token_name"
             placeholder="claude-work-session"
@@ -154,7 +155,7 @@ export function ApiTokens() {
           />
         </div>
         <div className="w-24 space-y-1.5">
-          <Label htmlFor="token_days">Días</Label>
+          <Label htmlFor="token_days">Days</Label>
           <Input
             id="token_days"
             type="number"
@@ -170,13 +171,13 @@ export function ApiTokens() {
           ) : (
             <KeyRound className="h-4 w-4" />
           )}
-          <span className="ml-1.5">Crear</span>
+          <span className="ml-1.5">Create</span>
         </Button>
       </div>
 
       {tokens.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          Todavía no hay tokens.
+          No tokens yet.
         </p>
       ) : (
         <ul className="divide-y rounded-md border">
@@ -196,9 +197,9 @@ export function ApiTokens() {
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {t.last_used_at
-                      ? `Último uso: ${formatDate(t.last_used_at)}`
-                      : "Sin uso todavía"}
-                    {t.expires_at ? ` · Expira ${formatDate(t.expires_at)}` : ""}
+                      ? `Last used ${formatDate(t.last_used_at)}`
+                      : "Never used"}
+                    {t.expires_at ? ` · Expires ${formatDate(t.expires_at)}` : ""}
                   </p>
                 </div>
 
@@ -216,16 +217,16 @@ export function ApiTokens() {
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Revocar “{t.name}”</AlertDialogTitle>
+                        <AlertDialogTitle>Revoke “{t.name}”?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Cualquier cliente que lo use deja de tener acceso al
-                          instante. No se puede deshacer.
+                          Anything using it loses access immediately. This
+                          can’t be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={() => revoke(t.id)}>
-                          Revocar
+                          Revoke
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
