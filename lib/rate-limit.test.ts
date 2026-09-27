@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { checkRateLimit, pruneRateLimits, resetRateLimits } from "./rate-limit";
+import {
+  checkRateLimit,
+  peekRateLimit,
+  pruneRateLimits,
+  recordRateLimitHit,
+  resetRateLimits,
+} from "./rate-limit";
 
 describe("checkRateLimit", () => {
   beforeEach(resetRateLimits);
@@ -67,5 +73,31 @@ describe("pruneRateLimits", () => {
     // "nuevo" sigue en su ventana original.
     expect(checkRateLimit("nuevo", t + 20_000, 2, 60_000).allowed).toBe(true);
     expect(checkRateLimit("nuevo", t + 20_000, 2, 60_000).allowed).toBe(false);
+  });
+});
+
+describe("peekRateLimit / recordRateLimitHit (límites de fallos)", () => {
+  beforeEach(() => resetRateLimits());
+
+  it("mirar no cuenta: sin hits siempre permite", () => {
+    for (let i = 0; i < 20; i++) expect(peekRateLimit("f", 0, 3).allowed).toBe(true);
+  });
+
+  it("bloquea al llegar al máximo de fallos registrados", () => {
+    for (let i = 0; i < 3; i++) recordRateLimitHit("f", 0, 60_000);
+    const v = peekRateLimit("f", 10_000, 3);
+    expect(v.allowed).toBe(false);
+    expect(v.retryAfterSeconds).toBe(50);
+  });
+
+  it("la ventana vence y vuelve a permitir", () => {
+    for (let i = 0; i < 3; i++) recordRateLimitHit("f", 0, 60_000);
+    expect(peekRateLimit("f", 60_000, 3).allowed).toBe(true);
+  });
+
+  it("un fallo después de vencida la ventana abre una nueva", () => {
+    for (let i = 0; i < 3; i++) recordRateLimitHit("f", 0, 60_000);
+    recordRateLimitHit("f", 70_000, 60_000);
+    expect(peekRateLimit("f", 70_000, 3)).toMatchObject({ allowed: true, remaining: 2 });
   });
 });

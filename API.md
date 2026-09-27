@@ -34,6 +34,31 @@ Every mutation is recorded in the audit log as `token:<name>`, distinct from
 the human's email. That is what makes "did I do this or did the agent?"
 answerable — visible under `/admin-logs`.
 
+### The mobile app's sign-in
+
+The Android app gets its token without the web: Google signs the user in on the
+phone and the server exchanges Google's ID token for an API token. Two public
+routes (no credential), one that needs the token:
+
+| Method | Path | |
+|---|---|---|
+| POST | `/api/mobile/nonce` | → `{ nonce, expires_at }`. Single use, 5 minutes. 20/minute per IP. |
+| POST | `/api/mobile/sign-in` | `{ id_token, device_name }` → `201 { token, token_id, name, expires_at, email }` |
+| POST | `/api/mobile/sign-out` | Bearer. Revokes the calling token — only itself. |
+
+Sign-in accepts the ID token only if its signature checks against Google's keys,
+`iss` is Google, `aud` is this server's web OAuth client, it has not expired,
+the email is verified and allowed, and its `nonce` claim is one issued above and
+not used before. The token it mints is named `mobile · <device_name>`, lasts
+90 days, shows up in **Settings → API tokens** and is revoked from there like any
+other.
+
+Errors: `400` malformed body · `401` anything about the token or the nonce
+(deliberately not more specific) · `403` a Google account that is not allowed ·
+`429` more than 10 attempts per minute from one IP, 5 failures per IP in 15
+minutes, or 50 failures overall in an hour, with `Retry-After` · `503` the server
+has no Google client configured.
+
 ## Conventions
 
 - **Money is integer cents.** `amount_cents: 150000` is $1,500.00. Never send

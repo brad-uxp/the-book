@@ -31,9 +31,11 @@
 - **NextAuth 5 (beta)** — autenticación con Google OAuth, single-user
 - **Cloudflare R2** (S3-compatible) — adjuntos de facturas vía URLs presignadas
 
-> **No hay email ni auth mobile.** Ambas funcionalidades existieron y fueron
-> eliminadas del producto. Si leés menciones a Nodemailer, Gmail SMTP, JWT con
-> `jose` o `POST /api/auth/mobile`, son de una versión anterior.
+> **No hay email.** Existió y se eliminó: Nodemailer y Gmail SMTP son de una
+> versión anterior. El **login mobile viejo** (`POST /api/auth/mobile`) también se
+> eliminó; el actual es otro: `/api/mobile/nonce` + `/api/mobile/sign-in`
+> (ID token de Google verificado con `jose`, nonce de un solo uso, allowlist) emiten
+> un `ApiToken`, y `/api/mobile/sign-out` lo revoca.
 >
 > **Tampoco hay PWA ni web push** desde el 2026-09-27: se quitaron a favor de una
 > app React Native, que traerá push nativo. Las notificaciones viven solo en la
@@ -207,10 +209,12 @@ editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (46)
+## Rutas API (49)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
-salvo `auth/[...nextauth]` y `cron/daily`, que se protege con `CRON_SECRET`.
+salvo `auth/[...nextauth]`, `cron/daily` (protegida con `CRON_SECRET`) y las dos
+de entrada de la app mobile, `mobile/nonce` y `mobile/sign-in`, que verifican el
+ID token de Google, un nonce de un solo uso y límites por IP.
 
 Se aceptan **dos credenciales**: la cookie de NextAuth (navegador) y
 `Authorization: Bearer tb_…` (máquinas). La referencia para clientes externos
@@ -263,6 +267,9 @@ no se puede revocar.
 | Audit Logs        | GET             | `/api/audit-logs`                    |
 | Settings          | GET/PATCH       | `/api/settings`                      |
 | Metrics           | GET             | `/api/metrics`                       |
+| Mobile nonce      | POST (público)  | `/api/mobile/nonce`                  |
+| Mobile sign-in    | POST (público)  | `/api/mobile/sign-in`                |
+| Mobile sign-out   | POST            | `/api/mobile/sign-out`               |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---

@@ -354,3 +354,17 @@ export const MetricsQuerySchema = z
   });
 
 export type MetricsQuery = z.infer<typeof MetricsQuerySchema>;
+
+// ─── Mobile sign-in ──────────────────────────────────────────────────────────
+
+/**
+ * POST /api/mobile/sign-in. The ID token is Google's; the nonce travels inside
+ * it, signed, so it is not a separate field. Bounded so a junk body cannot
+ * reach the JWT parser as megabytes.
+ */
+export const MobileSignInSchema = z.object({
+  id_token: z.string().min(1).max(4096),
+  device_name: z.string().trim().min(1).max(40).default("Android"),
+});
+
+export type MobileSignInInput = z.infer<typeof MobileSignInSchema>;

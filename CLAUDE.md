@@ -11,7 +11,7 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Autorización en dos capas**: `proxy.ts` (así se llama el middleware en Next 16) + `requireSession()` en cada handler. Ambos validan el email contra `ALLOWED_EMAILS`, no la mera presencia de `req.auth`.
 - **Cloudflare R2** para adjuntos de facturas. **Sin PWA ni web push** desde el 2026-09-27 (se viene una app React Native con push nativo); `public/sw.js` es solo el kill switch que desinstala el service worker viejo — ver su cabecera.
 - **Job diario in-app** a las 13:00 UTC (`instrumentation.ts` → `lib/daily-scheduler.ts`). No hay cron de plataforma; `/api/cron/daily` es el disparo manual, con `CRON_SECRET`.
-- **No hay email ni auth mobile** — existieron y se eliminaron. Si ves menciones a Nodemailer, Gmail, `jose` o `/api/auth/mobile`, son de una versión anterior.
+- **No hay email.** Existió y se eliminó: menciones a Nodemailer o Gmail son de una versión anterior. **El login mobile de antes (`/api/auth/mobile`) también se eliminó**; el de hoy es otro y vive en `/api/mobile/*` (ID token de Google verificado con `jose` + nonce de un solo uso → `ApiToken`). No los confundas.
 
 ## Convenciones que no se negocian (código = inglés, copy UI = inglés)
 

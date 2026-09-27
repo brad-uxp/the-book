@@ -1,6 +1,8 @@
 import { auth, isAllowedSession } from "@/auth";
 import { NextResponse } from "next/server";
 
+const MOBILE_PUBLIC_PATHS = new Set(["/api/mobile/nonce", "/api/mobile/sign-in"]);
+
 export const proxy = auth(async (req) => {
   const { pathname } = req.nextUrl;
 
@@ -10,6 +12,13 @@ export const proxy = auth(async (req) => {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/cron")
   ) {
+    return NextResponse.next();
+  }
+
+  // The mobile app's way in: it has no credential yet. Exact paths only — the
+  // handlers verify Google's ID token, a single-use nonce and rate limits.
+  // Everything else under /api/mobile (sign-out) needs a token like any route.
+  if (MOBILE_PUBLIC_PATHS.has(pathname)) {
     return NextResponse.next();
   }
 
