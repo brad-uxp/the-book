@@ -4,6 +4,18 @@
  */
 
 /**
+ * The only routes the proxy lets through without a credential for the app —
+ * it has none before signing in. Exact matches: a trailing slash, another
+ * case, an encoded variant or a sub-path is NOT public, and falls through to
+ * the auth gate (fail closed).
+ */
+const MOBILE_PUBLIC_PATHS = new Set(["/api/mobile/nonce", "/api/mobile/sign-in"]);
+
+export function isMobilePublicPath(pathname: string): boolean {
+  return MOBILE_PUBLIC_PATHS.has(pathname);
+}
+
+/**
  * How long a mobile API token lives. The same as a token made by hand in
  * Settings: a lost phone stops working on its own within three months, and
  * signing in again is one tap. Revoking from Settings, or signing out in the
@@ -11,38 +23,48 @@
  */
 export const MOBILE_TOKEN_DAYS = 90;
 
-export const SIGN_IN_LIMITS = {
-  /** Any sign-in request, per client IP. */
-  perIp: { max: 10, windowMs: 60_000 },
-  /** Failed sign-ins, per client IP. A real user fails rarely. */
-  failuresPerIp: { max: 5, windowMs: 15 * 60_000 },
-  /** Failed sign-ins from everywhere, so spreading across IPs doesn't help. */
-  failuresGlobal: { max: 50, windowMs: 60 * 60_000 },
-  /** Nonce requests, per client IP. */
-  noncesPerIp: { max: 20, windowMs: 60_000 },
-} as const;
-
-export const rateKeys = {
-  signIn: (ip: string) => `mobile:sign-in:${ip}`,
-  failIp: (ip: string) => `mobile:fail:${ip}`,
-  failGlobal: "mobile:fail:*",
-  nonce: (ip: string) => `mobile:nonce:${ip}`,
-};
+/**
+ * The most a sign-in request body may be. A real one is an ID token (~1-2 KB)
+ * and a device name; anything bigger is refused before it is buffered.
+ */
+export const MOBILE_BODY_MAX_BYTES = 8 * 1024;
 
 /**
- * The address the request came from, as Railway's edge saw it.
+ * Why there are no per-IP rate limits on /api/mobile/nonce and /sign-in:
  *
- * The rightmost X-Forwarded-For entry is the one our own proxy appended; any
- * entry to its left came from the client and can be anything. Taking the
- * leftmost would let a client pick its own rate-limit bucket.
+ * Nothing on these routes can be guessed. A sign-in only succeeds with a
+ * Google-signed ID token for an allowed account, carrying a nonce we signed —
+ * brute force has nothing to work on. What limits were buying was resistance
+ * to junk traffic, and they cost more than they bought: the client IP comes
+ * from a proxy header whose shape on Railway is not established, so a per-IP
+ * bucket is either spoofable (useless) or shared by everyone (a way to lock
+ * the owner out of their own phone). Instead every request's cost is bounded:
+ * the body is capped, nonces are stateless, a malformed token is rejected
+ * before any network call, and the Google key fetch has a cooldown.
  */
-export function clientIp(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) {
-    const hops = forwarded.split(",").map((h) => h.trim()).filter(Boolean);
-    if (hops.length > 0) return hops[hops.length - 1];
-  }
-  return headers.get("x-real-ip")?.trim() || "unknown";
+
+/**
+ * The Android OAuth clients whose tokens may sign in — Google puts the client
+ * that asked for the token in `azp`.
+ *
+ * Checked because `aud` alone (our web client) is not enough: any client in
+ * the same Google Cloud project can obtain a token with that audience, and
+ * that project is not dedicated to book. Only the release app qualifies in
+ * production. The debug client (signed with Android Studio's well-known debug
+ * key) is honoured only outside production — decided here in code, so a
+ * misconfigured production environment cannot widen it.
+ */
+export function mobileAuthorizedParties(env: {
+  NODE_ENV?: string;
+  MOBILE_ANDROID_CLIENT_ID?: string;
+  MOBILE_ANDROID_DEBUG_CLIENT_ID?: string;
+}): string[] {
+  const parties: string[] = [];
+  const release = env.MOBILE_ANDROID_CLIENT_ID?.trim();
+  if (release) parties.push(release);
+  const debug = env.MOBILE_ANDROID_DEBUG_CLIENT_ID?.trim();
+  if (debug && env.NODE_ENV !== "production") parties.push(debug);
+  return parties;
 }
 
 /**
@@ -52,4 +74,13 @@ export function clientIp(headers: Headers): string {
 export function mobileTokenName(deviceName: string): string {
   const device = deviceName.replace(/\s+/g, " ").trim() || "Android";
   return `mobile · ${device}`.slice(0, 60);
+}
+
+/**
+ * The raw X-Forwarded-For, trimmed, for refusal logs only — never for a
+ * decision. Logged so production logs show what Railway actually sends, which
+ * is the evidence any future per-IP limit would need first.
+ */
+export function forwardedForLog(headers: Headers): string {
+  return (headers.get("x-forwarded-for") ?? "-").slice(0, 200);
 }

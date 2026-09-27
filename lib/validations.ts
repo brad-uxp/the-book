@@ -364,7 +364,12 @@ export type MetricsQuery = z.infer<typeof MetricsQuerySchema>;
  */
 export const MobileSignInSchema = z.object({
   id_token: z.string().min(1).max(4096),
-  device_name: z.string().trim().min(1).max(40).default("Android"),
+  // Only a label for Settings. Tidied rather than refused: a long or empty
+  // device name is not a reason to fail a sign-in.
+  device_name: z
+    .string()
+    .optional()
+    .transform((s) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || "Android"),
 });
 
 export type MobileSignInInput = z.infer<typeof MobileSignInSchema>;

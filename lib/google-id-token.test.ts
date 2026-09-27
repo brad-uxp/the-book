@@ -25,7 +25,8 @@ const good = {
   exp: nowS + 3600,
   nonce: "n-abc",
 };
-const opts = { audience: AUD, allowedEmails: ALLOWED, now: NOW };
+const ANDROID = "348255215221-android.apps.googleusercontent.com";
+const opts = { audience: AUD, authorizedParties: [ANDROID], allowedEmails: ALLOWED, now: NOW };
 
 describe("checkGoogleClaims", () => {
   it("acepta un token válido y devuelve email, sub y nonce", () => {
@@ -45,6 +46,10 @@ describe("checkGoogleClaims", () => {
     ["issuer ajeno", { iss: "https://evil.example.com" }, "issuer"],
     ["audience de otra app", { aud: "otra-app.apps.googleusercontent.com" }, "audience"],
     ["audience compartida con otra", { aud: [AUD, "otra"] }, "audience"],
+    // aud es nuestro, pero lo pidió otro cliente del mismo proyecto de Cloud:
+    // otro Android, un iOS o un flujo web por una redirect URI registrada.
+    ["pedido por otro cliente del proyecto", { azp: "348255215221-otro.apps.googleusercontent.com" }, "authorized_party"],
+    ["sin azp", { azp: undefined }, "authorized_party"],
     ["vencido", { exp: nowS - 60 }, "expired"],
     ["sin exp", { exp: undefined }, "expired"],
     ["emitido en el futuro", { iat: nowS + 3600 }, "issued_in_future"],
@@ -122,5 +127,14 @@ describe("verifyGoogleIdToken (firma real, llaves locales)", () => {
       JSON.stringify({ ...good, email: "intruso@example.com", iat: realNow(), exp: realNow() + 600 })
     ).toString("base64url");
     await expect(verifyGoogleIdToken(`${h}.${forged}.${t.split(".")[2]}`, AUD, keys)).rejects.toThrow();
+  });
+});
+
+describe("checkGoogleClaims — azp", () => {
+  it("sin clientes autorizados, rechaza todo (falla cerrado)", () => {
+    expect(checkGoogleClaims(good, { ...opts, authorizedParties: [] })).toEqual({
+      ok: false,
+      reason: "authorized_party",
+    });
   });
 });

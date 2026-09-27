@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   checkRateLimit,
-  peekRateLimit,
   pruneRateLimits,
-  recordRateLimitHit,
+  rateLimitKeyCount,
   resetRateLimits,
 } from "./rate-limit";
 
@@ -76,28 +75,19 @@ describe("pruneRateLimits", () => {
   });
 });
 
-describe("peekRateLimit / recordRateLimitHit (límites de fallos)", () => {
+describe("poda automática", () => {
   beforeEach(() => resetRateLimits());
 
-  it("mirar no cuenta: sin hits siempre permite", () => {
-    for (let i = 0; i < 20; i++) expect(peekRateLimit("f", 0, 3).allowed).toBe(true);
+  it("pasadas las 1000 claves, un chequeo descarta las ventanas vencidas", () => {
+    for (let i = 0; i < 1001; i++) checkRateLimit(`viejo-${i}`, 0, 5, 1_000);
+    expect(rateLimitKeyCount()).toBe(1001);
+    checkRateLimit("nuevo", 10_000, 5, 60_000);
+    expect(rateLimitKeyCount()).toBe(1);
   });
 
-  it("bloquea al llegar al máximo de fallos registrados", () => {
-    for (let i = 0; i < 3; i++) recordRateLimitHit("f", 0, 60_000);
-    const v = peekRateLimit("f", 10_000, 3);
-    expect(v.allowed).toBe(false);
-    expect(v.retryAfterSeconds).toBe(50);
-  });
-
-  it("la ventana vence y vuelve a permitir", () => {
-    for (let i = 0; i < 3; i++) recordRateLimitHit("f", 0, 60_000);
-    expect(peekRateLimit("f", 60_000, 3).allowed).toBe(true);
-  });
-
-  it("un fallo después de vencida la ventana abre una nueva", () => {
-    for (let i = 0; i < 3; i++) recordRateLimitHit("f", 0, 60_000);
-    recordRateLimitHit("f", 70_000, 60_000);
-    expect(peekRateLimit("f", 70_000, 3)).toMatchObject({ allowed: true, remaining: 2 });
+  it("por debajo del umbral no poda (no hace trabajo de más)", () => {
+    for (let i = 0; i < 10; i++) checkRateLimit(`viejo-${i}`, 0, 5, 1_000);
+    checkRateLimit("nuevo", 10_000, 5, 60_000);
+    expect(rateLimitKeyCount()).toBe(11);
   });
 });

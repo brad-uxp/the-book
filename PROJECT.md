@@ -105,7 +105,7 @@ TheBook/
 │   ├── r2.ts                         # Cloudflare R2 + validación de object keys
 │   ├── run-daily.ts                  # Orquestación del job diario
 │   ├── google-id-token.ts            # Verificación del ID token de Google del login mobile (testeada)
-│   ├── mobile-auth.ts  mobile-nonce.ts  # Límites, IP y nonces de un solo uso del login mobile (testeadas)
+│   ├── mobile-auth.ts  mobile-nonce.ts  # Política del login mobile: azp, rutas públicas, nonces firmados (testeadas)
 │   ├── validations.ts                # Esquemas Zod
 │   └── utils.ts
 ├── brand/                            # Marca book.: SVG maestros, PNG de app, spec y fuentes (ver brand/README.md)
@@ -217,7 +217,7 @@ editar una migración generada, borrá esa línea antes de commitear.
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]`, `cron/daily` (protegida con `CRON_SECRET`) y las dos
 de entrada de la app mobile, `mobile/nonce` y `mobile/sign-in`, que verifican el
-ID token de Google, un nonce de un solo uso y límites por IP.
+ID token de Google (incluido `azp`) y un nonce firmado de un solo uso.
 
 Se aceptan **dos credenciales**: la cookie de NextAuth (navegador) y
 `Authorization: Bearer tb_…` (máquinas). La referencia para clientes externos
@@ -335,6 +335,11 @@ AUTH_GOOGLE_ID=<from Google Cloud Console>
 AUTH_GOOGLE_SECRET=<from Google Cloud Console>
 AUTH_URL=https://book.bolstro.com
 AUTH_TRUST_HOST=true
+
+# Login de la app Android (/api/mobile/sign-in). Sin MOBILE_ANDROID_CLIENT_ID el login
+# mobile responde 503: falla cerrado. El de debug solo se acepta fuera de producción.
+MOBILE_ANDROID_CLIENT_ID=<cliente OAuth Android de release, com.bolstro.book>
+MOBILE_ANDROID_DEBUG_CLIENT_ID=<cliente OAuth Android de debug; solo en local>
 
 # Cron
 CRON_SECRET=<random bearer token>

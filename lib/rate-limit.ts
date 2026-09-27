@@ -17,6 +17,13 @@ interface Window {
 
 const windows = new Map<string, Window>();
 
+/**
+ * Past this many keys, a check first drops expired windows. Keys are API-token
+ * ids today, so the map stays small; the bound is there so no future caller
+ * can turn it into a leak.
+ */
+const PRUNE_ABOVE = 1000;
+
 export interface RateVerdict {
   allowed: boolean;
   remaining: number;
@@ -29,6 +36,7 @@ export function checkRateLimit(
   max: number = MAX_REQUESTS,
   windowMs: number = WINDOW_MS
 ): RateVerdict {
+  if (windows.size > PRUNE_ABOVE) pruneRateLimits(now);
   const existing = windows.get(key);
 
   if (!existing || now >= existing.resetAt) {
@@ -53,47 +61,8 @@ export function checkRateLimit(
 }
 
 /**
- * Whether a key is still under its limit, without counting this call.
- *
- * For limits on failures: the check happens before the attempt, and only a
- * failed attempt is recorded afterwards (recordRateLimitHit), so a successful
- * sign-in never uses up the failure budget.
- */
-export function peekRateLimit(
-  key: string,
-  now: number = Date.now(),
-  max: number = MAX_REQUESTS
-): RateVerdict {
-  const existing = windows.get(key);
-  if (!existing || now >= existing.resetAt || existing.count < max) {
-    const used = existing && now < existing.resetAt ? existing.count : 0;
-    return { allowed: true, remaining: max - used, retryAfterSeconds: 0 };
-  }
-  return {
-    allowed: false,
-    remaining: 0,
-    retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
-  };
-}
-
-/** Counts one hit against a key, opening a window if there is none. */
-export function recordRateLimitHit(
-  key: string,
-  now: number = Date.now(),
-  windowMs: number = WINDOW_MS
-): void {
-  const existing = windows.get(key);
-  if (!existing || now >= existing.resetAt) {
-    windows.set(key, { count: 1, resetAt: now + windowMs });
-    return;
-  }
-  existing.count += 1;
-}
-
-/**
- * Drops windows that have already expired. Without this the map grows by one
- * entry per key forever — bounded in practice by how many tokens exist, but
- * there is no reason to leak.
+ * Drops windows that have already expired. Called by checkRateLimit once the
+ * map passes PRUNE_ABOVE keys.
  */
 export function pruneRateLimits(now: number = Date.now()): void {
   for (const [key, window] of windows) {
@@ -101,7 +70,11 @@ export function pruneRateLimits(now: number = Date.now()): void {
   }
 }
 
-/** Test seam. */
+/** Test seams. */
 export function resetRateLimits(): void {
   windows.clear();
+}
+
+export function rateLimitKeyCount(): number {
+  return windows.size;
 }

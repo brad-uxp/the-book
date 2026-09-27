@@ -21,7 +21,9 @@ import {
  * The audience is the WEB OAuth client (AUTH_GOOGLE_ID): the Android app asks
  * Credential Manager for a token "for" the server, so aud is the web client and
  * azp is the Android client. A token minted for any other audience — another
- * app's, even one of ours — is refused.
+ * app's, even one of ours — is refused. And because any client in the same
+ * Cloud project can obtain a token with that audience, azp must also be one of
+ * our Android clients (see mobileAuthorizedParties in lib/mobile-auth.ts).
  */
 
 export const GOOGLE_ISSUERS = [
@@ -71,6 +73,7 @@ export async function verifyGoogleIdToken(
 export type ClaimFailure =
   | "issuer"
   | "audience"
+  | "authorized_party"
   | "expired"
   | "issued_in_future"
   | "subject"
@@ -85,6 +88,8 @@ export type ClaimCheck =
 
 export interface ClaimOptions {
   audience: string;
+  /** The Android clients allowed as `azp`. Empty refuses every token. */
+  authorizedParties: readonly string[];
   allowedEmails: readonly string[];
   now: Date;
 }
@@ -95,7 +100,7 @@ export interface ClaimOptions {
  */
 export function checkGoogleClaims(
   payload: JWTPayload & Record<string, unknown>,
-  { audience, allowedEmails, now }: ClaimOptions
+  { audience, authorizedParties, allowedEmails, now }: ClaimOptions
 ): ClaimCheck {
   if (!(GOOGLE_ISSUERS as readonly string[]).includes(String(payload.iss))) {
     return { ok: false, reason: "issuer" };
@@ -108,6 +113,13 @@ export function checkGoogleClaims(
     ? aud.length === 1 && aud[0] === audience
     : aud === audience;
   if (!audOk) return { ok: false, reason: "audience" };
+
+  // Which client asked for the token. aud says it is for us; azp says it was
+  // our app that asked — not another client of the same Cloud project, and
+  // not a web flow through one of the web client's redirect URIs.
+  if (typeof payload.azp !== "string" || !authorizedParties.includes(payload.azp)) {
+    return { ok: false, reason: "authorized_party" };
+  }
 
   const nowS = Math.floor(now.getTime() / 1000);
   if (typeof payload.exp !== "number" || payload.exp + CLOCK_TOLERANCE_S <= nowS) {

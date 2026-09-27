@@ -155,6 +155,51 @@ export async function readJson(req: Request): Promise<unknown> {
   }
 }
 
+/**
+ * Parse a JSON body read with a hard size cap, for routes anyone can reach.
+ *
+ * readJson buffers the whole body before a schema can refuse it; on a public
+ * route that lets a client make the server hold whatever it sends. This stops
+ * reading at `maxBytes` — whether or not the client declared a length, and
+ * whether or not it told the truth.
+ */
+export async function readJsonLimited(
+  req: Request,
+  maxBytes: number
+): Promise<{ ok: true; value: unknown } | { ok: false; reason: "too_large" | "invalid" }> {
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    return { ok: false, reason: "too_large" };
+  }
+  if (!req.body) return { ok: false, reason: "invalid" };
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return { ok: false, reason: "too_large" };
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    bytes.set(c, offset);
+    offset += c.byteLength;
+  }
+  try {
+    return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) };
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+}
+
 /** Standard 400 for a failed Zod parse, matching the project convention. */
 export function invalid(error: { flatten: () => unknown }): NextResponse {
   return NextResponse.json({ error: error.flatten() }, { status: 400 });

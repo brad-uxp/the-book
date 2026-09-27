@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-// Only Google's network verification and the database are faked. Nonces, rate
-// limits, claim checks, token generation and hashing are the real code.
+// Only Google's network verification and the database are faked. Nonces,
+// claim checks, the body cap, token generation and hashing are the real code.
 vi.mock("@/lib/db", () => ({ prisma: { apiToken: { create: vi.fn() } } }));
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
@@ -15,12 +15,14 @@ import { POST } from "./route";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { verifyGoogleIdToken } from "@/lib/google-id-token";
-import { issueNonce, resetNonces } from "@/lib/mobile-nonce";
-import { resetRateLimits } from "@/lib/rate-limit";
+import { issueNonce as issueNonceWith, resetUsedNonces } from "@/lib/mobile-nonce";
 import { hashToken } from "@/lib/api-tokens";
 import { MOBILE_TOKEN_DAYS } from "@/lib/mobile-auth";
 
 const AUD = "348255215221-web.apps.googleusercontent.com";
+const ANDROID = "348255215221-release.apps.googleusercontent.com";
+const SECRET = "route-test-secret";
+const issueNonce = () => issueNonceWith(SECRET);
 const EMAIL = "bradlyls95@gmail.com"; // in lib/allowed-emails.ts
 
 const verify = vi.mocked(verifyGoogleIdToken);
@@ -31,6 +33,7 @@ function claims(nonce: string, patch: Record<string, unknown> = {}) {
   return {
     iss: "https://accounts.google.com",
     aud: AUD,
+    azp: ANDROID,
     sub: "g-123",
     email: EMAIL,
     email_verified: true,
@@ -41,10 +44,10 @@ function claims(nonce: string, patch: Record<string, unknown> = {}) {
   };
 }
 
-function request(body: unknown, ip = "203.0.113.9") {
+function request(body: unknown) {
   return new NextRequest("http://localhost/api/mobile/sign-in", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-forwarded-for": `10.0.0.1, ${ip}` },
+    headers: { "content-type": "application/json", "x-forwarded-for": "10.0.0.1, 203.0.113.9" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
@@ -52,10 +55,12 @@ function request(body: unknown, ip = "203.0.113.9") {
 const body = { id_token: "header.payload.signature", device_name: "Pixel 8" };
 
 beforeEach(() => {
-  resetNonces();
-  resetRateLimits();
+  resetUsedNonces();
   vi.clearAllMocks();
   process.env.AUTH_GOOGLE_ID = AUD;
+  process.env.AUTH_SECRET = SECRET;
+  process.env.MOBILE_ANDROID_CLIENT_ID = ANDROID;
+  delete process.env.MOBILE_ANDROID_DEBUG_CLIENT_ID;
   create.mockImplementation((async ({ data }: { data: { name: string; token_prefix: string; expires_at: Date } }) => ({
     id: "tok-1",
     name: data.name,
@@ -104,7 +109,9 @@ describe("POST /api/mobile/sign-in", () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  it("rechaza un nonce que nunca emitimos", async () => {
+  it("rechaza un nonce que nunca emitimos, o firmado con otro secreto", async () => {
+    verify.mockResolvedValue(claims(issueNonceWith("otro-secreto").nonce));
+    expect((await POST(request(body))).status).toBe(401);
     verify.mockResolvedValue(claims("inventado"));
     expect((await POST(request(body))).status).toBe(401);
     expect(create).not.toHaveBeenCalled();
@@ -119,6 +126,8 @@ describe("POST /api/mobile/sign-in", () => {
 
   it.each([
     ["audience de otra app", { aud: "otra.apps.googleusercontent.com" }, 401],
+    ["pedido por otro cliente del proyecto (azp)", { azp: "348255215221-otro.apps.googleusercontent.com" }, 401],
+    ["pedido por el cliente de debug en producción", { azp: "348255215221-debug.apps.googleusercontent.com" }, 401],
     ["issuer ajeno", { iss: "https://evil.example.com" }, 401],
     ["vencido", { exp: Math.floor(Date.now() / 1000) - 3600 }, 401],
     ["email sin verificar", { email_verified: false }, 401],
@@ -144,41 +153,54 @@ describe("POST /api/mobile/sign-in", () => {
     expect(verify).not.toHaveBeenCalled();
   });
 
-  it("sin AUTH_GOOGLE_ID no hay sign-in (503), nunca una audiencia vacía", async () => {
-    delete process.env.AUTH_GOOGLE_ID;
+  it("un body de más de 8 KB es 413 sin leerse entero, aunque no declare su tamaño", async () => {
+    const big = JSON.stringify({ id_token: "x".repeat(20_000) });
+    expect((await POST(request(big))).status).toBe(413);
+
+    const stream = new ReadableStream({
+      start(c) {
+        for (let i = 0; i < 10; i++) c.enqueue(new TextEncoder().encode("x".repeat(1024)));
+        c.close();
+      },
+    });
+    const chunked = new NextRequest("http://localhost/api/mobile/sign-in", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as never);
+    expect((await POST(chunked)).status).toBe(413);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("un device_name largo, vacío o ausente se ordena en vez de rechazar", async () => {
+    for (const [device, name] of [
+      ["x".repeat(100), `mobile · ${"x".repeat(40)}`],
+      ["   ", "mobile · Android"],
+      [undefined, "mobile · Android"],
+    ] as const) {
+      verify.mockResolvedValueOnce(claims(issueNonce().nonce));
+      const res = await POST(request({ id_token: body.id_token, device_name: device }));
+      expect(res.status).toBe(201);
+      expect((await res.json()).name).toBe(name);
+    }
+  });
+
+  it.each([
+    ["AUTH_GOOGLE_ID", "AUTH_GOOGLE_ID"],
+    ["AUTH_SECRET", "AUTH_SECRET"],
+    ["el cliente Android autorizado", "MOBILE_ANDROID_CLIENT_ID"],
+  ])("sin %s no hay sign-in (503): falla cerrado", async (_l, key) => {
+    delete process.env[key];
     expect((await POST(request(body))).status).toBe(503);
     expect(verify).not.toHaveBeenCalled();
   });
 
-  it("limita los intentos por IP (10 por minuto)", async () => {
+  it("no limita por IP: muchos rechazos no le cierran la puerta al dueño", async () => {
     verify.mockRejectedValue(new Error("bad"));
-    const statuses = [];
-    for (let i = 0; i < 12; i++) statuses.push((await POST(request(body, `198.51.100.${i}`))).status);
-    // Distinct IPs: never limited by the per-IP cap.
-    expect(statuses.every((s) => s === 401)).toBe(true);
-
-    // Same IP, every attempt valid: no failure is recorded, so what stops the
-    // 11th is the per-IP cap on attempts, not the failure budget.
-    resetRateLimits();
-    const sameIp = [];
-    for (let i = 0; i < 11; i++) {
-      verify.mockResolvedValueOnce(claims(issueNonce().nonce));
-      sameIp.push((await POST(request(body, "192.0.2.1"))).status);
-    }
-    expect(sameIp.slice(0, 10).every((s) => s === 201)).toBe(true);
-    expect(sameIp[10]).toBe(429);
-  });
-
-  it("tras 5 fallos desde una IP, bloquea aun con un token válido; otra IP sigue", async () => {
-    verify.mockRejectedValue(new Error("bad"));
-    for (let i = 0; i < 5; i++) expect((await POST(request(body))).status).toBe(401);
-
-    const { nonce } = issueNonce();
-    verify.mockResolvedValue(claims(nonce));
-    const blocked = await POST(request(body));
-    expect(blocked.status).toBe(429);
-    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
-
-    expect((await POST(request(body, "198.51.100.77"))).status).toBe(201);
+    for (let i = 0; i < 100; i++) expect((await POST(request(body))).status).toBe(401);
+    verify.mockReset();
+    verify.mockResolvedValue(claims(issueNonce().nonce));
+    expect((await POST(request(body))).status).toBe(201);
   });
 });

@@ -42,22 +42,26 @@ routes (no credential), one that needs the token:
 
 | Method | Path | |
 |---|---|---|
-| POST | `/api/mobile/nonce` | → `{ nonce, expires_at }`. Single use, 5 minutes. 20/minute per IP. |
+| POST | `/api/mobile/nonce` | → `{ nonce, expires_at }`. Signed, single use, 5 minutes. |
 | POST | `/api/mobile/sign-in` | `{ id_token, device_name }` → `201 { token, token_id, name, expires_at, email }` |
 | POST | `/api/mobile/sign-out` | Bearer. Revokes the calling token — only itself. |
 
 Sign-in accepts the ID token only if its signature checks against Google's keys,
-`iss` is Google, `aud` is this server's web OAuth client, it has not expired,
-the email is verified and allowed, and its `nonce` claim is one issued above and
-not used before. The token it mints is named `mobile · <device_name>`, lasts
+`iss` is Google, `aud` is this server's web OAuth client, `azp` is book's
+release Android client (any other client of the same Google Cloud project is
+refused), it has not expired, the email is verified and allowed, and its
+`nonce` claim is one issued above and not used before. The token it mints is named `mobile · <device_name>`, lasts
 90 days, shows up in **Settings → API tokens** and is revoked from there like any
 other.
 
 Errors: `400` malformed body · `401` anything about the token or the nonce
 (deliberately not more specific) · `403` a Google account that is not allowed ·
-`429` more than 10 attempts per minute from one IP, 5 failures per IP in 15
-minutes, or 50 failures overall in an hour, with `Retry-After` · `503` the server
-has no Google client configured.
+`413` a body over 8 KB · `503` the server is not configured for mobile sign-in.
+
+There is no per-IP rate limit on these two routes, on purpose: nothing on them
+can be guessed (success needs a Google-signed token for an allowed account), and
+a limit keyed on a proxy header could only be spoofed or used to lock the owner
+out. Their cost per request is bounded instead.
 
 ## Conventions
 

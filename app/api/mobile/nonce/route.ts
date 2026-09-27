@@ -1,27 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { NextResponse } from "next/server";
 import { issueNonce } from "@/lib/mobile-nonce";
-import { SIGN_IN_LIMITS, clientIp, rateKeys } from "@/lib/mobile-auth";
 
 export const runtime = "nodejs";
 
 /**
  * A single-use nonce for the next sign-in. Public — the app has no credential
- * yet — and rate-limited per IP. Issuing one grants nothing: it only makes a
- * Google ID token minted for it usable once, within five minutes.
+ * yet. Issuing one grants nothing and stores nothing: it is signed, not
+ * remembered (see lib/mobile-nonce.ts), so this route has no state to flood
+ * and needs no rate limit.
  */
-export async function POST(req: NextRequest) {
-  const ip = clientIp(req.headers);
-  const { max, windowMs } = SIGN_IN_LIMITS.noncesPerIp;
-  const verdict = checkRateLimit(rateKeys.nonce(ip), Date.now(), max, windowMs);
-  if (!verdict.allowed) {
-    return NextResponse.json(
-      { error: "Too many attempts. Try again in a moment." },
-      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } }
-    );
+export async function POST() {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    console.error("[mobile/nonce] AUTH_SECRET is not set");
+    return NextResponse.json({ error: "Sign-in is not available" }, { status: 503 });
   }
 
-  const { nonce, expiresAt } = issueNonce();
+  const { nonce, expiresAt } = issueNonce(secret);
   return NextResponse.json(
     { nonce, expires_at: new Date(expiresAt).toISOString() },
     { headers: { "Cache-Control": "no-store" } }

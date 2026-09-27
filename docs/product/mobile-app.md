@@ -103,22 +103,34 @@ Estas tres tabs muestran lo último sincronizado cuando no hay señal.
 
 ## Login
 
-1. La app pide un **nonce** a `POST /api/mobile/nonce` (aleatorio, de un solo uso, vive 5
-   minutos, en memoria: hay una sola réplica).
+1. La app pide un **nonce** a `POST /api/mobile/nonce`: vencimiento + 16 bytes aleatorios,
+   firmados con HMAC (clave derivada de `AUTH_SECRET`). Vive 5 minutos y sirve una sola vez.
+   Emitirlo no guarda nada; solo se recuerdan los ya usados, y solo un login exitoso agrega.
 2. Credential Manager abre la hoja de Google y devuelve un **ID token** emitido para el
    cliente OAuth **web** de book (`AUTH_GOOGLE_ID`) y con ese nonce adentro. Los clientes
    OAuth de Android no aparecen en el código: Google solo los usa para comprobar que el APK
    es `com.bolstro.book` firmado con un certificado registrado.
 3. `POST /api/mobile/sign-in` verifica con `jose` la firma contra las claves públicas de
-   Google, el emisor, `aud === AUTH_GOOGLE_ID`, la expiración, `email_verified` y el
-   allowlist, y consume el nonce. Si todo pasa, emite un `ApiToken` (se guarda solo el
+   Google, el emisor, `aud === AUTH_GOOGLE_ID`, **`azp` === el cliente Android de release**
+   (`MOBILE_ANDROID_CLIENT_ID`; el de debug, `MOBILE_ANDROID_DEBUG_CLIENT_ID`, solo vale fuera
+   de producción y eso lo impone el código), la expiración, `email_verified` y el allowlist,
+   y consume el nonce. El body se lee con un tope de 8 KB. Si todo pasa, emite un `ApiToken` (se guarda solo el
    hash) llamado `mobile · <modelo del teléfono>`, que **vence a los 90 días**, y lo audita
    con el email verificado. El teléfono lo guarda en `expo-secure-store` (Keystore).
 4. Salir llama a `POST /api/mobile/sign-out`, que revoca solo ese token. También se puede
    revocar desde Settings → API tokens.
 
-**Límites por IP** (en memoria): 10 intentos por minuto, 5 fallos en 15 minutos, 20 nonces
-por minuto; y un tope global de 50 fallos por hora.
+**Sin límites por IP**, a propósito. La revisión de seguridad del 2026-09-27 mostró que la IP
+sale de un header de Railway cuyo formato no está verificado: un límite por IP sería falsificable
+o compartido por todos, y en ese caso serviría para bloquear al dueño. Como un login exitoso
+exige un token firmado por Google, no hay nada que adivinar; en cambio, el costo de cada
+petición está acotado (body con tope, nonces sin estado, token malformado rechazado antes de
+tocar la red). Los rechazos se loguean con el `X-Forwarded-For` crudo, para tener evidencia
+si algún día hace falta un límite.
+
+**Firma del release**: Gradle compila el APK sin firmar y `scripts/android-release.sh` lo firma
+con `apksigner`, leyendo la contraseña del Llavero por un pipe a su stdin. La contraseña nunca
+entra al entorno de Gradle ni de sus plugins.
 
 **Google Cloud**: proyecto `uxprogramming-crm`. Hay dos clientes OAuth de Android para
 `com.bolstro.book`: el de debug (SHA-1 `AF:25:E5:…:38:E6`, `~/.android/debug.keystore`) y
