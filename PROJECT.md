@@ -62,7 +62,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 46 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 51 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -89,6 +89,7 @@ TheBook/
 │   ├── notifications/  settings/  admin-logs/
 ├── lib/
 │   ├── api.ts                        # requireSession, mapeo de errores, readJson
+│   ├── issues-service.ts  canvas-service.ts  # Escrituras de issues e ideas: reglas + auditoría, para las rutas REST y la sync
 │   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
 │   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
 │   ├── currency.ts                   # Centavos ↔ display (testeada)
@@ -106,6 +107,9 @@ TheBook/
 │   ├── run-daily.ts                  # Orquestación del job diario
 │   ├── google-id-token.ts            # Verificación del ID token de Google del login mobile (testeada)
 │   ├── mobile-auth.ts  mobile-nonce.ts  # Política del login mobile: azp, rutas públicas, nonces firmados (testeadas)
+│   ├── sync.ts                       # Reglas de la sync del teléfono: cursor, ventana, conflictos (puro, testeado)
+│   ├── sync-protocol.ts              # Tipos del protocolo de sync, sin imports (la app los comparte)
+│   ├── sync-server.ts                # Pull / push / refs contra la base
 │   ├── validations.ts                # Esquemas Zod
 │   └── utils.ts
 ├── brand/                            # Marca book.: SVG maestros, PNG de app, spec y fuentes (ver brand/README.md)
@@ -127,7 +131,7 @@ TheBook/
 
 ## Esquema de Base de Datos
 
-17 tablas. Todos los montos son `Int` en **centavos**; todas las fechas se
+22 tablas. Todos los montos son `Int` en **centavos**; todas las fechas se
 guardan como **UTC midnight**.
 
 ### Autenticación y Configuración
@@ -181,6 +185,8 @@ guardan como **UTC midnight**.
 | `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`) |
 | `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
 | `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
+| `SyncTombstone`| Un borrado de issue, idea o conexión, para que el teléfono se entere. Lo escriben **solo triggers** `AFTER DELETE` (cubren cascadas y cualquier otra vía); se purga a los 60 días |
+| `SyncMutation` | La respuesta a cada cambio que empujó el teléfono, por `mutation_id`: un reintento devuelve la misma y no aplica dos veces. Se purga a los 30 días |
 
 ### Sistema
 
@@ -204,15 +210,19 @@ guardan como **UTC midnight**.
   entre ideas de dos notas distintas no se puede guardar. Unique `(issue_id, source_id, target_id)`
   y **CHECK `CanvasEdge_no_self_link`**. Nodos y aristas cascadean con su nota (no son historia
   contable).
+- **Triggers `AFTER DELETE`** en `Task`, `CanvasNode` y `CanvasEdge` (funciones
+  `sync_tombstone_issue` / `sync_tombstone_canvas`) escriben `SyncTombstone`. Sin ellos los
+  borrados no llegan al teléfono y nada falla a la vista.
 
-⚠️ Los índices parcial y funcional y los CHECK **no se pueden expresar en `schema.prisma`**,
+⚠️ Los índices parcial y funcional, los CHECK y los triggers **no se pueden expresar en `schema.prisma`**,
 así que `prisma migrate dev` los ve como drift y genera su `DROP`.
-`prisma/migrations.test.ts` falla el build si eso llega a pasar. Si tenés que
+`prisma/migrations.test.ts` falla el build si eso llega a pasar (y si una migración dropea o
+desactiva un trigger de la sync). Si tenés que
 editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (49)
+## Rutas API (51)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]`, `cron/daily` (protegida con `CRON_SECRET`) y las dos
@@ -273,6 +283,8 @@ no se puede revocar.
 | Mobile nonce      | POST (público)  | `/api/mobile/nonce`                  |
 | Mobile sign-in    | POST (público)  | `/api/mobile/sign-in`                |
 | Mobile sign-out   | POST            | `/api/mobile/sign-out`               |
+| Sync notas        | GET/POST        | `/api/sync/notes`                    |
+| Sync refs         | GET             | `/api/sync/refs`                     |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---
@@ -289,7 +301,7 @@ recrearía el mes salteado al reactivarla.
 
 ### Tareas (en orden)
 
-1. **Limpieza**: notificaciones > 7 días, audit logs > 12 meses
+1. **Limpieza**: notificaciones > 7 días, audit logs > 12 meses, tombstones de la sync > 60 días y respuestas de la sync > 30 días
 2. **Suscripciones**: aviso N días antes; en la fecha, si es `auto`, crea el pago
 3. **Salarios**: aviso N días antes del día de pago
 4. **Recordatorios de aumento**: aviso en la fecha efectiva
@@ -320,6 +332,8 @@ No hay entrega push desde el 2026-09-27; vuelve con la app React Native.
 | Settings singleton          | Una fila, con CHECK en la base                                         |
 | Métricas                    | `lib/metrics.ts` único: dashboard y `/api/metrics` usan las mismas fórmulas |
 | Auth single-user            | `ALLOWED_EMAILS` en `auth.ts`, re-chequeado en cada refresh del token  |
+| Escrituras de issues        | `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST y la sync del teléfono pasan por el mismo código; la auditoría se escribe después del commit |
+| Sync del teléfono           | Pull por cursor con ventana de 2 min; push idempotente por `mutation_id`; última escritura gana por campo, salvo el texto: en conflicto, copia |
 
 ---
 
