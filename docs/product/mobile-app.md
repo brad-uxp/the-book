@@ -113,8 +113,10 @@ Estas tres tabs muestran lo último sincronizado cuando no hay señal.
 3. `POST /api/mobile/sign-in` verifica con `jose` la firma contra las claves públicas de
    Google, el emisor, `aud === AUTH_GOOGLE_ID`, **`azp` === el cliente Android de release**
    (`MOBILE_ANDROID_CLIENT_ID`; el de debug, `MOBILE_ANDROID_DEBUG_CLIENT_ID`, solo vale fuera
-   de producción y eso lo impone el código), la expiración, `email_verified` y el allowlist,
-   y consume el nonce. El body se lee con un tope de 8 KB. Si todo pasa, emite un `ApiToken` (se guarda solo el
+   de producción y eso lo impone el código), la expiración, `email_verified` y el allowlist
+   **mobile**, que es solo `bradlyls95@gmail.com` (`MOBILE_ALLOWED_EMAILS`, un subconjunto
+   del de la web; la cuenta de Workspace no, porque sus admins podrían resetearla y un token
+   dura 90 días), y consume el nonce. El body se lee con un tope de 8 KB. Si todo pasa, emite un `ApiToken` (se guarda solo el
    hash) llamado `mobile · <modelo del teléfono>`, que **vence a los 90 días**, y lo audita
    con el email verificado. El teléfono lo guarda en `expo-secure-store` (Keystore).
 4. Salir llama a `POST /api/mobile/sign-out`, que revoca solo ese token. También se puede
@@ -132,7 +134,7 @@ si algún día hace falta un límite.
 con `apksigner`, leyendo la contraseña del Llavero por un pipe a su stdin. La contraseña nunca
 entra al entorno de Gradle ni de sus plugins.
 
-**Google Cloud**: proyecto `uxprogramming-crm`. Hay dos clientes OAuth de Android para
+**Google Cloud**: proyecto `uxprogramming-crm` — el nombre es viejo, pero es **solo de book**. Hay dos clientes OAuth de Android para
 `com.bolstro.book`: el de debug (SHA-1 `AF:25:E5:…:38:E6`, `~/.android/debug.keystore`) y
 el de release (SHA-1 `01:D7:8A:…:D1:79`). Un `DEVELOPER_ERROR` al entrar es casi siempre un
 SHA-1 o un package que no coincide.

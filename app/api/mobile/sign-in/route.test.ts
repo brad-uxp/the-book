@@ -132,6 +132,9 @@ describe("POST /api/mobile/sign-in", () => {
     ["vencido", { exp: Math.floor(Date.now() / 1000) - 3600 }, 401],
     ["email sin verificar", { email_verified: false }, 401],
     ["cuenta fuera del allowlist", { email: "intruso@example.com" }, 403],
+    // Entra a la web, pero no desde el teléfono: su dominio (Workspace) tiene
+    // administradores que pueden resetearla.
+    ["cuenta de la web que no puede usar el teléfono", { email: "brad@uxprogramming.com" }, 403],
   ])("rechaza %s aunque la firma pase", async (_l, patch, status) => {
     const { nonce } = issueNonce();
     verify.mockResolvedValue(claims(nonce, patch));

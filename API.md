@@ -50,7 +50,8 @@ Sign-in accepts the ID token only if its signature checks against Google's keys,
 `iss` is Google, `aud` is this server's web OAuth client, `azp` is book's
 release Android client (any other client of the same Google Cloud project is
 refused), it has not expired, the email is verified and allowed, and its
-`nonce` claim is one issued above and not used before. The token it mints is named `mobile · <device_name>`, lasts
+`nonce` claim is one issued above and not used before. Only the owner's personal
+Google account may sign in from the app (a subset of the web's allowlist). The token it mints is named `mobile · <device_name>`, lasts
 90 days, shows up in **Settings → API tokens** and is revoked from there like any
 other.
 

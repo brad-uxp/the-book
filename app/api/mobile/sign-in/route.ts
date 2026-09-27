@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { readJsonLimited, toApiResponse } from "@/lib/api";
 import { generateToken } from "@/lib/api-tokens";
-import { ALLOWED_EMAILS } from "@/lib/allowed-emails";
+import { MOBILE_ALLOWED_EMAILS } from "@/lib/allowed-emails";
 import { checkGoogleClaims, verifyGoogleIdToken } from "@/lib/google-id-token";
 import { consumeNonce } from "@/lib/mobile-nonce";
 import {
@@ -28,7 +28,8 @@ export const runtime = "nodejs";
  *  2. The token's signature against Google's keys, and issuer, audience (our
  *     web OAuth client), authorized party (our release Android client — any
  *     other client of the same Cloud project is refused), expiry, verified
- *     email and the allowlist.
+ *     email and the mobile allowlist (the personal Gmail only — see
+ *     lib/allowed-emails.ts).
  *  3. The nonce inside the token: signed by POST /api/mobile/nonce, unexpired
  *     and unused — so a Google ID token cannot be replayed.
  *
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
   const claims = checkGoogleClaims(payload, {
     audience,
     authorizedParties: parties,
-    allowedEmails: ALLOWED_EMAILS,
+    allowedEmails: MOBILE_ALLOWED_EMAILS,
     now: new Date(now),
   });
   if (!claims.ok) {
