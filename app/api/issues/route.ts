@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { IssueSchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireSession } from "@/lib/api";
+import { mentionNeedle } from "@/lib/mentions";
+import { checkShapeChange } from "@/lib/notes";
 
 export async function GET(req: NextRequest) {
   const denied = await requireSession();
@@ -11,14 +13,22 @@ export async function GET(req: NextRequest) {
   const personId = searchParams.get("personId");
   const invoiceId = searchParams.get("invoiceId");
 
-  const where: Record<string, unknown> = {};
+  // An invoice filter wins over a person filter, as it always has.
+  const needle = invoiceId
+    ? mentionNeedle("invoice", invoiceId)
+    : personId
+      ? mentionNeedle("person", personId)
+      : null;
 
-  if (personId) {
-    where.description = { contains: `data-mention-id="${personId}"` };
-  }
-  if (invoiceId) {
-    where.description = { contains: `data-invoice-id="${invoiceId}"` };
-  }
+  // A mention can live in the description or in any idea of a canvas note.
+  const where = needle
+    ? {
+        OR: [
+          { description: { contains: needle } },
+          { canvas_nodes: { some: { content: { contains: needle } } } },
+        ],
+      }
+    : {};
 
   const issues = await prisma.issue.findMany({
     where,
@@ -41,12 +51,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const shape = checkShapeChange(null, {
+    category: parsed.data.category,
+    note_format: parsed.data.note_format,
+  });
+  if (!shape.ok) {
+    return NextResponse.json({ error: shape.error }, { status: shape.status });
+  }
+
   const clientId = parsed.data.client_id ?? null;
 
   const issue = await prisma.issue.create({
     data: {
       title: parsed.data.title,
       category: parsed.data.category ?? "task",
+      note_format: parsed.data.note_format,
       status: parsed.data.status ?? "pending",
       progress: parsed.data.progress ?? 0,
       due_date: parsed.data.due_date ? new Date(parsed.data.due_date) : null,
@@ -67,6 +86,7 @@ export async function POST(req: NextRequest) {
       title: issue.title,
       client_id: issue.client_id,
       category: issue.category,
+      note_format: issue.note_format,
       status: issue.status,
       progress: issue.progress,
       due_date: issue.due_date,

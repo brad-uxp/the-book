@@ -42,23 +42,27 @@ export function checkShapeChange(
   before: IssueShape | null,
   after: IssueShape
 ): ShapeChange {
-  if (after.category === "task" && after.note_format === "canvas") {
-    return { ok: false, status: 400, error: "Only a note can be a canvas" };
+  // Leaving a canvas is checked first: someone converting a canvas to a task
+  // should be told that, not that tasks cannot be canvases.
+  if (before?.note_format === "canvas") {
+    if (after.category !== "note") {
+      return {
+        ok: false,
+        status: 409,
+        error: "A canvas note cannot be converted to a task",
+      };
+    }
+    if (after.note_format !== "canvas") {
+      return {
+        ok: false,
+        status: 409,
+        error: "A canvas note cannot be converted back to text",
+      };
+    }
   }
 
-  if (before?.note_format === "canvas" && after.note_format !== "canvas") {
-    return {
-      ok: false,
-      status: 409,
-      error: "A canvas note cannot be converted back to text",
-    };
-  }
-  if (before?.note_format === "canvas" && after.category !== "note") {
-    return {
-      ok: false,
-      status: 409,
-      error: "A canvas note cannot be converted to a task",
-    };
+  if (after.category === "task" && after.note_format === "canvas") {
+    return { ok: false, status: 400, error: "Only a note can be a canvas" };
   }
 
   return {

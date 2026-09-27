@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/api";
+import { MENTION_ATTR, countMentions } from "@/lib/mentions";
 
 export async function GET(req: NextRequest) {
   const denied = await requireSession();
@@ -15,27 +16,27 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const issues = await prisma.issue.findMany({
-    where: { description: { not: "" } },
-    select: { description: true },
-  });
+  // Mentions live in descriptions and, on canvas notes, in each idea. Only
+  // rows that hold at least one mention of this kind are read.
+  const marker = `${MENTION_ATTR[type]}="`;
+  const [issues, nodes] = await Promise.all([
+    prisma.issue.findMany({
+      where: { description: { contains: marker } },
+      select: { id: true, description: true },
+    }),
+    prisma.canvasNode.findMany({
+      where: { content: { contains: marker } },
+      select: { issue_id: true, content: true },
+    }),
+  ]);
 
-  const counts: Record<string, number> = {};
-  const regex =
-    type === "person"
-      ? /data-mention-id="([^"]+)"/g
-      : /data-invoice-id="([^"]+)"/g;
-
-  for (const issue of issues) {
-    const seen = new Set<string>();
-    for (const match of issue.description.matchAll(regex)) {
-      const id = match[1];
-      if (!seen.has(id)) {
-        seen.add(id);
-        counts[id] = (counts[id] || 0) + 1;
-      }
-    }
-  }
+  const counts = countMentions(
+    [
+      ...issues.map((i) => ({ issue_id: i.id, html: i.description })),
+      ...nodes.map((n) => ({ issue_id: n.issue_id, html: n.content })),
+    ],
+    type
+  );
 
   return NextResponse.json(counts);
 }

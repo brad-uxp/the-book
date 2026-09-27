@@ -57,11 +57,15 @@ describe("checkShapeChange — convertir", () => {
   });
 
   it("canvas → tarea se rechaza", () => {
-    // Pedido como tarea a secas: el formato queda en canvas, y una tarea
-    // canvas no existe.
+    // Pedido como tarea a secas (solo cambia la categoría): el mensaje tiene
+    // que hablar de convertir un canvas, no de que las tareas no son canvas.
     expect(
       checkShapeChange(canvas, { category: "task", note_format: "canvas" })
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({
+      ok: false,
+      status: 409,
+      error: "A canvas note cannot be converted to a task",
+    });
     // Pedido como tarea de texto: es aplanar, que tampoco se permite.
     expect(checkShapeChange(canvas, task)).toMatchObject({
       ok: false,
