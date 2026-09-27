@@ -3,6 +3,7 @@ import { addDaysUTC, clampDay, monthlyPeriodKey } from "./dates";
 import {
   awaitingOf,
   bucketByMonth,
+  buildMetricsReport,
   chartPointsOf,
   corporateOf,
   excludeClients,
@@ -561,5 +562,87 @@ describe("los datasets de próximos pagos no son triviales", () => {
       if (upcomingPaymentsOf(subs, [], d.today).length > 0) nonEmpty++;
     }
     expect(nonEmpty).toBeGreaterThan(150);
+  });
+});
+
+describe("buildMetricsReport (GET /api/metrics)", () => {
+  const today = day(2026, 9, 27);
+  const months = recentMonths(today);
+  const rows = {
+    invoices: [
+      // Enero: ACL 1.000 (neto 900) y Northwind 2.000.
+      { due_date: day(2026, 1, 31), amount_cents: 100_000, fee_cents: -10_000, client_id: "acl" },
+      { due_date: day(2026, 1, 31), amount_cents: 200_000, fee_cents: 0, client_id: "nw" },
+      // Septiembre: Northwind 3.000.
+      { due_date: day(2026, 9, 30), amount_cents: 300_000, fee_cents: 0, client_id: "nw" },
+      // Diciembre del año pasado: dentro de "12 meses", fuera de "este año".
+      { due_date: day(2025, 12, 31), amount_cents: 50_000, fee_cents: 0, client_id: "nw" },
+    ],
+    salaries: [{ paid_at: day(2026, 1, 5), total_cents: 150_000 }],
+    subscriptions: [
+      { paid_at: day(2026, 9, 3), amount_cents_snapshot: 10_000, category: "work" },
+      { paid_at: day(2026, 9, 3), amount_cents_snapshot: 5_000, category: "personal" },
+    ],
+    others: [{ paid_at: day(2026, 9, 9), amount_cents: 20_000, category: "work" }],
+  };
+  const base = {
+    months,
+    rows,
+    sent: [
+      { status: "sent", amount_cents: 70_000, fee_cents: -7_000, due_date: day(2026, 8, 31) },
+      { status: "sent", amount_cents: 40_000, fee_cents: 0, due_date: day(2026, 9, 30) },
+    ],
+    upcoming: {
+      payments: [],
+      invoices: [{ id: "i", invoice_number: "0145", client: { name: "NW", color_hex: "#000" }, amount_cents: 40_000, fee_cents: -4_000, status: "sent", due_date: "2026-09-30T00:00:00.000Z" }],
+    },
+    excludedClients: [{ id: "acl", name: "ACL", color_hex: "#f00" }],
+    today,
+  };
+
+  it("este año: ingresos, gastos, net income y promedios", () => {
+    const r = buildMetricsReport({ ...base, selection: { kind: "this_year" } });
+    expect(r.period.months[0]).toBe("2026-01");
+    expect(r.period.months.at(-1)).toBe("2026-09");
+    expect(r.income_cents).toBe(90_000 + 200_000 + 300_000);
+    expect(r.expenses.total_cents).toBe(150_000 + 15_000 + 20_000);
+    expect(r.net_income_cents).toBe(590_000 - 185_000);
+    expect(r.monthly_averages.months).toBe(9);
+    expect(r.monthly_averages.net_income_cents).toBe(Math.round(405_000 / 9));
+  });
+
+  it("la rentabilidad corporativa deja fuera a los clientes guardados, con sus nombres", () => {
+    const r = buildMetricsReport({ ...base, selection: { kind: "this_year" } });
+    expect(r.corporate.excluded_income_cents).toBe(90_000);
+    expect(r.corporate.income_cents).toBe(500_000);
+    // Gastos de trabajo: salarios 150.000 + suscripción de trabajo 10.000 + otro de trabajo 20.000.
+    expect(r.corporate.work_expenses_cents).toBe(180_000);
+    expect(r.corporate.net_cents).toBe(320_000);
+    expect([r.corporate.partner_a_cents, r.corporate.partner_b_cents]).toEqual([192_000, 128_000]);
+    expect(r.corporate.excluded_clients).toEqual([{ id: "acl", name: "ACL", color_hex: "#f00" }]);
+  });
+
+  it("12 meses incluye diciembre del año pasado", () => {
+    const r = buildMetricsReport({ ...base, selection: { kind: "last_12_months" } });
+    expect(r.income_cents).toBe(640_000);
+  });
+
+  it("un mes puntual cuenta solo ese mes", () => {
+    const r = buildMetricsReport({ ...base, months: ["2026-09"], selection: { kind: "month", month: "2026-09" } });
+    expect(r.period).toEqual({ kind: "month", months: ["2026-09"] });
+    expect(r.income_cents).toBe(300_000);
+    expect(r.net_income_cents).toBe(300_000 - 35_000);
+  });
+
+  it("awaiting payment no depende del período y cuenta las vencidas", () => {
+    const r = buildMetricsReport({ ...base, months: ["2026-01"], selection: { kind: "month", month: "2026-01" } });
+    expect(r.awaiting_payment).toEqual({ count: 2, net_cents: 103_000, past_due_count: 1 });
+  });
+
+  it("las próximas facturas traen su neto", () => {
+    const r = buildMetricsReport({ ...base, selection: { kind: "this_year" } });
+    expect(r.upcoming.days).toBe(5);
+    expect(r.upcoming.invoices[0].net_cents).toBe(36_000);
+    expect(r.today).toBe("2026-09-27");
   });
 });

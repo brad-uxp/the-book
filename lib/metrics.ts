@@ -538,3 +538,106 @@ export function workExpensesByItemOf(
     workOther: [...workOther.values()],
   };
 }
+
+// ── The report GET /api/metrics returns ─────────────────────────────────────
+
+export type MetricsPeriod = "this_year" | "last_12_months" | "all_time";
+
+export const PERIOD_PRESET: Record<MetricsPeriod, Preset> = {
+  this_year: "ytd",
+  last_12_months: "last12",
+  all_time: "all",
+};
+
+export interface MetricsReportInput {
+  /** A preset over the loaded months, or one explicit month. */
+  selection: { kind: MetricsPeriod } | { kind: "month"; month: string };
+  months: string[];
+  rows: MonthlyInputs;
+  sent: { status: string; amount_cents: number; fee_cents: number; due_date: Date }[];
+  upcoming: {
+    payments: UpcomingPayment[];
+    invoices: {
+      id: string;
+      invoice_number: string | null;
+      client: { name: string; color_hex: string };
+      amount_cents: number;
+      fee_cents: number;
+      status: string;
+      due_date: string;
+    }[];
+  };
+  excludedClients: { id: string; name: string; color_hex: string }[];
+  today: Date;
+}
+
+/**
+ * The whole Metrics payload, in integer cents. Same functions as the web
+ * dashboard, so a number here is the number the dashboard shows for the same
+ * period and the same saved exclusions.
+ */
+export function buildMetricsReport(input: MetricsReportInput) {
+  const { monthly, incomeByClient } = bucketByMonth(input.months, input.rows);
+  const shown =
+    input.selection.kind === "month"
+      ? monthly
+      : filterMonths(monthly, PERIOD_PRESET[input.selection.kind], input.today);
+  const shownKeys = new Set(shown.map((m) => m.month));
+  const incomeShown = incomeByClient.filter((m) => shownKeys.has(m.month));
+
+  const t = totalsOf(shown);
+  const c = corporateOf(shown, incomeShown, input.excludedClients.map((x) => x.id));
+  const a = awaitingOf(input.sent, input.today);
+
+  return {
+    period: { kind: input.selection.kind, months: shown.map((m) => m.month) },
+    today: input.today.toISOString().slice(0, 10),
+    awaiting_payment: {
+      count: a.count,
+      net_cents: a.netCents,
+      past_due_count: a.pastDueCount,
+    },
+    income_cents: t.income,
+    expenses: {
+      salary_cents: t.salary,
+      subscriptions_cents: t.subscriptions,
+      subscriptions_work_cents: t.subsWork,
+      subscriptions_personal_cents: t.subsPersonal,
+      subscriptions_essential_cents: t.subsEssential,
+      other_cents: t.other,
+      other_work_cents: t.otherWork,
+      other_personal_cents: t.otherPersonal,
+      total_cents: t.expenses,
+    },
+    net_income_cents: t.net,
+    monthly_averages: {
+      months: shown.length,
+      salary_cents: Math.round(t.avgSalary),
+      subscriptions_personal_cents: Math.round(t.avgSubsPersonal),
+      subscriptions_work_cents: Math.round(t.avgSubsWork),
+      subscriptions_essential_cents: Math.round(t.avgSubsEssential),
+      total_expense_cents: Math.round(t.avgExpenses),
+      net_income_cents: Math.round(t.avgNet),
+    },
+    corporate: {
+      income_cents: c.income,
+      excluded_income_cents: c.excludedIncome,
+      excluded_clients: input.excludedClients,
+      work_expenses_cents: c.workExpenses,
+      net_cents: c.net,
+      partner_a_cents: c.partnerA,
+      partner_b_cents: c.partnerB,
+      split: { partner_a: PARTNER_SPLIT.a, partner_b: PARTNER_SPLIT.b },
+    },
+    upcoming: {
+      days: UPCOMING_DAYS,
+      payments: input.upcoming.payments,
+      invoices: input.upcoming.invoices.map((inv) => ({
+        ...inv,
+        net_cents: inv.amount_cents + inv.fee_cents,
+      })),
+    },
+  };
+}
+
+export type MetricsReport = ReturnType<typeof buildMetricsReport>;

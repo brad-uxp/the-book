@@ -332,3 +332,25 @@ export const SettingsPatchSchema = z.object({
 });
 
 export type SettingsPatchInput = z.infer<typeof SettingsPatchSchema>;
+
+// ─── Metrics ─────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/metrics query. Either a preset `period` (default this_year) or one
+ * explicit `month` — not both: a request carrying both would be ambiguous
+ * about which one the numbers answer.
+ */
+export const MetricsQuerySchema = z
+  .object({
+    period: z.enum(["this_year", "last_12_months", "all_time"]).optional(),
+    month: z
+      .string()
+      .regex(/^(19|20)\d{2}-(0[1-9]|1[0-2])$/, "Use YYYY-MM")
+      .optional(),
+  })
+  .refine((q) => !(q.period && q.month), {
+    message: "Send either period or month, not both",
+    path: ["month"],
+  });
+
+export type MetricsQuery = z.infer<typeof MetricsQuerySchema>;

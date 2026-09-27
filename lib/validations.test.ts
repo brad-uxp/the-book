@@ -6,6 +6,7 @@ import {
   CanvasNodePatchSchema,
   CanvasNodeSchema,
   IssueSchema,
+  MetricsQuerySchema,
   SettingsPatchSchema,
 } from "./validations";
 import { CANVAS_BOUND } from "./canvas-geometry";
@@ -193,5 +194,26 @@ describe("SettingsPatchSchema", () => {
   it("rechaza ids vacíos y días fuera de rango", () => {
     expect(SettingsPatchSchema.safeParse({ corporate_excluded_client_ids: [""] }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ days_before_salary: 31 }).success).toBe(false);
+  });
+});
+
+describe("MetricsQuerySchema", () => {
+  it("sin nada es válido: el período por defecto lo pone la ruta", () => {
+    expect(MetricsQuerySchema.safeParse({}).success).toBe(true);
+  });
+  it("acepta los tres períodos y un mes YYYY-MM", () => {
+    for (const period of ["this_year", "last_12_months", "all_time"]) {
+      expect(MetricsQuerySchema.safeParse({ period }).success).toBe(true);
+    }
+    expect(MetricsQuerySchema.safeParse({ month: "2026-09" }).success).toBe(true);
+  });
+  it("rechaza meses mal formados y períodos inventados", () => {
+    for (const month of ["2026-9", "2026-13", "26-09", "2026-09-01"]) {
+      expect(MetricsQuerySchema.safeParse({ month }).success).toBe(false);
+    }
+    expect(MetricsQuerySchema.safeParse({ period: "forever" }).success).toBe(false);
+  });
+  it("rechaza period y month juntos: la pregunta sería ambigua", () => {
+    expect(MetricsQuerySchema.safeParse({ period: "this_year", month: "2026-09" }).success).toBe(false);
   });
 });
