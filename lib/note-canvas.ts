@@ -25,7 +25,11 @@ export interface CanvasConnection {
   target_id: string;
 }
 
-/** A new idea. Room for a heading and a few lines before it scrolls. */
+/**
+ * A new idea's width. Cards are as tall as their content (the web measures
+ * them), so the height below is only what gets stored for a new row — the
+ * column exists and the API accepts it, but no client lays a card out by it.
+ */
 export const NODE_DEFAULT_WIDTH = 280;
 export const NODE_DEFAULT_HEIGHT = 160;
 
@@ -36,7 +40,7 @@ export const NODE_DEFAULT_HEIGHT = 160;
 export const SEED_NODE_WIDTH = 480;
 export const SEED_NODE_HEIGHT = 360;
 
-/** Below this a card cannot show a line of text and a resize handle. */
+/** Below this a card cannot show a line of text and its resize grips. */
 export const NODE_MIN_WIDTH = 160;
 export const NODE_MIN_HEIGHT = 64;
 

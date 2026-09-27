@@ -258,14 +258,23 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 | Botón `+` | nodo nuevo en el centro de la vista, ya en edición |
 | Arrastrar desde el punto de un nodo y soltar sobre otro nodo | conexión |
 | Arrastrar desde el punto de un nodo y soltar en el vacío | **nodo nuevo conectado** ahí, en edición (el gesto de mapa mental) |
-| Clic en un nodo | lo selecciona: aparecen las manijas de resize y la barra de color |
+| Clic en un nodo | lo selecciona: aparecen las manijas de ancho (izquierda y derecha) y la barra de color |
 | Doble clic / Enter en un nodo | edición inline con bubble menu, @ y # |
 | Escape / clic afuera | sale de la edición |
 | Delete / Backspace (sin estar editando) | borra lo seleccionado; toast **"Undo"** durante ~6 s |
-| Dos dedos / pinch / shift+arrastrar | paneo, zoom, selección múltiple (como hoy) |
+| Rueda del mouse (o scroll con dos dedos en el trackpad) | zoom alrededor del cursor; pinch también |
+| Arrastrar con el botón derecho (o el del medio) | mueve el lienzo |
+| Arrastrar con el botón izquierdo en el vacío | recuadro de selección: toma toda tarjeta que toque |
+| Shift / Cmd / Ctrl + clic en un nodo | lo suma o lo quita de la selección |
+| Arrastrar una tarjeta seleccionada | mueve toda la selección, en una sola escritura |
 
-- El texto que no entra en el nodo hace scroll **dentro** del nodo (`nowheel`). El tamaño
-  lo decide el usuario (NodeResizer), con snap a la grilla de 8.
+El modelo de mouse cambió el 2026-09-27 a pedido del dueño: antes era trackpad-first (dos
+dedos movían el lienzo y shift+arrastrar seleccionaba).
+
+- **Las tarjetas no tienen scroll.** El ancho lo decide el usuario (manijas a izquierda y
+  derecha); el alto se calcula solo según el contenido, siempre con el mismo padding
+  inferior. Al ensanchar una tarjeta baja su alto; al angostarla, crece. La columna
+  `height` de `CanvasNode` sigue existiendo, pero ningún cliente la usa para dibujar.
 - Las aristas flotan: se reutiliza `FloatingEdge` y `edgeAnchor` (con sus tests). Llevan
   flecha y no tienen etiqueta en v1.
 - El título y el cliente se editan en el header con los mismos `InlineTitle` e

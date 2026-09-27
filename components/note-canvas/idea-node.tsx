@@ -3,9 +3,11 @@
 import { createContext, memo, useContext, useEffect, useRef } from "react";
 import {
   Handle,
-  NodeResizer,
+  NodeResizeControl,
   NodeToolbar,
   Position,
+  ResizeControlVariant,
+  useStore,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
@@ -20,11 +22,10 @@ import {
   CANVAS_COLOR_KEYS,
   canvasColor,
 } from "@/lib/canvas-palette";
-import {
-  NODE_MAX_SIZE,
-  NODE_MIN_HEIGHT,
-  NODE_MIN_WIDTH,
-} from "@/lib/note-canvas";
+import { NODE_MAX_SIZE, NODE_MIN_WIDTH } from "@/lib/note-canvas";
+
+/** The two sides a card is widened from. Its height is never set by hand. */
+const WIDTH_SIDES = [Position.Left, Position.Right] as const;
 
 /** A `type`, not an `interface`: React Flow requires an index-signature fit. */
 export type IdeaNodeData = {
@@ -39,11 +40,11 @@ export type IdeaNodeData = {
 };
 export type IdeaNode = Node<IdeaNodeData, "idea">;
 
+/** Where a card sits and how wide it is — its height follows its content. */
 export interface IdeaBox {
   x: number;
   y: number;
   width: number;
-  height: number;
 }
 
 /**
@@ -85,6 +86,11 @@ const CONNECT_HANDLES = [
  * same editor a text note has, in place, with the cursor where the click was.
  * Read-only is what lets the card be dragged by its text; editing marks the
  * text `nodrag` so selecting words does not move the card.
+ *
+ * The width is the user's; the height is the content's. A card never
+ * scrolls: widen it and it gets shorter, narrow it and it grows, always with
+ * the same padding under the last line. React Flow measures the height, so
+ * edges and the toolbar follow the card as it grows while typing.
  */
 export const IdeaNodeView = memo(function IdeaNodeView({
   id,
@@ -97,26 +103,52 @@ export const IdeaNodeView = memo(function IdeaNodeView({
   const editorRef = useRef<RichTextEditorHandle>(null);
   const color = data.color ? canvasColor(data.color) : null;
 
+  // React Flow keeps a node `visibility: hidden` until it has measured it,
+  // and a card with no fixed height must be measured before it can be shown.
+  // Nothing hidden can take focus — so a brand-new card, open for typing,
+  // focuses once it is measured, not before (it used to race and lose).
+  // A boolean selector: this re-renders the card when it becomes measured,
+  // not every time its height changes while typing.
+  const measured = useStore(
+    (s) => s.nodeLookup.get(id)?.measured?.height !== undefined
+  );
+
   // Entering edit mode from the keyboard, or from creating the card: put the
   // cursor at the end. A double-click has already placed it where it landed.
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || !measured) return;
     const handle = editorRef.current;
     if (handle && !handle.isFocused()) handle.focusEnd();
-  }, [editing]);
+  }, [editing, measured]);
 
   return (
     <>
-      <NodeResizer
-        isVisible={selected && !ctx.compact}
-        minWidth={NODE_MIN_WIDTH}
-        minHeight={NODE_MIN_HEIGHT}
-        maxWidth={NODE_MAX_SIZE}
-        maxHeight={NODE_MAX_SIZE}
-        onResizeEnd={(_event, box) => ctx.onResizeEnd(id, box)}
-        lineClassName="!border-primary/40"
-        handleClassName="!h-2.5 !w-2.5 !rounded-sm !border-primary/60 !bg-background"
-      />
+      {/*
+        Width only, from either side: the whole edge is a grab area, with a
+        visible grip near its bottom — not in the middle, where the
+        connection dot of that side sits and a drag would start a connection
+        instead. `resizeDirection="horizontal"` is what keeps React Flow from
+        writing a fixed height onto the node — with it, a resize sets the
+        width attribute alone and the height stays measured.
+      */}
+      {selected &&
+        !ctx.compact &&
+        WIDTH_SIDES.map((side) => (
+          <NodeResizeControl
+            key={side}
+            position={side}
+            variant={ResizeControlVariant.Line}
+            resizeDirection="horizontal"
+            minWidth={NODE_MIN_WIDTH}
+            maxWidth={NODE_MAX_SIZE}
+            onResizeEnd={(_event, box) =>
+              ctx.onResizeEnd(id, { x: box.x, y: box.y, width: box.width })
+            }
+            className="!border-transparent !border-[5px]"
+          >
+            <span className="pointer-events-none absolute bottom-2 left-1/2 h-4 w-1.5 -translate-x-1/2 rounded-full bg-primary/60" />
+          </NodeResizeControl>
+        ))}
 
       {/*
         Colour and delete. NodeToolbar renders outside the pan/zoom transform,
@@ -171,7 +203,7 @@ export const IdeaNodeView = memo(function IdeaNodeView({
 
       <div
         className={cn(
-          "relative h-full w-full overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow",
+          "relative w-full overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow",
           selected || editing
             ? "ring-2 ring-primary/30"
             : "hover:shadow-md"
@@ -198,11 +230,14 @@ export const IdeaNodeView = memo(function IdeaNodeView({
         )}
         <div
           className={cn(
-            "h-full overflow-y-auto px-3.5 pt-3 pb-2",
-            // Editing: selecting text must not drag the card. Selected or
-            // editing: the wheel scrolls a long idea instead of the canvas.
-            editing && "nodrag cursor-text",
-            (editing || selected) && "nowheel"
+            // No scroll area: the card is as tall as this box. The last
+            // block's own bottom margin is dropped so the padding under the
+            // last line is always exactly pb-3.
+            // `!`: the editor's own `.tiptap p` margin is unlayered CSS, and
+            // unlayered rules beat Tailwind's layered utilities.
+            "px-3.5 pt-3 pb-3 [&_.tiptap>*:last-child]:mb-0!",
+            // Editing: selecting text must not drag the card.
+            editing && "nodrag cursor-text"
           )}
         >
           <RichTextEditor
@@ -217,7 +252,7 @@ export const IdeaNodeView = memo(function IdeaNodeView({
             autoFocus={editing}
             overlays="portal"
             placeholder="Write an idea…"
-            className="min-h-full text-sm"
+            className="text-sm"
           />
         </div>
       </div>

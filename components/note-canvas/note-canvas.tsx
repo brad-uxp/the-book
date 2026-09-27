@@ -9,6 +9,7 @@ import {
   MarkerType,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -37,6 +38,8 @@ import { isBlankHtml } from "@/lib/notes";
 import {
   NODE_DEFAULT_HEIGHT,
   NODE_DEFAULT_WIDTH,
+  NODE_MAX_SIZE,
+  NODE_MIN_HEIGHT,
   nodeOriginAt,
   type CanvasConnection,
   type CanvasIdea,
@@ -74,21 +77,28 @@ const LAYOUT_FLUSH_MS = 400;
 /** Long enough to reach for, short enough not to linger over the canvas. */
 const UNDO_MS = 6000;
 
+/**
+ * What a gesture changes on a card: where it is and, after a resize, how wide.
+ * Never its height — the height is its content's, measured by React Flow.
+ */
 type LayoutEntry = {
   id: string;
   x: number;
   y: number;
   width?: number;
-  height?: number;
 };
 
+/**
+ * The stored `height` is deliberately not applied: a card is as tall as its
+ * content (see IdeaNodeView). Setting it here would pin the height and bring
+ * back the scrolling cards this replaced.
+ */
 function toNode(idea: CanvasIdea, selected = false): IdeaNode {
   return {
     id: idea.id,
     type: "idea",
     position: { x: idea.x, y: idea.y },
     width: idea.width,
-    height: idea.height,
     selected,
     data: { content: idea.content, color: idea.color, rev: 0 },
   };
@@ -561,7 +571,12 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         x: n.position.x,
         y: n.position.y,
         width: n.width ?? n.measured?.width ?? NODE_DEFAULT_WIDTH,
-        height: n.height ?? n.measured?.height ?? NODE_DEFAULT_HEIGHT,
+        // Only stored, never applied (the card sizes to its content) — but it
+        // travels in the re-create, so keep it inside what the API accepts.
+        height: Math.min(
+          NODE_MAX_SIZE,
+          Math.max(NODE_MIN_HEIGHT, Math.round(n.measured?.height ?? NODE_DEFAULT_HEIGHT))
+        ),
       }));
       const connections: CanvasConnection[] = goneEdges.map((e) => ({
         id: e.id,
@@ -674,9 +689,8 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
 
   const onResizeEnd = useCallback(
     (id: string, box: IdeaBox) => {
-      queueLayout([
-        { id, x: box.x, y: box.y, width: box.width, height: box.height },
-      ]);
+      // Resizing from the left edge moves x as well as the width.
+      queueLayout([{ id, x: box.x, y: box.y, width: box.width }]);
     },
     [queueLayout]
   );
@@ -861,6 +875,13 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
       ref={paneRef}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
+      // The right button pans, so the browser's menu must not pop up at the
+      // end of the drag. Inside a card being edited it stays: that is where
+      // spell-check suggestions and paste live.
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest('[contenteditable="true"]')) return;
+        e.preventDefault();
+      }}
       className={cn(
         "relative w-full overflow-hidden border bg-background",
         expanded
@@ -903,9 +924,23 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           connectionLineStyle={{ strokeWidth: 2, stroke: "#94a3b8" }}
           deleteKeyCode={["Backspace", "Delete"]}
           proOptions={{ hideAttribution: true }}
-          // Trackpad-first: two fingers pan, pinch zooms, shift+drag boxes a
-          // selection. Wheel-to-zoom fights every gesture on a laptop.
-          panOnScroll
+          // Mouse-first, as a whiteboard: the wheel zooms around the cursor,
+          // the right (or middle) button drags the canvas, and the left
+          // button on empty canvas draws a selection box. This replaced the
+          // first trackpad-first setup (two fingers panned) at the owner's
+          // request: on a trackpad, two-finger scroll now zooms too, and a
+          // pinch still does.
+          zoomOnScroll
+          panOnScroll={false}
+          panOnDrag={[1, 2]}
+          selectionOnDrag
+          // Partial: the box only has to touch a card to take it. Requiring
+          // the whole card inside is fussy with tall cards.
+          selectionMode={SelectionMode.Partial}
+          // The box needs no key held down; Shift (or Cmd/Ctrl) is for
+          // adding and removing cards from a selection by clicking them.
+          selectionKeyCode={null}
+          multiSelectionKeyCode={["Shift", "Meta", "Control"]}
         >
           <Background
             variant={BackgroundVariant.Dots}
