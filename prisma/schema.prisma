@@ -22,6 +22,8 @@ datasource db {
 //     (CHECK constraint: only a note can have note_format = 'canvas')
 //   - CanvasEdge_no_self_link
 //     (CHECK constraint on CanvasEdge.source_id <> target_id)
+//   - sync_tombstone_issue() / sync_tombstone_canvas() and their AFTER DELETE
+//     triggers on Task, CanvasNode and CanvasEdge (they fill SyncTombstone)
 //
 // Because `prisma migrate dev` diffs the schema against the live DB, any
 // such object will appear "extra" and Prisma will try to DROP it on the
@@ -406,6 +408,8 @@ model Issue {
   @@index([status])
   @@index([client_id])
   @@index([category])
+  /// "What changed since" for the phone's sync.
+  @@index([updated_at, id])
 }
 
 /**
@@ -439,6 +443,8 @@ model CanvasNode {
   /// Target of the edges' compound foreign keys. Also serves every
   /// "nodes of this canvas" lookup, since issue_id leads.
   @@unique([issue_id, id])
+  /// "What changed since" for the phone's sync.
+  @@index([updated_at, id])
 }
 
 /**
@@ -461,6 +467,54 @@ model CanvasEdge {
 
   @@unique([issue_id, source_id, target_id])
   @@index([issue_id, target_id])
+  /// "What changed since" for the phone's sync. A connection is never edited,
+  /// only created and deleted, so its creation is its last change.
+  @@index([created_at, id])
+}
+
+// ============================================================
+// Sync (the mobile app's offline notes)
+// ============================================================
+
+/**
+ * A deleted issue, idea or connection, so a phone that pulls "what changed
+ * since" hears about rows that no longer exist.
+ *
+ * Written ONLY by the AFTER DELETE row triggers the migration puts on Task,
+ * CanvasNode and CanvasEdge — never by application code. A trigger sees every
+ * way a row goes: a route, a bulk delete, a cascade from its issue or its
+ * node, Prisma Studio, psql. The triggers are invisible to Prisma, so
+ * prisma/migrations.test.ts guards them.
+ *
+ * Purged by the daily job after 60 days; a phone whose cursor is older than
+ * that starts over with a full sync (lib/sync.ts, SYNC_TOMBSTONE_RETENTION_MS).
+ */
+model SyncTombstone {
+  /// A sequence, so rows deleted in the same millisecond still page in order.
+  id         BigInt   @id @default(autoincrement())
+  /// "issue" | "canvas_node" | "canvas_edge"
+  entity     String
+  entity_id  String
+  /// The issue the row belonged to (the issue itself for an issue).
+  issue_id   String?
+  deleted_at DateTime @default(now())
+
+  @@index([deleted_at, id])
+}
+
+/**
+ * The answer to every change a phone has pushed, by the id the phone gave it.
+ *
+ * A push whose response is lost is retried with the same ids; this is what
+ * makes the retry return the first answer instead of applying the change
+ * twice. Purged by the daily job after 30 days.
+ */
+model SyncMutation {
+  mutation_id String   @id
+  result      Json
+  created_at  DateTime @default(now())
+
+  @@index([created_at])
 }
 
 // ============================================================
