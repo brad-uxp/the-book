@@ -1,0 +1,174 @@
+/*
+ * The editor page. The web's .tiptap styles (app/globals.css), in the app's
+ * palette (src/lib/theme.ts). The system sans: the page loads nothing, so
+ * there is no Inter here — only what the phone already has.
+ */
+
+:root {
+  --bg: #ffffff;
+  --ink: #18181b;
+  --muted: #71717a;
+  --faint: #a1a1aa;
+  --surface: #f4f4f5;
+  --line: #e4e4e7;
+  --chip: #18181b;
+  --on-chip: #fafafa;
+  --accent: #8b5cf6;
+  --deleted-bg: hsl(25 95% 53% / 0.15);
+  --deleted-ink: hsl(25 95% 40%);
+  --deleted-line: hsl(25 95% 53% / 0.3);
+  color-scheme: light;
+}
+
+:root.dark {
+  --bg: #0c0c0e;
+  --ink: #f4f4f5;
+  --muted: #a1a1aa;
+  --faint: #71717a;
+  --surface: #18181b;
+  --line: #27272a;
+  --chip: #f4f4f5;
+  --on-chip: #18181b;
+  --deleted-bg: hsl(25 95% 53% / 0.18);
+  --deleted-ink: hsl(27 96% 61%);
+  --deleted-line: hsl(25 95% 53% / 0.35);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, Roboto, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overflow-wrap: break-word;
+}
+
+#editor {
+  padding: 12px 16px 32px;
+}
+
+.tiptap {
+  outline: none;
+  caret-color: var(--accent);
+  /* A tap anywhere below the text still lands in the editor. */
+  min-height: calc(100vh - 44px);
+  white-space: pre-wrap;
+}
+
+.tiptap > :first-child {
+  margin-top: 0;
+}
+
+.tiptap p { margin: 0 0 0.5em; }
+.tiptap h1 { font-size: 1.5em; font-weight: 700; margin: 0.6em 0 0.5em; line-height: 1.25; }
+.tiptap h2 { font-size: 1.25em; font-weight: 600; margin: 0.6em 0 0.5em; line-height: 1.3; }
+.tiptap h3 { font-size: 1.1em; font-weight: 600; margin: 0.6em 0 0.5em; line-height: 1.35; }
+.tiptap h4 { font-size: 0.95em; font-weight: 600; margin: 0.6em 0 0.5em; }
+.tiptap ul { list-style: disc; padding-left: 1.5em; margin: 0 0 0.5em; }
+.tiptap ol { list-style: decimal; padding-left: 1.5em; margin: 0 0 0.5em; }
+.tiptap li { margin-bottom: 0.15em; }
+.tiptap li > p { margin: 0; }
+.tiptap a { color: var(--accent); }
+.tiptap code {
+  background: var(--surface);
+  padding: 0.15em 0.3em;
+  border-radius: 0.25em;
+  font-size: 0.9em;
+  font-family: ui-monospace, "Roboto Mono", monospace;
+}
+.tiptap pre {
+  background: var(--surface);
+  padding: 0.75em 1em;
+  border-radius: 0.5em;
+  margin: 0 0 0.5em;
+  overflow-x: auto;
+  white-space: pre;
+}
+.tiptap pre code { background: none; padding: 0; }
+.tiptap blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 1em;
+  margin: 0 0 0.5em;
+  color: var(--muted);
+}
+.tiptap hr { border: none; border-top: 1px solid var(--line); margin: 1em 0; }
+
+.tiptap .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--faint);
+  pointer-events: none;
+  height: 0;
+}
+
+/* The @ or # being typed, while the native list is open. */
+.tiptap .suggestion {
+  color: var(--accent);
+}
+
+/*
+ * Mention chips — the web's shapes and icons. On one line, cut short with an
+ * ellipsis if a label is wider than the screen. `span.` outranks TipTap's own
+ * `[contenteditable="false"] { white-space: normal }`.
+ */
+.tiptap span.mention,
+.tiptap span.invoice-mention {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  line-height: 1.45;
+  padding: 0 0.5em 0 0.35em;
+  font-size: 0.875em;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tiptap .mention {
+  background-color: var(--chip);
+  color: var(--on-chip);
+  border-radius: 9999px;
+}
+.tiptap .invoice-mention {
+  background-color: var(--surface);
+  color: var(--ink);
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.tiptap .mention::before,
+.tiptap .invoice-mention::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 3px;
+  vertical-align: -2px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.tiptap .mention::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3Cpath d='M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3Cpath d='M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662'/%3E%3C/svg%3E");
+}
+.tiptap .invoice-mention::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E");
+}
+.tiptap .mention[data-deleted],
+.tiptap .invoice-mention[data-deleted] {
+  background-color: var(--deleted-bg);
+  color: var(--deleted-ink);
+  border: 1px solid var(--deleted-line);
+}

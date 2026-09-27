@@ -19,21 +19,24 @@
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.2",
-    "react-native-svg": "15.15.4"
+    "react-native-svg": "15.15.4",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "JAVA_HOME=$(/usr/libexec/java_home -v 21) expo run:android",
+    "start": "pnpm editor:build && expo start",
+    "android": "pnpm editor:build && JAVA_HOME=$(/usr/libexec/java_home -v 21) expo run:android",
     "android:release": "./scripts/android-release.sh",
-    "typecheck": "tsc --noEmit",
-    "lint": "expo lint",
-    "test": "node --test --experimental-strip-types src/lib/*.test.ts"
+    "typecheck": "pnpm editor:build && tsc --noEmit",
+    "lint": "pnpm editor:build && expo lint",
+    "test": "node --test --experimental-strip-types src/lib/*.test.ts src/editor/*.test.ts",
+    "editor:build": "node scripts/build-editor.mjs"
   },
   "private": true
 }

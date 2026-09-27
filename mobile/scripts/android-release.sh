@@ -31,6 +31,9 @@ unset EXPO_PUBLIC_API_URL
 VERSION=$(node -p "require('./app.json').expo.version")
 CODE=$(node -p "require('./app.json').expo.android.versionCode")
 
+# The editor page is bundled into the app as a generated module; Metro needs it.
+pnpm editor:build
+
 pnpm expo prebuild --platform android --clean --no-install
 
 (cd android && ./gradlew --no-daemon --quiet assembleRelease)

@@ -25,8 +25,15 @@ Read the `expo` major in `package.json` (57 today) and use the versioned docs,
   builds at `~/.android/debug.keystore` (its SHA-1 is the one registered with
   Google) and release builds at `~/.android/book-release.jks`;
   `with-gradle-project-name.js` keeps Gradle from choking on the dot in "book.".
-- **Shared code**: `@shared/*` → `../lib/*`, only modules with no imports
-  (issues, notes, mentions, currency). Brand assets come from `../brand`.
+- **Shared code**: `@shared/*` → `../lib/*`, only pure modules that import
+  nothing but each other (issues, notes, mentions, currency). Brand assets come
+  from `../brand`.
+- **The note editor** (`src/editor/`) is TipTap on a page bundled into the app,
+  in a WebView. The page is `editor-web/`, built with the web's TipTap and
+  `../lib/rich-text` by `pnpm editor:build` into
+  `src/editor/editor-html.generated.ts` — not versioned; `start`, `android`,
+  `typecheck`, `lint` and the release script build it first. It needs the repo
+  root installed. `book://dev/editor` (development builds) shows it on its own.
 - **Google sign-in** is `modules/google-id` (a local Expo module on Android's
   Credential Manager). The app asks Google for a token for the WEB OAuth client;
   the server verifies it (`/api/mobile/sign-in`).

@@ -4,6 +4,9 @@ import { Editor, type AnyExtension } from "@tiptap/core";
 import type { SuggestionProps } from "@tiptap/suggestion";
 import { MENTION_NODE, richTextExtensions } from "./extensions";
 import { syncMentionLabels } from "./mention-sync";
+// The phone's editor page builds its extensions here; the web and the phone
+// have to write the same HTML.
+import { pageExtensions } from "../../mobile/editor-web/extensions";
 
 const person = (id: string, label: string, extra = "") =>
   `<span data-type="mention" class="mention" data-id="${id}" data-label="${label}" data-mention-suggestion-char="@"${extra} data-mention-id="${id}" data-mention-label="${label}">${label}</span>`;
@@ -60,7 +63,7 @@ function open(extensions: AnyExtension[], content: string): Editor {
 
 type Captured = { command?: (attrs: { id: string; label: string }) => void; query?: string };
 
-/** A suggestion UI that records what the list would be handed. */
+/** The suggestion UI each side really passes: the web's draws a list, the page's reports to native. */
 function ui(captured: Captured) {
   const track = (props: SuggestionProps<unknown>) => {
     captured.command = props.command as Captured["command"];
@@ -71,10 +74,21 @@ function ui(captured: Captured) {
 
 const web = (c: Captured = {}, i: Captured = {}) =>
   richTextExtensions({ placeholder: "Add a description...", personSuggestion: ui(c), invoiceSuggestion: ui(i) });
+const phone = (c: Captured = {}, i: Captured = {}) =>
+  pageExtensions({ placeholder: () => "Write something…", person: ui(c), invoice: ui(i) });
 
-describe("the stored HTML", () => {
+describe("the web and the phone write the same HTML", () => {
   it.each(Object.entries(SAMPLES))("%s", (_name, { html, saved }) => {
     expect(open(web(), html).getHTML()).toBe(saved);
+    expect(open(phone(), html).getHTML()).toBe(saved);
+  });
+
+  it("have the same schema: nodes, marks and their attributes", () => {
+    const describeSchema = (e: Editor) => ({
+      nodes: Object.values(e.schema.nodes).map((n) => [n.name, Object.keys(n.spec.attrs ?? {})]),
+      marks: Object.values(e.schema.marks).map((m) => [m.name, Object.keys(m.spec.attrs ?? {})]),
+    });
+    expect(describeSchema(open(phone(), ""))).toEqual(describeSchema(open(web(), "")));
   });
 
   it.each([
@@ -82,7 +96,7 @@ describe("the stored HTML", () => {
     ["invoice", "#", "7", { id: "inv-7", label: "Inv 7: Acme — $1,200.00" }, invoice("inv-7", "Inv 7: Acme — $1,200.00")],
   ] as const)("choosing a %s from a suggestion inserts the web's markup", async (kind, char, query, attrs, chip) => {
     const results: string[] = [];
-    for (const make of [web]) {
+    for (const make of [web, phone]) {
       const c: Captured = {};
       const i: Captured = {};
       const editor = open(make(c, i), "<p>Hi</p>");
@@ -95,6 +109,7 @@ describe("the stored HTML", () => {
       results.push(editor.getHTML());
     }
     expect(results[0]).toBe(`<p>Hi ${chip} </p>`);
+    expect(results[1]).toBe(results[0]);
   });
 });
 
@@ -128,7 +143,7 @@ describe("syncMentionLabels", () => {
   });
 
   it("syncs invoices by their label", () => {
-    const editor = open(web(), doc);
+    const editor = open(phone(), doc);
     const tr = syncMentionLabels(editor.state, MENTION_NODE.invoice, () => "Inv 7: Acme — $2.00");
     editor.view.dispatch(tr!);
     expect(editor.getHTML()).toContain(invoice("inv-7", "Inv 7: Acme — $2.00"));
