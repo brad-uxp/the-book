@@ -18,6 +18,7 @@ import { formatDateShort } from "@/lib/dates";
 import { MiniCalendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { ARCHIVED_STATUS } from "@/lib/issues";
+import type { NoteFormat } from "@/lib/notes";
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 
@@ -47,12 +48,16 @@ export const BOARD_COLUMNS = COLUMNS.filter((c) => c.id !== ARCHIVED_STATUS);
 
 export type IssueCategory = "task" | "note";
 
+export type { NoteFormat } from "@/lib/notes";
+
 export interface Issue {
   id: string;
   title: string;
   client_id: string | null;
   client: Client | null;
   category: IssueCategory;
+  /** `canvas` only ever on a note — see lib/notes.ts. */
+  note_format: NoteFormat;
   status: IssueStatus;
   progress: number;
   due_date: string | null;

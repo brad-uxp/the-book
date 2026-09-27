@@ -314,6 +314,7 @@ export interface RichTextEditorHandle {
    */
   focusAt: (clientX: number, clientY: number) => void;
   focusEnd: () => void;
+  isFocused: () => boolean;
 }
 
 interface RichTextEditorProps {
@@ -329,8 +330,21 @@ interface RichTextEditorProps {
   placeholder?: string;
   /** Read-only when false; toggling it never remounts the editor. */
   editable?: boolean;
+  /**
+   * Put the cursor at the end as soon as the editor exists. For an idea just
+   * created on a canvas: the editor is built after mount, so the card cannot
+   * focus it from outside yet.
+   */
+  autoFocus?: boolean;
   /** The fixed formatting bar above the text. The bubble menu is always on. */
   toolbar?: boolean;
+  /**
+   * Escape pressed with no @/# suggestion list open. The editor has to be the
+   * one to say so: ProseMirror marks every Escape as handled, and once the
+   * suggestion plugin has closed its list there is no telling afterwards
+   * whether the key was spent on that.
+   */
+  onEscape?: () => void;
   /**
    * Where suggestion lists, mention popovers and the bubble menu render.
    *
@@ -363,7 +377,9 @@ export function RichTextEditor({
   onChange,
   placeholder = "Add a description...",
   editable = true,
+  autoFocus = false,
   toolbar = false,
+  onEscape,
   overlays = "inline",
   className,
   ref,
@@ -381,8 +397,10 @@ export function RichTextEditor({
   // Latest callback for the editor, which is built once. Assigned after
   // commit, never during render: a render can be thrown away or replayed.
   const onChangeRef = useRef(onChange);
+  const onEscapeRef = useRef(onEscape);
   useEffect(() => {
     onChangeRef.current = onChange;
+    onEscapeRef.current = onEscape;
   });
   const isSyncingRef = useRef(false);
 
@@ -551,6 +569,14 @@ export function RichTextEditor({
       attributes: {
         class: cn("tiptap outline-none", className),
       },
+      // Runs before any plugin, so an open suggestion list is still marked in
+      // the DOM here — and then Escape is its to close, not ours.
+      handleKeyDown: (view, event) => {
+        if (event.key !== "Escape" || !onEscapeRef.current) return false;
+        if (view.dom.querySelector("[data-decoration-id]")) return false;
+        onEscapeRef.current();
+        return true;
+      },
     },
   });
 
@@ -570,11 +596,26 @@ export function RichTextEditor({
   // `false` as the second argument: flipping read-only on and off is not an
   // edit, and must not fire onUpdate — that would save unchanged text every
   // time a card is opened.
+  //
+  // Leaving edit mode also drops focus. A read-only ProseMirror keeps its
+  // `contenteditable` attribute (set to false), and React Flow ignores the
+  // Delete key on anything carrying that attribute — so a card that kept
+  // focus after editing could not be deleted from the keyboard.
   useEffect(() => {
     if (editor && editor.isEditable !== editable) {
       editor.setEditable(editable, false);
+      if (!editable) editor.commands.blur();
     }
   }, [editor, editable]);
+
+  // Once, when the editor comes to exist — see `autoFocus`.
+  useEffect(() => {
+    if (editor && autoFocus) {
+      if (!editor.isEditable) editor.setEditable(true, false);
+      editor.commands.focus("end");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   useImperativeHandle(
     ref,
@@ -590,6 +631,7 @@ export function RichTextEditor({
         if (!editor.isEditable) editor.setEditable(true, false);
         editor.chain().focus("end").run();
       },
+      isFocused: () => editor?.isFocused ?? false,
     }),
     [editor]
   );

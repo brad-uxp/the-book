@@ -7,6 +7,24 @@
 
 import { snapToGrid } from "./canvas-geometry";
 
+/** An idea as the API and the page hand it to the canvas. */
+export interface CanvasIdea {
+  id: string;
+  content: string;
+  color: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A connection as the API and the page hand it to the canvas. */
+export interface CanvasConnection {
+  id: string;
+  source_id: string;
+  target_id: string;
+}
+
 /** A new idea. Room for a heading and a few lines before it scrolls. */
 export const NODE_DEFAULT_WIDTH = 280;
 export const NODE_DEFAULT_HEIGHT = 160;

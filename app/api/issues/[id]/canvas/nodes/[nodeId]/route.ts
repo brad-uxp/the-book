@@ -4,6 +4,7 @@ import { CanvasNodePatchSchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
 import { plainTextSnippet } from "@/lib/mentions";
+import { isBlankHtml } from "@/lib/notes";
 import { EDGE_SELECT, NODE_SELECT } from "@/lib/note-canvas-server";
 
 type Params = { params: Promise<{ id: string; nodeId: string }> };
@@ -55,6 +56,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
  * This is the write on a canvas that loses words, so it is the one that is
  * audited — with the content and the connections in `before`, which makes the
  * audit log the way back from a deletion nobody meant.
+ *
+ * An idea with no words is not audited, connections or not: the canvas
+ * removes a card that was created and abandoned unwritten — including one
+ * pulled out of another card's handle, which arrives already connected — and
+ * a row for each of those would be noise on top of the history that matters.
  */
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const denied = await requireSession();
@@ -78,6 +84,10 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     });
 
     const { issue, ...removed } = node;
+    if (isBlankHtml(removed.content)) {
+      return NextResponse.json({ ok: true });
+    }
+
     const snippet = plainTextSnippet(removed.content);
     auditLog({
       entity_type: "canvas_node",
