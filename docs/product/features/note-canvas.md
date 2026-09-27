@@ -358,14 +358,13 @@ tiempo real · exportar el lienzo como imagen.
 - **Arreglado de paso**: el deep link `?issue=` de una nota escribía `localStorage` durante el
   render — en el servidor tiraba y sacaba la página entera del SSR.
 
-### Hallazgos que quedan fuera de esta rama
+### Hallazgos preexistentes, ya corregidos
 
-- **Mismatch de hidratación en `/issues`** cuando la vista guardada es `list`: el servidor
-  renderiza el board (no tiene `localStorage`) y el cliente la lista. React se recupera
-  renderizando en el cliente, pero lo loguea. Preexistente. Arreglo posible: guardar la vista
-  en una cookie y leerla en el server component.
-- **`GET /api/issues/{id}` está documentado pero no existe** (solo `PATCH` y `DELETE`).
-  Preexistente; `API.md` y `PROJECT.md` lo listan.
+- **Mismatch de hidratación en `/issues`** con la vista lista guardada: el servidor dibujaba
+  el board (no tiene `localStorage`) y el cliente la lista. La vista ahora vive en una cookie
+  que la página lee en el servidor.
+- **`GET /api/issues/{id}` estaba documentado pero no existía.** Ahora existe, con la misma
+  forma que la lista.
 
 ### Verificación
 

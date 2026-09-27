@@ -6,6 +6,27 @@ import { requireSession, toApiResponse } from "@/lib/api";
 import { checkShapeChange, isBlankHtml } from "@/lib/notes";
 import { SEED_NODE_HEIGHT, SEED_NODE_WIDTH } from "@/lib/note-canvas";
 
+/**
+ * One issue, in the same shape the list returns. Documented in API.md long
+ * before it existed — a machine client following the docs got a 405.
+ */
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const denied = await requireSession();
+  if (denied) return denied;
+  const { id } = await params;
+
+  const issue = await prisma.issue.findUnique({
+    where: { id },
+    include: { client: true },
+  });
+  if (!issue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  return NextResponse.json(issue);
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
