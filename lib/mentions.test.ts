@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   countMentions,
   deletedMentionLabel,
+  formatInvoiceLabel,
   mentionNeedle,
   plainTextSnippet,
   stripDeletedSuffix,
@@ -93,5 +94,20 @@ describe("sufijo de mención borrada", () => {
   });
   it("no toca un nombre que solo contiene la palabra", () => {
     expect(stripDeletedSuffix("Deleted Scenes Ltd")).toBe("Deleted Scenes Ltd");
+  });
+});
+
+describe("formatInvoiceLabel", () => {
+  // Lo escriben la web y el teléfono en el HTML de la nota: si difieren, abrir
+  // una nota en uno reescribe los chips que escribió el otro.
+  it("número, cliente y monto, con raya", () => {
+    expect(
+      formatInvoiceLabel({ invoice_number: "0142", client: { name: "Acme" }, amount_cents: 120000 })
+    ).toBe("Inv 0142: Acme \u2014 $1,200.00");
+  });
+  it("sin número todavía, un signo de pregunta", () => {
+    expect(formatInvoiceLabel({ invoice_number: null, client: { name: "Acme" }, amount_cents: 5 })).toBe(
+      "Inv ?: Acme \u2014 $0.05"
+    );
   });
 });
