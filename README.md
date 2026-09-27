@@ -14,7 +14,6 @@ invariants the database enforces — see [`PROJECT.md`](./PROJECT.md).
 - **Prisma 7** + **PostgreSQL 18**
 - **NextAuth 5 (beta)** — Google OAuth, single user
 - **Cloudflare R2** — invoice attachments via presigned URLs
-- **web-push** (VAPID) — notifications
 - **Railway** — hosting and database
 - **Timezone:** `America/Montevideo` (Uruguay)
 - **Currency:** USD — amounts stored as integer cents

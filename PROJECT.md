@@ -30,11 +30,17 @@
 - **PostgreSQL 18** como base de datos
 - **NextAuth 5 (beta)** — autenticación con Google OAuth, single-user
 - **Cloudflare R2** (S3-compatible) — adjuntos de facturas vía URLs presignadas
-- **web-push** (VAPID) — notificaciones push
 
 > **No hay email ni auth mobile.** Ambas funcionalidades existieron y fueron
 > eliminadas del producto. Si leés menciones a Nodemailer, Gmail SMTP, JWT con
 > `jose` o `POST /api/auth/mobile`, son de una versión anterior.
+>
+> **Tampoco hay PWA ni web push** desde el 2026-09-27: se quitaron a favor de una
+> app React Native, que traerá push nativo. Las notificaciones viven solo en la
+> campana y en `/notifications`. `public/sw.js` no es un worker de la app: es el
+> *kill switch* que desinstala el service worker viejo de los navegadores que lo
+> tenían (ver su cabecera); se puede borrar unas semanas después, junto con
+> `components/service-worker-cleanup.tsx` y su exclusión en `proxy.ts`.
 
 ### Infraestructura
 
@@ -42,7 +48,6 @@
 - **Scheduler in-app** — `instrumentation.ts` registra `lib/daily-scheduler.ts`,
   que corre el job diario a las **13:00 UTC** (10:00 en Montevideo).
   No hay cron de plataforma. Se desactiva con `DISABLE_INAPP_CRON=1`.
-- **PWA** con `serwist` (service worker generado en `public/sw.js`)
 
 ⚠️ **`pnpm start` corre `prisma migrate deploy` antes de `next start`**, así que
 cada arranque aplica las migraciones pendientes a producción sin intervención
@@ -55,7 +60,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 47 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 45 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -65,16 +70,14 @@ TheBook/
 │   ├── issues/[id]/page.tsx          # Página propia de una nota canvas (el resto redirige al sheet)
 │   ├── login/page.tsx                # Login con Google OAuth
 │   ├── notifications/page.tsx        # Centro de notificaciones
-│   ├── offline/page.tsx              # Fallback PWA
 │   ├── salaries/page.tsx             # Gestión de salarios y personas
 │   ├── settings/page.tsx             # Configuración del sistema
 │   ├── subscriptions/page.tsx        # Gestión de suscripciones
 │   ├── generated/prisma/             # Cliente Prisma (gitignored, generado en build)
-│   ├── sw.ts                         # Service worker (serwist)
 │   └── layout.tsx                    # Layout raíz con sidebar
 ├── components/
 │   ├── ui/                           # 27 componentes shadcn/ui
-│   ├── layout/                       # Sidebar, MobileNav, NotificationBell, InstallBanner
+│   ├── layout/                       # Sidebar, MobileNav, NotificationBell
 │   ├── dashboard/                    # Charts, Metrics, UpcomingCards, CorporateChart
 │   ├── expenses/  invoices/  salaries/  subscriptions/
 │   ├── fees/                         # Referidores y comisiones
@@ -98,7 +101,6 @@ TheBook/
 │   ├── r2.ts                         # Cloudflare R2 + validación de object keys
 │   ├── run-daily.ts                  # Orquestación del job diario
 │   ├── validations.ts                # Esquemas Zod
-│   ├── web-push.ts                   # Envío de push
 │   └── utils.ts
 ├── prisma/
 │   ├── schema.prisma
@@ -125,7 +127,7 @@ guardan como **UTC midnight**.
 | Modelo             | Descripción                                                              |
 | ------------------ | ------------------------------------------------------------------------ |
 | `Settings`         | Configuración global (singleton, `CHECK (id = 'singleton')`)             |
-| `PushSubscription` | Suscripción de web push por endpoint                                     |
+| `PushSubscription` | **Inactiva** desde 2026-09-27: suscripciones del web push retirado. Nada la lee ni escribe; el plan de la app React Native decide si se borra (push nativo usa tokens con otra forma) |
 
 ### Suscripciones
 
@@ -198,7 +200,7 @@ editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (47)
+## Rutas API (45)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]` y `cron/daily`, que se protege con `CRON_SECRET`.
@@ -253,8 +255,6 @@ no se puede revocar.
 | Mark all read     | POST            | `/api/notifications/mark-all-read`   |
 | Audit Logs        | GET             | `/api/audit-logs`                    |
 | Settings          | GET/PATCH       | `/api/settings`                      |
-| Test push         | POST            | `/api/settings/test-push`            |
-| Web Push          | POST/DELETE     | `/api/web-push`                      |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---
@@ -277,7 +277,9 @@ recrearía el mes salteado al reactivarla.
 4. **Recordatorios de aumento**: aviso en la fecha efectiva
 5. **Facturas**: aviso en `reminder_date` y N días antes del vencimiento
 6. **Issues**: aviso para tareas que vencen hoy o mañana
-7. **Web push** de todo lo creado en la corrida
+
+Todo lo que crea queda como `Notification` en la app (campana y `/notifications`).
+No hay entrega push desde el 2026-09-27; vuelve con la app React Native.
 
 > El aviso anticipado mira **hacia adelante** desde hoy (`advanceNotice`).
 > Calcularlo restando desde el vencimiento del mes corriente falla en silencio
@@ -325,13 +327,7 @@ R2_BUCKET_NAME=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_ENDPOINT=                   # opcional; por defecto <account>.r2.cloudflarestorage.com
-
-# Web Push (VAPID)
-NEXT_PUBLIC_VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
 ```
-
-Generar claves VAPID: `pnpm dlx web-push generate-vapid-keys`.
 
 ---
 

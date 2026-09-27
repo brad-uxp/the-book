@@ -9,7 +9,7 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Next.js 16** (App Router) + **React 19** + **TypeScript** · Tailwind **v4** · **shadcn/ui** (estilo new-york, Radix).
 - **Prisma 7** con adaptador **PostgreSQL** (`@prisma/adapter-pg`) · **NextAuth 5 (beta)** Google OAuth, single-user.
 - **Autorización en dos capas**: `proxy.ts` (así se llama el middleware en Next 16) + `requireSession()` en cada handler. Ambos validan el email contra `ALLOWED_EMAILS`, no la mera presencia de `req.auth`.
-- **PWA** con `serwist` · **web-push** (VAPID) para notificaciones · **Cloudflare R2** para adjuntos de facturas.
+- **Cloudflare R2** para adjuntos de facturas. **Sin PWA ni web push** desde el 2026-09-27 (se viene una app React Native con push nativo); `public/sw.js` es solo el kill switch que desinstala el service worker viejo — ver su cabecera.
 - **Job diario in-app** a las 13:00 UTC (`instrumentation.ts` → `lib/daily-scheduler.ts`). No hay cron de plataforma; `/api/cron/daily` es el disparo manual, con `CRON_SECRET`.
 - **No hay email ni auth mobile** — existieron y se eliminaron. Si ves menciones a Nodemailer, Gmail, `jose` o `/api/auth/mobile`, son de una versión anterior.
 
