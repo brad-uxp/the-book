@@ -1,5 +1,15 @@
 import { z } from "zod";
 import { isInvoiceKey } from "./r2";
+import { CANVAS_BOUND } from "./canvas-geometry";
+import { CANVAS_COLOR_KEYS } from "./canvas-palette";
+import { NOTE_FORMATS } from "./notes";
+import {
+  LAYOUT_BATCH_MAX,
+  NODE_CONTENT_MAX,
+  NODE_MAX_SIZE,
+  NODE_MIN_HEIGHT,
+  NODE_MIN_WIDTH,
+} from "./note-canvas";
 
 /**
  * A URL safe to put in an href or an img src. Plain z.string() would accept
@@ -187,6 +197,8 @@ export const IssueSchema = z.object({
   title: z.string().min(1, "Title is required"),
   client_id: z.string().nullable().optional(),
   category: z.enum(["task", "note"]).default("task"),
+  /** Only meaningful for a note; a canvas task is refused by the route. */
+  note_format: z.enum(NOTE_FORMATS).default("text"),
   status: z
     .enum(["pending", "in_progress", "blocked", "done"])
     .default("pending"),
@@ -208,3 +220,92 @@ export const BulkDeleteIssuesSchema = z.object({
 });
 
 export type BulkDeleteIssuesInput = z.infer<typeof BulkDeleteIssuesSchema>;
+
+// ─── Canvas notes ────────────────────────────────────────────────────────────
+
+/**
+ * A canvas coordinate. Rejects NaN and Infinity — both survive JSON.parse as
+ * `null`/a number in some clients and would persist a card the user can never
+ * pan back to.
+ */
+const CanvasCoord = z
+  .number()
+  .refine(Number.isFinite, { message: "Must be a finite number" })
+  .refine((v) => Math.abs(v) <= CANVAS_BOUND, { message: "Out of bounds" });
+
+const NodeWidth = z.number().min(NODE_MIN_WIDTH).max(NODE_MAX_SIZE);
+const NodeHeight = z.number().min(NODE_MIN_HEIGHT).max(NODE_MAX_SIZE);
+
+/**
+ * A palette key, never a hex: the palette is retuned for both themes without
+ * touching rows. `null` is the neutral card.
+ */
+const CanvasColorKey = z.enum(CANVAS_COLOR_KEYS as [string, ...string[]]);
+
+const NodeContent = z.string().max(NODE_CONTENT_MAX);
+
+/**
+ * A new idea. The id may come from the client: a node is drawn and typed into
+ * before the server answers, and an id that changed on the way back would
+ * remount it under the cursor. A UUID, so a client cannot pick one that
+ * collides by accident — a duplicate is a 409, not an overwrite.
+ */
+export const CanvasNodeSchema = z.object({
+  id: z.uuid().optional(),
+  x: CanvasCoord,
+  y: CanvasCoord,
+  width: NodeWidth.optional(),
+  height: NodeHeight.optional(),
+  content: NodeContent.default(""),
+  color: CanvasColorKey.nullable().optional(),
+});
+
+/**
+ * An edit to what an idea says or how it looks. Where it sits goes through
+ * the layout batch instead. The route writes only the keys that were sent, so
+ * recolouring cannot blank the text.
+ */
+export const CanvasNodePatchSchema = z.object({
+  content: NodeContent.optional(),
+  color: CanvasColorKey.nullable().optional(),
+});
+
+/**
+ * Where ideas sit and how big they are. One gesture — dragging a selection,
+ * resizing a card — is one request, however many cards it moved.
+ */
+export const CanvasLayoutSchema = z.object({
+  nodes: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        x: CanvasCoord,
+        y: CanvasCoord,
+        width: NodeWidth.optional(),
+        height: NodeHeight.optional(),
+      })
+    )
+    .min(1, "No positions to save")
+    .max(LAYOUT_BATCH_MAX),
+});
+
+/**
+ * A connection between two ideas. The self-link check is duplicated in the
+ * database as a CHECK — this one produces a readable 400, that one is the
+ * backstop. That both ends belong to the same canvas is enforced by the
+ * compound foreign keys alone.
+ */
+export const CanvasEdgeSchema = z
+  .object({
+    id: z.uuid().optional(),
+    source_id: z.string().min(1),
+    target_id: z.string().min(1),
+  })
+  .refine((d) => d.source_id !== d.target_id, {
+    message: "An idea cannot connect to itself",
+    path: ["target_id"],
+  });
+
+export type CanvasNodeInput = z.infer<typeof CanvasNodeSchema>;
+export type CanvasLayoutInput = z.infer<typeof CanvasLayoutSchema>;
+export type CanvasEdgeInput = z.infer<typeof CanvasEdgeSchema>;

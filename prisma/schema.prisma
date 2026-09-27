@@ -20,6 +20,10 @@ datasource db {
 //     (CHECK constraint on Settings.id = 'singleton')
 //   - IssueLink_no_self_link
 //     (CHECK constraint on IssueLink.source_id <> target_id)
+//   - Task_canvas_only_for_notes
+//     (CHECK constraint: only a note can have note_format = 'canvas')
+//   - CanvasEdge_no_self_link
+//     (CHECK constraint on CanvasEdge.source_id <> target_id)
 //
 // Because `prisma migrate dev` diffs the schema against the live DB, any
 // such object will appear "extra" and Prisma will try to DROP it on the
@@ -360,11 +364,24 @@ enum IssueCategory {
   note
 }
 
+/// What a note is made of. Tasks are always `text`: a CHECK in the migration
+/// (Task_canvas_only_for_notes) refuses a canvas task, because every rule that
+/// keeps a canvas off the board, out of the archive and away from the daily
+/// job is keyed on `category = note`.
+enum NoteFormat {
+  /// One rich-text document, the description.
+  text
+  /// A board of connected ideas (CanvasNode / CanvasEdge). The description is
+  /// unused.
+  canvas
+}
+
 model Issue {
   id          String        @id @default(uuid())
   title       String
   client_id   String?
   category    IssueCategory @default(task)
+  note_format NoteFormat    @default(text)
   status      IssueStatus   @default(pending)
   progress    Int           @default(0)
   due_date    DateTime?
@@ -382,6 +399,8 @@ model Issue {
   client        Client?     @relation(fields: [client_id], references: [id], onDelete: SetNull)
   links_out     IssueLink[] @relation("IssueLinkSource")
   links_in      IssueLink[] @relation("IssueLinkTarget")
+  canvas_nodes  CanvasNode[]
+  canvas_edges  CanvasEdge[]
 
   @@map("Task")
   @@index([status])
@@ -444,6 +463,61 @@ model CanvasLabel {
   canvas_y   Float
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+}
+
+/**
+ * One idea on a canvas note. A node only ever holds rich text — there is no
+ * canvas inside a canvas.
+ *
+ * `content` is TipTap HTML, the same format as Issue.description, so @person
+ * and #invoice mentions inside a node are found by the same `contains` query.
+ *
+ * The id may be chosen by the client (a UUID). That is what lets a node be
+ * drawn, focused and typed into before the server answers without its id —
+ * and so its React key — ever changing underneath the cursor.
+ */
+model CanvasNode {
+  id         String   @id @default(uuid())
+  issue_id   String
+  content    String   @default("") @db.Text
+  /// Palette key (lib/canvas-palette.ts); null is the neutral card.
+  color      String?
+  x          Float
+  y          Float
+  width      Float    @default(280)
+  height     Float    @default(160)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  issue     Issue        @relation(fields: [issue_id], references: [id], onDelete: Cascade)
+  edges_out CanvasEdge[] @relation("CanvasEdgeSource")
+  edges_in  CanvasEdge[] @relation("CanvasEdgeTarget")
+
+  /// Target of the edges' compound foreign keys. Also serves every
+  /// "nodes of this canvas" lookup, since issue_id leads.
+  @@unique([issue_id, id])
+}
+
+/**
+ * A directed connection between two ideas on the SAME canvas.
+ *
+ * Both ends are compound foreign keys on (issue_id, node_id), so the database
+ * itself refuses an edge between nodes of two different notes — not only the
+ * API. Self-links are refused by a CHECK that lives only in the migration.
+ */
+model CanvasEdge {
+  id         String   @id @default(uuid())
+  issue_id   String
+  source_id  String
+  target_id  String
+  created_at DateTime @default(now())
+
+  issue  Issue      @relation(fields: [issue_id], references: [id], onDelete: Cascade)
+  source CanvasNode @relation("CanvasEdgeSource", fields: [issue_id, source_id], references: [issue_id, id], onDelete: Cascade)
+  target CanvasNode @relation("CanvasEdgeTarget", fields: [issue_id, target_id], references: [issue_id, id], onDelete: Cascade)
+
+  @@unique([issue_id, source_id, target_id])
+  @@index([issue_id, target_id])
 }
 
 // ============================================================
