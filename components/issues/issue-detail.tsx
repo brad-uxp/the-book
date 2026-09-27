@@ -20,6 +20,7 @@ import {
   InlineProgress,
   InlineDate,
   InlineCategory,
+  issueKind,
 } from "./inline-editors";
 import { MentionDataProvider } from "@/components/rich-text/mention-data";
 import { RichTextEditor } from "@/components/rich-text/rich-text-editor";
@@ -32,6 +33,8 @@ interface IssueDetailProps {
   onOpenChange: (open: boolean) => void;
   clients: Client[];
   onUpdate: (id: string, patch: Partial<Issue>) => void;
+  /** Asks to turn this issue into a canvas note — it moves words, so it confirms. */
+  onConvertToCanvas: (issue: Issue) => void;
 }
 
 export function IssueDetail({
@@ -39,6 +42,7 @@ export function IssueDetail({
   onOpenChange,
   clients,
   onUpdate,
+  onConvertToCanvas,
 }: IssueDetailProps) {
   const col = issue ? COLUMNS.find((c) => c.id === issue.status) : null;
   const [expanded, setExpanded] = useState(() => {
@@ -127,8 +131,12 @@ export function IssueDetail({
                       Type
                     </span>
                     <InlineCategory
-                      value={issue.category}
-                      onCommit={(category) => onUpdate(issue.id, { category })}
+                      value={issueKind(issue)}
+                      onCommit={(kind) => {
+                        if (kind === issueKind(issue)) return;
+                        if (kind === "canvas") onConvertToCanvas(issue);
+                        else onUpdate(issue.id, { category: kind });
+                      }}
                     />
                   </div>
 

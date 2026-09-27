@@ -9,7 +9,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, MoreHorizontal } from "lucide-react";
+import { ArrowUpDown, MoreHorizontal, Waypoints } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import {
@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { isCanvasNote } from "@/lib/notes";
 import {
   type Issue,
   type Client,
@@ -32,6 +33,7 @@ interface Props {
   onSelectIssue: (issue: Issue) => void;
   onDeleteIssue: (issue: Issue) => void;
   onConvertCategory: (issue: Issue) => void;
+  onConvertToCanvas: (issue: Issue) => void;
   /** Archived view: rows get a checkbox so several can be removed at once. */
   selectable?: boolean;
   selectedIds?: Set<string>;
@@ -48,6 +50,7 @@ export function IssuesList({
   onSelectIssue,
   onDeleteIssue,
   onConvertCategory,
+  onConvertToCanvas,
   selectable = false,
   selectedIds,
   onToggleSelect,
@@ -105,7 +108,16 @@ export function IssuesList({
           </button>
         ),
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.title}</span>
+          <span className="flex items-center gap-2 font-medium">
+            {/* A canvas opens a page, not the sheet — say so before the click. */}
+            {isCanvasNote(row.original) && (
+              <Waypoints
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-label="Canvas"
+              />
+            )}
+            {row.original.title}
+          </span>
         ),
       },
       {
@@ -261,10 +273,20 @@ export function IssuesList({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={() => onConvertCategory(row.original)}>
-                {row.original.category === "task" ? "Convert to note" : "Convert to task"}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {/* Nothing converts out of a canvas: it would drop its connections. */}
+              {!isCanvasNote(row.original) && (
+                <>
+                  <DropdownMenuItem onClick={() => onConvertCategory(row.original)}>
+                    {row.original.category === "task" ? "Convert to note" : "Convert to task"}
+                  </DropdownMenuItem>
+                  {row.original.category === "note" && (
+                    <DropdownMenuItem onClick={() => onConvertToCanvas(row.original)}>
+                      Convert to canvas
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem variant="destructive" onClick={() => onDeleteIssue(row.original)}>
                 Delete
               </DropdownMenuItem>
@@ -276,6 +298,7 @@ export function IssuesList({
     [
       onDeleteIssue,
       onConvertCategory,
+      onConvertToCanvas,
       selectable,
       selected,
       allSelected,

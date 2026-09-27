@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Calendar, Check, ChevronsUpDown, ClipboardList, StickyNote } from "lucide-react";
+import {
+  Calendar,
+  Check,
+  ChevronsUpDown,
+  ClipboardList,
+  StickyNote,
+  Waypoints,
+} from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -318,9 +325,21 @@ export function InlineStatus({
 
 // ── InlineCategory ────────────────────────────────────────────────────────────
 
-const CATEGORY_OPTIONS: { id: IssueCategory; label: string; icon: typeof ClipboardList }[] = [
+/**
+ * What an issue is, as a person picks it: a task, a text note or a canvas.
+ * Stored as category + note_format (lib/notes.ts); the picker shows one list.
+ */
+export type IssueKind = "task" | "note" | "canvas";
+
+export function issueKind(issue: Pick<Issue, "category" | "note_format">): IssueKind {
+  if (issue.category === "task") return "task";
+  return issue.note_format === "canvas" ? "canvas" : "note";
+}
+
+const CATEGORY_OPTIONS: { id: IssueKind; label: string; icon: typeof ClipboardList }[] = [
   { id: "task", label: "Task", icon: ClipboardList },
   { id: "note", label: "Note", icon: StickyNote },
+  { id: "canvas", label: "Canvas", icon: Waypoints },
 ];
 
 export function InlineCategory({
@@ -328,8 +347,8 @@ export function InlineCategory({
   onCommit,
   onClose,
 }: {
-  value: IssueCategory;
-  onCommit: (category: IssueCategory) => void;
+  value: IssueKind;
+  onCommit: (kind: IssueKind) => void;
   onClose?: () => void;
 }) {
   const [open, setOpen] = useState(false);

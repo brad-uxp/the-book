@@ -5,12 +5,15 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
+  ChevronDown,
   Filter,
   LayoutGrid,
   LayoutList,
   Plus,
   Search,
+  StickyNote,
   Trash2,
+  Waypoints,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -36,6 +39,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import dynamic from "next/dynamic";
 
 const IssueDetail = dynamic(() => import("./issue-detail").then((m) => m.IssueDetail), { ssr: false });
@@ -50,6 +59,7 @@ import {
   BOARD_COLUMNS,
 } from "./inline-editors";
 import { ARCHIVED_STATUS, isArchived } from "@/lib/issues";
+import { isCanvasNote, type NoteFormat } from "@/lib/notes";
 
 type ViewMode = "board" | "list";
 
@@ -88,6 +98,8 @@ export function IssuesView({
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
   const [convertIssue, setConvertIssue] = useState<Issue | null>(null);
+  const [canvasIssue, setCanvasIssue] = useState<Issue | null>(null);
+  const [convertingToCanvas, setConvertingToCanvas] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -104,7 +116,6 @@ export function IssuesView({
   // up on memoizing the whole component.
   const setView = (v: ViewMode) => {
     setViewState(v);
-    localStorage.setItem("issues-view-mode", v);
     // The archive filter has no meaning outside the list; leaving it set would
     // land the board on nothing.
     if (v !== "list") {
@@ -112,6 +123,17 @@ export function IssuesView({
       setSelectedIds(new Set());
     }
   };
+
+  // Remembered after commit, never while rendering: the deep link below
+  // switches the view during render — on the server too, where there is no
+  // localStorage, and throwing there knocked the whole page out of SSR.
+  useEffect(() => {
+    try {
+      localStorage.setItem("issues-view-mode", view);
+    } catch {
+      // Private mode or blocked storage: the view just is not remembered.
+    }
+  }, [view]);
 
   // On mobile (<sm), always show list view
   const isMobile = useMediaQuery("(max-width: 639px)");
@@ -148,19 +170,31 @@ export function IssuesView({
   // Deep-link: open issue detail from ?issue=<id>, once.
   // Opening the dialog is a state adjustment, so it happens during render;
   // clearing the query string is navigation, so it stays in an effect.
+  // A canvas note has a page of its own, so its link goes there instead —
+  // older links (linked issues, notifications) all use ?issue=.
   const deepLinkId = searchParams.get("issue");
-  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
-  if (deepLinkId && !deepLinkHandled) {
-    setDeepLinkHandled(true);
+  const [deepLinkRoute, setDeepLinkRoute] = useState<string | null>(null);
+  if (deepLinkId && deepLinkRoute === null) {
     const issue = issues.find((t) => t.id === deepLinkId);
-    if (issue) {
-      if (issue.category === "note") setView("list");
-      setEditIssue(issue);
+    if (issue && isCanvasNote(issue)) {
+      setDeepLinkRoute(`/issues/${issue.id}`);
+    } else {
+      setDeepLinkRoute("/issues");
+      if (issue) {
+        if (issue.category === "note") setView("list");
+        setEditIssue(issue);
+      }
     }
   }
   useEffect(() => {
-    if (deepLinkHandled) router.replace("/issues", { scroll: false });
-  }, [deepLinkHandled, router]);
+    if (deepLinkRoute) router.replace(deepLinkRoute, { scroll: false });
+  }, [deepLinkRoute, router]);
+
+  /** A canvas note opens on its own page; everything else in the sheet. */
+  const openIssue = (issue: Issue) => {
+    if (isCanvasNote(issue)) router.push(`/issues/${issue.id}`);
+    else setEditIssue(issue);
+  };
 
   const updateIssue = (id: string, patch: Partial<Issue>) => {
     setIssues((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -182,14 +216,28 @@ export function IssuesView({
     }, delay);
   };
 
-  const createIssue = async (status: IssueStatus = "pending", category: IssueCategory = "task") => {
+  const createIssue = async (
+    status: IssueStatus = "pending",
+    category: IssueCategory = "task",
+    noteFormat: NoteFormat = "text"
+  ) => {
+    const title =
+      noteFormat === "canvas"
+        ? "New canvas"
+        : category === "note"
+          ? "New note"
+          : "New issue";
     const res = await fetch("/api/issues", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: category === "note" ? "New note" : "New issue", status, category }),
+      body: JSON.stringify({ title, status, category, note_format: noteFormat }),
     });
     if (!res.ok) return;
     const created = await res.json();
+    if (noteFormat === "canvas") {
+      router.push(`/issues/${created.id}`);
+      return;
+    }
     const issue: Issue = {
       ...created,
       due_date: created.due_date
@@ -263,6 +311,37 @@ export function IssuesView({
       toast.error("Could not delete the selected issues");
     } finally {
       setBulkDeleting(false);
+    }
+  };
+
+  /**
+   * A text note (or a task) becomes a canvas. The server moves the
+   * description into the first idea, so this waits for it before opening the
+   * canvas — and sends the description along, because the last keystrokes may
+   * still be sitting in the debounce, and they have to land in the idea, not
+   * after the conversion in a description nobody will see again.
+   */
+  const handleConvertToCanvas = async (issue: Issue) => {
+    const latest = issues.find((i) => i.id === issue.id) ?? issue;
+    if (debounceRef.current[issue.id]) clearTimeout(debounceRef.current[issue.id]);
+
+    setConvertingToCanvas(true);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "note",
+          note_format: "canvas",
+          description: latest.description,
+        }),
+      });
+      if (!res.ok) throw new Error(`convert to canvas ${res.status}`);
+      router.push(`/issues/${issue.id}`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not convert to a canvas");
+      setConvertingToCanvas(false);
     }
   };
 
@@ -434,14 +513,48 @@ export function IssuesView({
 
         {/* Creating from the archive would make a pending issue that vanishes
             the moment it is created. */}
-        {!archiveMode && (
+        {!archiveMode && effectiveView === "board" && (
           <Button
             className="h-8 w-8 shrink-0 sm:w-auto sm:px-3"
-            onClick={() => createIssue("pending", effectiveView === "list" ? "note" : "task")}
+            onClick={() => createIssue("pending", "task")}
           >
             <Plus className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">New Issue</span>
           </Button>
+        )}
+        {/* The list is where notes live, and a note is one of two things. */}
+        {!archiveMode && effectiveView === "list" && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="h-8 w-8 shrink-0 sm:w-auto sm:px-3">
+                <Plus className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">New</span>
+                <ChevronDown className="hidden h-3.5 w-3.5 opacity-70 sm:ml-1.5 sm:inline" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={() => createIssue("pending", "note")}>
+                <StickyNote className="h-4 w-4" />
+                <div className="flex flex-col">
+                  <span>Note</span>
+                  <span className="text-xs text-muted-foreground">
+                    One rich-text document
+                  </span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => createIssue("pending", "note", "canvas")}
+              >
+                <Waypoints className="h-4 w-4" />
+                <div className="flex flex-col">
+                  <span>Canvas</span>
+                  <span className="text-xs text-muted-foreground">
+                    Connected ideas around one
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
@@ -452,10 +565,10 @@ export function IssuesView({
           clients={clients}
           setIssues={setIssues}
           onUpdateIssue={updateIssue}
-          onSelectIssue={setEditIssue}
+          onSelectIssue={openIssue}
           onDeleteIssue={setDeleteIssue}
           onConvertCategory={setConvertIssue}
-          onCreateForColumn={createIssue}
+          onCreateForColumn={(status) => createIssue(status, "task")}
         />
       )}
 
@@ -486,9 +599,10 @@ export function IssuesView({
           <IssuesList
             issues={filteredIssues}
             clients={clients}
-            onSelectIssue={setEditIssue}
+            onSelectIssue={openIssue}
             onDeleteIssue={setDeleteIssue}
             onConvertCategory={setConvertIssue}
+            onConvertToCanvas={setCanvasIssue}
             selectable={archiveMode}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
@@ -503,7 +617,45 @@ export function IssuesView({
         onOpenChange={(o) => { if (!o) setEditIssue(null); }}
         clients={clients}
         onUpdate={updateIssue}
+        onConvertToCanvas={setCanvasIssue}
       />
+
+      {/* Convert to canvas — its own dialog: it moves words, not just a flag */}
+      <Dialog
+        open={!!canvasIssue}
+        onOpenChange={(o) => {
+          if (!o && !convertingToCanvas) setCanvasIssue(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Convert to canvas</DialogTitle>
+            <DialogDescription>
+              {`"${canvasIssue?.title}" becomes a canvas of connected ideas. Its description becomes the first idea on it.`}
+              {canvasIssue?.category === "task" &&
+                " Status and due date will be hidden but preserved."}{" "}
+              A canvas cannot be turned back into a text note or a task.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button
+              variant="outline"
+              disabled={convertingToCanvas}
+              onClick={() => setCanvasIssue(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={convertingToCanvas}
+              onClick={() => {
+                if (canvasIssue) handleConvertToCanvas(canvasIssue);
+              }}
+            >
+              {convertingToCanvas ? "Converting…" : "Convert"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Convert confirmation */}
       <Dialog open={!!convertIssue} onOpenChange={(o) => { if (!o) setConvertIssue(null); }}>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Link2, StickyNote } from "lucide-react";
+import { Link2, StickyNote, Waypoints } from "lucide-react";
+import { isCanvasNote } from "@/lib/notes";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#94a3b8",
@@ -14,7 +15,8 @@ interface LinkedIssue {
   id: string;
   title: string;
   status: string;
-  category: string;
+  category: "task" | "note";
+  note_format: "text" | "canvas";
 }
 
 interface LinkedIssuesProps {
@@ -59,10 +61,15 @@ export function LinkedIssues({ personId, invoiceId }: LinkedIssuesProps) {
         {issues.map((issue) => (
           <a
             key={issue.id}
-            href={`/issues?issue=${issue.id}`}
+            // A canvas has its own page; everything else opens in the sheet.
+            href={
+              isCanvasNote(issue) ? `/issues/${issue.id}` : `/issues?issue=${issue.id}`
+            }
             className="flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors"
           >
-            {issue.category === "note" ? (
+            {isCanvasNote(issue) ? (
+              <Waypoints className="h-3 w-3 text-muted-foreground shrink-0" />
+            ) : issue.category === "note" ? (
               <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
             ) : (
               <span
