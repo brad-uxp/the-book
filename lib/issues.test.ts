@@ -4,6 +4,7 @@ import {
   ARCHIVED_WHERE,
   ARCHIVED_STATUS,
   ARCHIVED_CATEGORY,
+  parseIssuesView,
 } from "./issues";
 
 describe("isArchived", () => {
@@ -46,5 +47,21 @@ describe("ARCHIVED_WHERE", () => {
         status: ARCHIVED_WHERE.status,
       })
     ).toBe(true);
+  });
+});
+
+describe("parseIssuesView", () => {
+  it("respeta una vista guardada válida", () => {
+    expect(parseIssuesView("list")).toBe("list");
+    expect(parseIssuesView("board")).toBe("board");
+  });
+
+  it("sin cookie, o con una vieja o manipulada, abre el board", () => {
+    expect(parseIssuesView(undefined)).toBe("board");
+    expect(parseIssuesView(null)).toBe("board");
+    expect(parseIssuesView("")).toBe("board");
+    // La vista canvas global ya no existe.
+    expect(parseIssuesView("canvas")).toBe("board");
+    expect(parseIssuesView("<script>")).toBe("board");
   });
 });

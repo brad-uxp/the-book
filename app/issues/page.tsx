@@ -1,9 +1,15 @@
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
+import { ISSUES_VIEW_COOKIE, parseIssuesView } from "@/lib/issues";
 import { IssuesView } from "@/components/issues/issues-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function IssuesPage() {
+  const initialView = parseIssuesView(
+    (await cookies()).get(ISSUES_VIEW_COOKIE)?.value
+  );
+
   const [clients, issues] = await Promise.all([
     prisma.client.findMany({ orderBy: { name: "asc" } }),
     prisma.issue.findMany({
@@ -31,6 +37,7 @@ export default async function IssuesPage() {
       <IssuesView
         clients={clients}
         initialIssues={serializedIssues}
+        initialView={initialView}
       />
     </div>
   );

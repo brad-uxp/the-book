@@ -33,3 +33,26 @@ export function isArchived(issue: ArchivableIssue): boolean {
     issue.category === ARCHIVED_CATEGORY && issue.status === ARCHIVED_STATUS
   );
 }
+
+// ── Which view the issues page opens in ──────────────────────────────────────
+
+export const ISSUES_VIEWS = ["board", "list"] as const;
+export type IssuesView = (typeof ISSUES_VIEWS)[number];
+
+/**
+ * A cookie, not localStorage: the server renders the page, and it has to
+ * render the view the browser is about to show. Reading localStorage on the
+ * client only made the server draw the board and the browser the list — a
+ * hydration mismatch on every visit with the list saved.
+ */
+export const ISSUES_VIEW_COOKIE = "issues-view-mode";
+
+/**
+ * The view a stored value names, or the board. Anything unrecognised falls
+ * back — including "canvas", saved while the global canvas view existed.
+ */
+export function parseIssuesView(value: string | undefined | null): IssuesView {
+  return (ISSUES_VIEWS as readonly string[]).includes(value ?? "")
+    ? (value as IssuesView)
+    : "board";
+}

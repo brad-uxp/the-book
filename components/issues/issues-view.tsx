@@ -58,16 +58,15 @@ import {
   type IssueCategory,
   BOARD_COLUMNS,
 } from "./inline-editors";
-import { ARCHIVED_STATUS, isArchived } from "@/lib/issues";
+import {
+  ARCHIVED_STATUS,
+  ISSUES_VIEW_COOKIE,
+  isArchived,
+  type IssuesView as IssuesViewMode,
+} from "@/lib/issues";
 import { isCanvasNote, type NoteFormat } from "@/lib/notes";
 
-type ViewMode = "board" | "list";
-
-/**
- * A saved "canvas" — the global canvas view that no longer exists — is not in
- * this list, so it falls back to the board.
- */
-const VIEW_MODES: ViewMode[] = ["board", "list"];
+type ViewMode = IssuesViewMode;
 
 /**
  * Status-filter value that switches the list into the archive.
@@ -81,19 +80,16 @@ const ARCHIVE_FILTER = ARCHIVED_STATUS;
 interface Props {
   clients: Client[];
   initialIssues: Issue[];
+  /** From the view cookie, read by the page — so the server draws it too. */
+  initialView: ViewMode;
 }
 
 export function IssuesView({
   clients,
   initialIssues,
+  initialView,
 }: Props) {
-  const [view, setViewState] = useState<ViewMode>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("issues-view-mode");
-      if ((VIEW_MODES as string[]).includes(saved ?? "")) return saved as ViewMode;
-    }
-    return "board";
-  });
+  const [view, setViewState] = useState<ViewMode>(initialView);
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
   const [editIssue, setEditIssue] = useState<Issue | null>(null);
   const [deleteIssue, setDeleteIssue] = useState<Issue | null>(null);
@@ -124,15 +120,11 @@ export function IssuesView({
     }
   };
 
-  // Remembered after commit, never while rendering: the deep link below
-  // switches the view during render — on the server too, where there is no
-  // localStorage, and throwing there knocked the whole page out of SSR.
+  // Remembered in a cookie the page reads on the server (see lib/issues.ts),
+  // after commit, never while rendering: the deep link below switches the
+  // view during render — on the server too.
   useEffect(() => {
-    try {
-      localStorage.setItem("issues-view-mode", view);
-    } catch {
-      // Private mode or blocked storage: the view just is not remembered.
-    }
+    document.cookie = `${ISSUES_VIEW_COOKIE}=${view}; path=/; max-age=31536000; samesite=lax`;
   }, [view]);
 
   // On mobile (<sm), always show list view
