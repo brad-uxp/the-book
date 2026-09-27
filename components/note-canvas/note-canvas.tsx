@@ -9,6 +9,7 @@ import {
   MarkerType,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -874,6 +875,13 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
       ref={paneRef}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
+      // The right button pans, so the browser's menu must not pop up at the
+      // end of the drag. Inside a card being edited it stays: that is where
+      // spell-check suggestions and paste live.
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest('[contenteditable="true"]')) return;
+        e.preventDefault();
+      }}
       className={cn(
         "relative w-full overflow-hidden border bg-background",
         expanded
@@ -916,9 +924,23 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           connectionLineStyle={{ strokeWidth: 2, stroke: "#94a3b8" }}
           deleteKeyCode={["Backspace", "Delete"]}
           proOptions={{ hideAttribution: true }}
-          // Trackpad-first: two fingers pan, pinch zooms, shift+drag boxes a
-          // selection. Wheel-to-zoom fights every gesture on a laptop.
-          panOnScroll
+          // Mouse-first, as a whiteboard: the wheel zooms around the cursor,
+          // the right (or middle) button drags the canvas, and the left
+          // button on empty canvas draws a selection box. This replaced the
+          // first trackpad-first setup (two fingers panned) at the owner's
+          // request: on a trackpad, two-finger scroll now zooms too, and a
+          // pinch still does.
+          zoomOnScroll
+          panOnScroll={false}
+          panOnDrag={[1, 2]}
+          selectionOnDrag
+          // Partial: the box only has to touch a card to take it. Requiring
+          // the whole card inside is fussy with tall cards.
+          selectionMode={SelectionMode.Partial}
+          // The box needs no key held down; Shift (or Cmd/Ctrl) is for
+          // adding and removing cards from a selection by clicking them.
+          selectionKeyCode={null}
+          multiSelectionKeyCode={["Shift", "Meta", "Control"]}
         >
           <Background
             variant={BackgroundVariant.Dots}
