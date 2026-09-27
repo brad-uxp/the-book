@@ -16,6 +16,7 @@ todo lo que lleve la marca: la web y la app Android (y iOS cuando llegue) export
 | `android-monochrome.svg` · `png/android-monochrome-1024.png` | Íconos temáticos de Android 13+ |
 | `notification.svg` · `png/notification-96.png` | Ícono de notificación: silueta blanca, obligatoria en Android |
 | `png/splash-icon-1024.png` | Splash de la app, sobre `#0C0C0E` |
+| `png/wordmark-ink.png` · `png/wordmark-paper.png` | Wordmark en PNG (570×180) para la app, que no renderiza SVG: tinta sobre claro, paper sobre oscuro |
 
 ## Construcción
 
