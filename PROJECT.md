@@ -16,7 +16,8 @@
 - **shadcn/ui** (estilo new-york) — 27 componentes base (Radix UI)
 - **TanStack Table v8** — tablas con sorting, filtrado y paginación
 - **Recharts** — gráficos y visualizaciones
-- **TipTap** — editor de texto rico (descripciones de issues)
+- **TipTap** — editor de texto rico (notas y cada idea de un canvas), con @menciones y #facturas
+- **React Flow** (`@xyflow/react`) — el lienzo de las notas canvas; se carga solo en esa página
 - **React Hook Form** + **Zod** — formularios y validación
 - **jsPDF** + **jspdf-autotable** — exportación de reportes
 - **Sonner** — notificaciones toast
@@ -54,13 +55,14 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 46 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 47 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
 │   ├── fees/page.tsx                 # Comisiones por referidor
 │   ├── invoices/page.tsx             # Gestión de facturas
-│   ├── issues/page.tsx               # Tareas y notas
+│   ├── issues/page.tsx               # Tareas y notas (board y lista)
+│   ├── issues/[id]/page.tsx          # Página propia de una nota canvas (el resto redirige al sheet)
 │   ├── login/page.tsx                # Login con Google OAuth
 │   ├── notifications/page.tsx        # Centro de notificaciones
 │   ├── offline/page.tsx              # Fallback PWA
@@ -76,14 +78,20 @@ TheBook/
 │   ├── dashboard/                    # Charts, Metrics, UpcomingCards, CorporateChart
 │   ├── expenses/  invoices/  salaries/  subscriptions/
 │   ├── fees/                         # Referidores y comisiones
-│   ├── issues/                       # Board, lista, canvas, detalle, editores inline
+│   ├── issues/                       # Board, lista, detalle, editores inline
+│   ├── note-canvas/                  # Lienzo de una nota canvas: ideas, conexiones, undo
+│   ├── rich-text/                    # Editor TipTap compartido (notas e ideas) + menciones
 │   ├── notifications/  settings/  admin-logs/
 ├── lib/
 │   ├── api.ts                        # requireSession, mapeo de errores, readJson
 │   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
 │   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
 │   ├── currency.ts                   # Centavos ↔ display (testeada)
-│   ├── issue-canvas.ts               # Geometría del canvas de issues (testeada)
+│   ├── canvas-geometry.ts            # Anclaje de aristas y grilla (testeada)
+│   ├── canvas-palette.ts             # Paleta de colores de las tarjetas (testeada)
+│   ├── notes.ts                      # Formatos de nota y conversiones permitidas (testeada)
+│   ├── note-canvas.ts                # Tamaños y límites de las ideas (testeada)
+│   ├── mentions.ts                   # Menciones en HTML: búsqueda y conteo (testeada)
 │   ├── daily-scheduler.ts            # Scheduler in-app
 │   ├── dates.ts                      # Fechas UTC + timezone Montevideo (testeada)
 │   ├── db.ts                         # Singleton de Prisma Client
@@ -156,9 +164,10 @@ guardan como **UTC midnight**.
 | Modelo         | Descripción                                                          |
 | -------------- | -------------------------------------------------------------------- |
 | `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
-| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente, posición en el canvas. `status = done` **es el archivo**: no se muestra en board ni canvas, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva |
-| `IssueLink`    | Arista dirigida issue→issue del canvas; unique `(source_id, target_id)`, CHECK anti auto-enlace |
-| `CanvasLabel`  | Chip de texto del canvas: solo organizativo, no es trabajo. Color por clave de paleta (`lib/canvas-labels.ts`), sin conexiones |
+| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`) |
+| `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
+| `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
+| `IssueLink`, `CanvasLabel`, `Task.canvas_x/y` | **Inactivos** desde 2026-09-27: eran del canvas global, que se retiró. Nada los lee ni escribe; quedan hasta una migración de borrado revisada |
 
 ### Sistema
 
@@ -175,18 +184,24 @@ guardan como **UTC midnight**.
 - **Índice único parcial** en `SubscriptionPayment (subscription_id, due_date) WHERE deleted_at IS NULL` —
   evita cobrar dos veces el mismo período.
 - **Índice único funcional** en `Invoice (lower(invoice_number)) WHERE invoice_number IS NOT NULL`.
-- `IssueLink` cascadea en ambos extremos (una arista no es historia contable: sin su issue
-  no apunta a nada), tiene **unique `(source_id, target_id)`** —el check-then-insert de la API
-  no es atómico— y un **CHECK `source_id <> target_id`** contra el auto-enlace.
+- **CHECK `Task_canvas_only_for_notes`**: `category = 'note' OR note_format = 'text'`. Todo lo
+  que mantiene un canvas fuera del board, del archivo y del job diario depende de
+  `category = note`; una tarea canvas se saltaría esas reglas.
+- `CanvasEdge` usa **FKs compuestas `(issue_id, node_id)`** en ambos extremos: una conexión
+  entre ideas de dos notas distintas no se puede guardar. Unique `(issue_id, source_id, target_id)`
+  y **CHECK `CanvasEdge_no_self_link`**. Nodos y aristas cascadean con su nota (no son historia
+  contable).
+- `IssueLink` (inactiva) conserva su unique y su **CHECK `IssueLink_no_self_link`** hasta que
+  se borre la tabla.
 
-⚠️ Los dos últimos **no se pueden expresar en `schema.prisma`**, así que
-`prisma migrate dev` los ve como drift y genera un `DROP INDEX`.
+⚠️ Los índices parcial y funcional y los CHECK **no se pueden expresar en `schema.prisma`**,
+así que `prisma migrate dev` los ve como drift y genera su `DROP`.
 `prisma/migrations.test.ts` falla el build si eso llega a pasar. Si tenés que
 editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (40)
+## Rutas API (47)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]` y `cron/daily`, que se protege con `CRON_SECRET`.
@@ -230,11 +245,12 @@ no se puede revocar.
 | Issue             | GET/PATCH/DEL   | `/api/issues/[id]`                   |
 | Issues counts     | GET             | `/api/issues/linked-counts`          |
 | Issues bulk del.  | POST            | `/api/issues/bulk-delete`            |
-| Issue positions   | PATCH           | `/api/issues/canvas`                 |
-| Canvas labels     | GET/POST        | `/api/issues/canvas/labels`          |
-| Canvas label      | PATCH/DELETE    | `/api/issues/canvas/labels/[id]`     |
-| Issue links       | GET/POST        | `/api/issues/links`                  |
-| Issue link        | DELETE          | `/api/issues/links/[id]`             |
+| Canvas (nota)     | GET             | `/api/issues/[id]/canvas`            |
+| Canvas ideas      | POST            | `/api/issues/[id]/canvas/nodes`      |
+| Canvas idea       | PATCH/DELETE    | `/api/issues/[id]/canvas/nodes/[nodeId]` |
+| Canvas layout     | PATCH           | `/api/issues/[id]/canvas/layout`     |
+| Canvas conexiones | POST            | `/api/issues/[id]/canvas/edges`      |
+| Canvas conexión   | DELETE          | `/api/issues/[id]/canvas/edges/[edgeId]` |
 | Notifications     | GET/PATCH       | `/api/notifications`                 |
 | Notif. count      | GET             | `/api/notifications/count`           |
 | Mark all read     | POST            | `/api/notifications/mark-all-read`   |

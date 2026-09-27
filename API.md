@@ -78,6 +78,52 @@ dashboard adds it to the amount.
 `category` is `task` or `note`; `status` is `pending`, `in_progress`,
 `blocked` or `done`; `progress` is 0–100.
 
+`note_format` is `text` (default: the note is its `description`) or `canvas`
+(the note is a canvas of connected ideas, and `description` is unused). Only a
+note can be a canvas — `{"category": "task", "note_format": "canvas"}` is a
+`400`. Changing shape through `PATCH`:
+
+| From → to | Result |
+|---|---|
+| task ↔ text note | allowed |
+| text note (or task) → canvas | allowed; a non-blank `description` becomes the first idea and is emptied, in one transaction |
+| canvas → anything else | `409` — flattening would drop its connections |
+
+"Linked issues" (`?personId=` / `?invoiceId=`) and `linked-counts` find
+mentions in descriptions **and** in canvas ideas, counted once per issue.
+
+### Canvas notes
+| Method | Path |
+|---|---|
+| GET | `/api/issues/{id}/canvas` → `{ nodes, edges }` |
+| POST | `/api/issues/{id}/canvas/nodes` |
+| PATCH/DELETE | `/api/issues/{id}/canvas/nodes/{nodeId}` |
+| PATCH | `/api/issues/{id}/canvas/layout` |
+| POST | `/api/issues/{id}/canvas/edges` |
+| DELETE | `/api/issues/{id}/canvas/edges/{edgeId}` |
+
+On an issue that is not a canvas note these return `409`; on one that does
+not exist, `404`.
+
+- **A node** is one idea: `{ id, content, color, x, y, width, height }`.
+  `content` is HTML in the same format as `description` (mentions included).
+  `color` is a palette key (`slate`, `blue`, `green`, `amber`, `red`, `violet`,
+  `pink`) or `null`. Width 160–4000, height 64–4000, content up to 200 000
+  characters.
+- **Create** with `{ x, y, content?, color?, width?, height?, id? }`. `id` is
+  optional; if you send one it must be a UUID, and a duplicate is a `409`
+  rather than an overwrite.
+- **Edit** a node's `content` and/or `color` with `PATCH` — only the keys you
+  send are written. Position and size go through `layout`, which takes
+  `{ "nodes": [{ id, x, y, width?, height? }] }` (up to 1000) and ignores ids
+  that are not on this canvas.
+- **An edge** is `{ id, source_id, target_id }`, directed, between two nodes
+  of the same canvas. A duplicate is `409`; a self-link, or an end that is not
+  a node of this canvas, is `400`.
+- Deleting a node deletes its edges. Deleting a node that held text is
+  audited with its content and edges, so it can be recovered from the audit
+  log; nothing else on a canvas is audited.
+
 ### People and salaries
 | Method | Path |
 |---|---|
