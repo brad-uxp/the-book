@@ -1,10 +1,10 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { ALLOWED_EMAILS } from "@/lib/allowed-emails";
 
-export const ALLOWED_EMAILS: string[] = [
-  "bradlyls95@gmail.com",
-  "brad@uxprogramming.com",
-];
+// The list lives in lib/allowed-emails.ts so the mobile sign-in route checks
+// the same one without importing NextAuth.
+export { ALLOWED_EMAILS };
 
 /**
  * Single source of truth for "is this session allowed in".
