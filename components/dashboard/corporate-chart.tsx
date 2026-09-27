@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCents } from "@/lib/currency";
+import { excludeClients, PARTNER_SPLIT } from "@/lib/metrics";
 import { cn } from "@/lib/utils";
 
 const LINES = [
@@ -337,31 +338,15 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
       }));
   }, [incomeByClient, clientsIndex]);
 
-  const incomeByMonth = useMemo(() => {
-    const map = new Map<string, Record<string, number>>();
-    for (const m of incomeByClient) map.set(m.month, m.byClient);
-    return map;
-  }, [incomeByClient]);
-
+  // Excluded clients' income comes out month by month (lib/metrics, shared
+  // with GET /api/metrics); work expenses stay, since they are the company's.
   const chartData = useMemo(
     () =>
-      data.map((d) => {
-        let excludedAmount = 0;
-        if (excluded.size > 0) {
-          const byClient = incomeByMonth.get(d.month);
-          if (byClient) {
-            for (const id of excluded) excludedAmount += byClient[id] ?? 0;
-          }
-        }
-        const adjustedIncome = d.income - excludedAmount;
-        return {
-          ...d,
-          income: adjustedIncome,
-          corporateNet: adjustedIncome - d.workExpenses,
-          label: shortMonth(d.month),
-        };
-      }),
-    [data, excluded, incomeByMonth]
+      excludeClients(data, incomeByClient, excluded).map((d) => ({
+        ...d,
+        label: shortMonth(d.month),
+      })),
+    [data, excluded, incomeByClient]
   );
 
   // Cumulative corporate net across the visible window — respects excluded clients,
@@ -600,8 +585,8 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
         doc.setTextColor(...primary);
         doc.text(formatCents(Math.round(value)), x, labelY + 8);
       };
-      drawSplit(boxX + boxW * 0.52, "Partner A - 60%", netGrand * 0.6);
-      drawSplit(boxX + boxW * 0.74, "Partner B - 40%", netGrand * 0.4);
+      drawSplit(boxX + boxW * 0.52, "Partner A - 60%", netGrand * PARTNER_SPLIT.a);
+      drawSplit(boxX + boxW * 0.74, "Partner B - 40%", netGrand * PARTNER_SPLIT.b);
 
       // Chart
       drawLineChart(
@@ -860,7 +845,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
                   Socio A · 60%
                 </p>
                 <p className="mt-1 text-base font-semibold tabular-nums leading-none">
-                  {formatCents(Math.round(cumulativeCorporateNet * 0.6))}
+                  {formatCents(Math.round(cumulativeCorporateNet * PARTNER_SPLIT.a))}
                 </p>
               </div>
               <div>
@@ -868,7 +853,7 @@ export function CorporateChart({ data, incomeByClient, clientsIndex, workExpense
                   Socio B · 40%
                 </p>
                 <p className="mt-1 text-base font-semibold tabular-nums leading-none">
-                  {formatCents(Math.round(cumulativeCorporateNet * 0.4))}
+                  {formatCents(Math.round(cumulativeCorporateNet * PARTNER_SPLIT.b))}
                 </p>
               </div>
             </div>

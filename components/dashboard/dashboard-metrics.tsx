@@ -5,13 +5,20 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { formatCents } from "@/lib/currency";
-import { getTodayInTZ, monthlyPeriodKey } from "@/lib/dates";
+import { getTodayInTZ } from "@/lib/dates";
+import {
+  chartPointsOf,
+  filterMonths,
+  totalsOf,
+  type MonthData,
+  type MonthIncomeByClient,
+  type Preset,
+  type WorkExpensesByItem,
+} from "@/lib/metrics";
 import { cn } from "@/lib/utils";
 
 const DashboardChart = dynamic(() => import("./dashboard-chart").then((m) => m.DashboardChart), { ssr: false });
 const CorporateChart = dynamic(() => import("./corporate-chart").then((m) => m.CorporateChart), { ssr: false });
-
-type Preset = "ytd" | "last12" | "all";
 
 const PRESETS: { key: Preset; label: string }[] = [
   { key: "ytd",    label: "This year" },
@@ -19,49 +26,16 @@ const PRESETS: { key: Preset; label: string }[] = [
   { key: "all",    label: "All time" },
 ];
 
-/**
- * Must agree with the server, which buckets by UTC month (app/dashboard/page).
- * Using the browser's local components instead would disagree for the hours
- * between local midnight and UTC midnight, silently dropping the newest month
- * from "This year" and "Last 12 months".
- */
-function toPeriodKey(date: Date): string {
-  return monthlyPeriodKey(date.getUTCFullYear(), date.getUTCMonth() + 1);
-}
-
-export interface MonthData {
-  month: string;
-  income: number;
-  salary: number;
-  subscriptions: number;
-  subsPersonal: number;
-  subsWork: number;
-  subsEssential: number;
-  other: number;
-  otherWork: number;
-  otherPersonal: number;
-}
-
-export interface MonthIncomeByClient {
-  month: string;
-  byClient: Record<string, number>;
-}
+export type {
+  MonthData,
+  MonthIncomeByClient,
+  WorkExpenseRow,
+  WorkExpensesByItem,
+} from "@/lib/metrics";
 
 export interface ClientInfo {
   name: string;
   color: string;
-}
-
-export interface WorkExpenseRow {
-  id: string;
-  name: string;
-  monthly: Record<string, number>;
-}
-
-export interface WorkExpensesByItem {
-  salaries: WorkExpenseRow[];
-  workSubs: WorkExpenseRow[];
-  workOther: WorkExpenseRow[];
 }
 
 interface Props {
@@ -76,67 +50,17 @@ interface Props {
 export function DashboardMetrics({ monthlyData, monthlyIncomeByClient, clientsIndex, workExpensesByItem, sentTotal, sentCount }: Props) {
   const [preset, setPreset] = useState<Preset>("ytd");
 
-  const filtered = useMemo(() => {
-    const now = getTodayInTZ();
-    const currentMonth = toPeriodKey(now);
-
-    if (preset === "ytd") {
-      const yearStart = `${now.getUTCFullYear()}-01`;
-      return monthlyData.filter((d) => d.month >= yearStart && d.month <= currentMonth);
-    }
-    if (preset === "last12") {
-      const from = toPeriodKey(
-        new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
-      );
-      return monthlyData.filter((d) => d.month >= from && d.month <= currentMonth);
-    }
-    // all — trim leading/trailing months with no data
-    const hasData = (d: MonthData) => d.income > 0 || d.salary > 0 || d.subscriptions > 0 || d.other > 0;
-    const firstIdx = monthlyData.findIndex(hasData);
-    const lastIdx  = monthlyData.reduce((acc, d, i) => (hasData(d) ? i : acc), -1);
-    return firstIdx === -1 ? [] : monthlyData.slice(firstIdx, lastIdx + 1);
-  }, [monthlyData, preset]);
-
-  const totals = useMemo(() => {
-    const salary        = filtered.reduce((s, d) => s + d.salary, 0);
-    const subscriptions = filtered.reduce((s, d) => s + d.subscriptions, 0);
-    const subsPersonal  = filtered.reduce((s, d) => s + d.subsPersonal, 0);
-    const subsWork      = filtered.reduce((s, d) => s + d.subsWork, 0);
-    const subsEssential = filtered.reduce((s, d) => s + d.subsEssential, 0);
-    const income        = filtered.reduce((s, d) => s + d.income, 0);
-    const expenses      = filtered.reduce((s, d) => s + d.salary + d.subscriptions + d.other, 0);
-    const net           = income - expenses;
-    const n             = filtered.length || 1;
-    return {
-      salary, subscriptions, net,
-      avgSalary:        salary / n,
-      avgSubsPersonal:  subsPersonal / n,
-      avgSubsWork:      subsWork / n,
-      avgSubsEssential: subsEssential / n,
-      avgNet:           net / n,
-      avgExpenses:      expenses / n,
-    };
-  }, [filtered]);
-
-  const chartData = useMemo(
-    () => filtered.map((d) => {
-      const expenses = d.salary + d.subscriptions + d.other;
-      const workExpenses = d.salary + d.subsWork + d.otherWork;
-      return {
-        month: d.month,
-        income: d.income,
-        expenses,
-        workExpenses,
-        personalExpenses: d.subsPersonal + d.otherPersonal,
-        essentialExpenses: d.subsEssential,
-        salary: d.salary,
-        workSubs: d.subsWork,
-        net: d.income - expenses,
-        corporateNet: d.income - workExpenses,
-      };
-    }),
-    [filtered]
+  // Every number below comes from lib/metrics, the same code GET /api/metrics
+  // runs — the web and the mobile app cannot disagree. Months are UTC keys,
+  // matching how the server bucketed them.
+  const filtered = useMemo(
+    () => filterMonths(monthlyData, preset, getTodayInTZ()),
+    [monthlyData, preset]
   );
+
+  const totals = useMemo(() => totalsOf(filtered), [filtered]);
+
+  const chartData = useMemo(() => chartPointsOf(filtered), [filtered]);
 
   const incomeByClientFiltered = useMemo(() => {
     const visibleMonths = new Set(filtered.map((d) => d.month));
