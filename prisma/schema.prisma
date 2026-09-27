@@ -216,9 +216,14 @@ model Notification {
 }
 
 // ============================================================
-// Push Subscriptions (Web Push)
+// Push Subscriptions (Web Push) — DORMANT
 // ============================================================
 
+/// DORMANT since 2026-09-27: web push was removed together with the PWA, and
+/// nothing reads or writes this table any more. It is left in place, not
+/// dropped, for the React Native plan to decide: native push tokens (Expo /
+/// FCM / APNs) have a different shape, so it will most likely be dropped —
+/// in a reviewed two-phase migration — rather than reused.
 model PushSubscription {
   id         String   @id @default(uuid())
   endpoint   String   @unique

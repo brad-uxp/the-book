@@ -5,7 +5,6 @@ import {
   buildSubscriptionNotification,
   advanceNotice,
 } from "@/lib/cron-helpers";
-import { sendWebPushToAll } from "@/lib/web-push";
 import type { NotificationType } from "@/app/generated/prisma/client";
 
 /**
@@ -52,8 +51,9 @@ export async function runDailyJob(): Promise<string[]> {
   await runInvoices(today, daysInvoice, log);
   await runIssues(today, log);
 
-  // Send web push for notifications created today
-  await sendPendingPush(today, log);
+  // Delivery is the in-app notification centre only. Web push went with the
+  // PWA (2026-09-27); phones get notified again once the React Native app
+  // brings native push.
 
   log.push("[cron/daily] Done.");
   return log;
@@ -301,45 +301,5 @@ async function runIssues(today: Date, log: string[]) {
       });
       log.push(`  [issue due today] ${issue.title}`);
     }
-  }
-}
-
-// ─── Web Push ────────────────────────────────────────────────────────────────
-
-async function sendPendingPush(today: Date, log: string[]) {
-  const unsent = await prisma.notification.findMany({
-    where: {
-      created_at: { gte: today },
-    },
-  });
-
-  if (unsent.length === 0) {
-    log.push("  [push] No new notifications to push.");
-    return;
-  }
-
-  // Send a single aggregated push if multiple, or individual if just one
-  try {
-    if (unsent.length === 1) {
-      await sendWebPushToAll({
-        title: unsent[0].title,
-        body: unsent[0].body,
-        data: {
-          entity_type: unsent[0].entity_type,
-          entity_id: unsent[0].entity_id,
-          url: `/${unsent[0].entity_type}s`,
-        },
-      });
-    } else {
-      await sendWebPushToAll({
-        title: `${unsent.length} nuevas notificaciones`,
-        body: unsent.map((n) => n.title).slice(0, 3).join(", ") +
-          (unsent.length > 3 ? "…" : ""),
-        data: { url: "/notifications" },
-      });
-    }
-    log.push(`  [push] Sent web push for ${unsent.length} notification(s).`);
-  } catch (err) {
-    log.push(`  [push error] ${err instanceof Error ? err.message : String(err)}`);
   }
 }

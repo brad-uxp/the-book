@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Bell, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface FormFields {
   days_before_subscription: string;
@@ -24,7 +24,6 @@ interface Props {
 
 export function SettingsForm({ initial }: Props) {
   const [saving, setSaving] = useState(false);
-  const [testingPush, setTestingPush] = useState(false);
 
   const {
     register,
@@ -78,49 +77,8 @@ export function SettingsForm({ initial }: Props) {
     }
   };
 
-  const sendTestPush = async () => {
-    setTestingPush(true);
-    try {
-      const res = await fetch("/api/settings/test-push", { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? "Failed to send");
-      }
-      toast.success("Push enviada — revisa tus notificaciones");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send test push");
-    } finally {
-      setTestingPush(false);
-    }
-  };
-
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 max-w-lg">
-      {/* Push Notifications */}
-      <div className="rounded-md border bg-card p-6 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold">Notificaciones push</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Envía una notificación push de prueba a todos los dispositivos registrados.
-          </p>
-        </div>
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={sendTestPush}
-          disabled={testingPush}
-        >
-          {testingPush ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Bell className="h-4 w-4" />
-          )}
-          <span className="ml-1.5">Enviar push de prueba</span>
-        </Button>
-      </div>
-
       {/* Notification timing */}
       <div className="rounded-md border bg-card p-6 space-y-4">
         <div>
