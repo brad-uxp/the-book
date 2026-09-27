@@ -3,17 +3,22 @@
  *
  * The canvas zooms with the mouse wheel and pans with two fingers, but the
  * browser reports both as the same `wheel` event — there is no field that
- * says which device sent it. What differs is how the numbers are made:
+ * says which device sent it. So each gesture is judged by what its events
+ * look like, from what real hardware sends:
  *
- * - A notched wheel moves in whole notches. Chrome and Safari report them in
- *   the legacy `wheelDeltaY` as 120 per notch, while `deltaY` carries the
- *   system's accelerated distance (on a Mac, 4.000244140625 for a slow notch).
- *   Firefox, when asked for `deltaMode` first, reports it in lines.
- * - A trackpad is continuous. Chrome and Safari derive its legacy delta from
- *   the pixels, as exactly -3 × `deltaY` (give or take the rounding to an
- *   integer), and it often moves on both axes at once.
+ * - A classic notched wheel in Chrome reports 120 per notch in the legacy
+ *   `wheelDeltaY` (with an accelerated `deltaY`, 4.000244140625 for a slow
+ *   notch on a Mac). Firefox, asked for `deltaMode` first, reports lines.
+ *   Either is certainly a wheel.
+ * - Many mice are continuous instead (the owner's, in Chrome 152 on macOS:
+ *   one event per notch of 12–13 px, 44–130 ms apart, legacy exactly -3 ×
+ *   deltaY — the same arithmetic as a trackpad, which is why the legacy delta
+ *   alone cannot tell them apart). Safari derives every legacy delta that way.
+ * - A trackpad reports at the display's rate, about every 10 ms; a gesture
+ *   starts with a pixel or two, often on both axes.
  *
- * A Magic Mouse is continuous too, so it pans — as it scrolls everywhere else.
+ * A Magic Mouse is a trackpad by all of these, so it pans — as it scrolls
+ * everywhere else.
  */
 
 export type WheelDevice = "mouse" | "trackpad";
@@ -23,36 +28,61 @@ export interface WheelSample {
   deltaMode: number;
   deltaX: number;
   deltaY: number;
-  /** Non-standard (Chrome, Safari): 120 per wheel notch. */
+  /** Non-standard (Chrome, Safari): 120 per notch for a classic wheel. */
   wheelDeltaY?: number;
 }
 
-/** Which device one wheel event most likely came from. */
-export function wheelDevice(e: WheelSample): WheelDevice {
+/**
+ * The least one wheel notch moves: 4 px for a slow notch on a Mac. A trackpad
+ * gesture starts smaller, with the first pixel or two of the fingers' travel.
+ */
+export const MIN_NOTCH_PX = 4;
+
+/**
+ * Events closer together than this come from a trackpad, which reports at
+ * the display's rate. Wheel notches arrive 40 ms apart or more even when the
+ * wheel is spun fast.
+ */
+export const TRACKPAD_INTERVAL_MS = 20;
+
+interface Verdict {
+  device: WheelDevice;
+  /** Decided by something only one device does; never revised. */
+  certain: boolean;
+}
+
+/** What the first event of a gesture says about the device. */
+function judgeFirstEvent(e: WheelSample): Verdict {
   // Read first: Firefox reports lines only to code that asks for the mode
   // before the deltas. Lines and pages come from notched wheels.
-  if (e.deltaMode !== 0) return "mouse";
+  if (e.deltaMode !== 0) return { device: "mouse", certain: true };
 
   // Two axes at once is fingers. (Shift + wheel scrolls sideways on some
   // systems; it lands here too, and panning sideways is the right answer.)
-  if (e.deltaX !== 0) return "trackpad";
+  if (e.deltaX !== 0) return { device: "trackpad", certain: true };
 
+  // Whole notches of a classic wheel: a multiple of 120 that is not merely
+  // three times the pixels, as every continuous device's is.
   const legacy = e.wheelDeltaY;
-  if (legacy === undefined) {
-    // No legacy delta to judge by: keep the wheel's behaviour, zooming.
-    return "mouse";
+  if (
+    legacy !== undefined &&
+    legacy !== 0 &&
+    legacy % 120 === 0 &&
+    Math.abs(legacy + 3 * e.deltaY) > 1.5
+  ) {
+    return { device: "mouse", certain: true };
   }
 
-  // A continuous device: the legacy delta is derived from the pixels. It is
-  // truncated to an integer, so allow for the rounding.
-  if (Math.abs(legacy + 3 * e.deltaY) <= 1.5) return "trackpad";
+  // Continuous: a notch's worth at once is a wheel, a pixel or two is fingers.
+  return {
+    device: Math.abs(e.deltaY) >= MIN_NOTCH_PX ? "mouse" : "trackpad",
+    certain: false,
+  };
+}
 
-  // Whole notches.
-  if (legacy !== 0 && legacy % 120 === 0) return "mouse";
-
-  // Anything else is a continuous device whose pixels were rescaled (the
-  // page is zoomed), or a movement too small for a notch.
-  return "trackpad";
+/** Which device one wheel event, taken as the first of a gesture, came from. */
+export function wheelDevice(e: WheelSample): WheelDevice {
+  return judgeFirstEvent(e).device;
 }
 
 export interface WheelViewport {
@@ -92,17 +122,27 @@ export const WHEEL_GESTURE_GAP_MS = 250;
 
 /**
  * Judges each gesture by its first event and keeps that answer until the
- * wheel rests. Single events can be ambiguous — a fast notch on a Mac can
- * look exactly like a trackpad's pixels — but the first event of a gesture is
- * the slow one, and one gesture never switches device halfway through.
+ * wheel rests, so one gesture never flips between zoom and pan. The one
+ * exception: a gesture taken for a wheel on size alone switches to the
+ * trackpad as soon as its events come at the trackpad's rate — a fast swipe
+ * can start with a notch-sized movement, but no wheel sends every 10 ms.
  */
 export function createWheelDeviceTracker(gapMs: number = WHEEL_GESTURE_GAP_MS) {
-  let current: WheelDevice | null = null;
+  let current: Verdict | null = null;
   let lastAt = Number.NEGATIVE_INFINITY;
 
   return (e: WheelSample, now: number): WheelDevice => {
-    if (current === null || now - lastAt > gapMs) current = wheelDevice(e);
+    const interval = now - lastAt;
     lastAt = now;
-    return current;
+    if (current === null || interval > gapMs) {
+      current = judgeFirstEvent(e);
+    } else if (
+      !current.certain &&
+      current.device === "mouse" &&
+      interval < TRACKPAD_INTERVAL_MS
+    ) {
+      current = { device: "trackpad", certain: true };
+    }
+    return current.device;
   };
 }
