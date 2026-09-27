@@ -201,8 +201,8 @@ describe("MetricsQuerySchema", () => {
   it("sin nada es válido: el período por defecto lo pone la ruta", () => {
     expect(MetricsQuerySchema.safeParse({}).success).toBe(true);
   });
-  it("acepta los tres períodos y un mes YYYY-MM", () => {
-    for (const period of ["this_year", "last_12_months", "all_time"]) {
+  it("acepta los dos períodos y un mes YYYY-MM", () => {
+    for (const period of ["this_year", "last_12_months"]) {
       expect(MetricsQuerySchema.safeParse({ period }).success).toBe(true);
     }
     expect(MetricsQuerySchema.safeParse({ month: "2026-09" }).success).toBe(true);
@@ -212,6 +212,8 @@ describe("MetricsQuerySchema", () => {
       expect(MetricsQuerySchema.safeParse({ month }).success).toBe(false);
     }
     expect(MetricsQuerySchema.safeParse({ period: "forever" }).success).toBe(false);
+    // Retirado el 2026-09-27: un cliente viejo que lo pida recibe un 400 claro.
+    expect(MetricsQuerySchema.safeParse({ period: "all_time" }).success).toBe(false);
   });
   it("rechaza period y month juntos: la pregunta sería ambigua", () => {
     expect(MetricsQuerySchema.safeParse({ period: "this_year", month: "2026-09" }).success).toBe(false);

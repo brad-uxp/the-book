@@ -23,7 +23,6 @@ const CorporateChart = dynamic(() => import("./corporate-chart").then((m) => m.C
 const PRESETS: { key: Preset; label: string }[] = [
   { key: "ytd",    label: "This year" },
   { key: "last12", label: "Last 12 months" },
-  { key: "all",    label: "All time" },
 ];
 
 export type {

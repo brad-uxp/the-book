@@ -17,12 +17,11 @@ import { requireSession, invalid, toApiResponse } from "@/lib/api";
  * lib/metrics-server: the same code path as app/dashboard, so for the same
  * period and the same saved exclusions the numbers are identical.
  *
- *   ?period=this_year (default) | last_12_months | all_time
+ *   ?period=this_year (default) | last_12_months
  *   ?month=YYYY-MM   — one explicit month instead of a preset
  *
- * "all_time" is the dashboard's: the 13 most recent months, trimmed of empty
- * months at both ends. Awaiting payment and upcoming are live and ignore the
- * period, as on the dashboard.
+ * Awaiting payment and upcoming are live and ignore the period, as on the
+ * dashboard.
  */
 export async function GET(req: NextRequest) {
   const denied = await requireSession();

@@ -326,7 +326,7 @@ describe("lib/metrics reproduces the dashboard exactly (400 seeded datasets)", (
       expect(got.incomeByClient).toEqual(ref.monthlyIncomeByClient);
       expect(workExpensesByItemOf(months, d)).toEqual(ref.workExpensesByItem);
 
-      for (const preset of ["ytd", "last12", "all"] as const) {
+      for (const preset of ["ytd", "last12"] as const) {
         const filtered = filterMonths(got.monthly, preset, d.today);
         expect(filtered).toEqual(refFilter(ref.monthlyData, preset, d.today));
 

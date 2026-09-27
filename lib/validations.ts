@@ -342,7 +342,7 @@ export type SettingsPatchInput = z.infer<typeof SettingsPatchSchema>;
  */
 export const MetricsQuerySchema = z
   .object({
-    period: z.enum(["this_year", "last_12_months", "all_time"]).optional(),
+    period: z.enum(["this_year", "last_12_months"]).optional(),
     month: z
       .string()
       .regex(/^(19|20)\d{2}-(0[1-9]|1[0-2])$/, "Use YYYY-MM")

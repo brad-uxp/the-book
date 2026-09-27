@@ -174,12 +174,11 @@ profitability, replaced as a whole. Every id must be an existing client
 ### Metrics
 | Method | Path |
 |---|---|
-| GET | `/api/metrics?period=this_year` (default) · `last_12_months` · `all_time` |
+| GET | `/api/metrics?period=this_year` (default) · `last_12_months` |
 | GET | `/api/metrics?month=YYYY-MM` — one month instead of a preset |
 
 The dashboard's numbers, computed by the same code. `period` and `month`
-together are a `400`. `all_time` is the dashboard's: the 13 most recent
-months, trimmed of empty months at both ends. All amounts are integer cents.
+together are a `400`. All amounts are integer cents.
 
 ```json
 {

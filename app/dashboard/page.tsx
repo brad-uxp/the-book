@@ -24,8 +24,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const today = getTodayInTZ();
 
-  // 13 months: enough for "This year" and "Last 12 months". "All time" is
-  // these same months, trimmed of empty ones at both ends.
+  // 13 months: enough for "This year" and "Last 12 months".
   const months = recentMonths(today);
 
   const [rows, sent, upcoming, excludedClientIds] = await Promise.all([

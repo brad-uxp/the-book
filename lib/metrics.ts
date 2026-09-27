@@ -160,30 +160,21 @@ export function bucketByMonth(
 
 // ── Periods ─────────────────────────────────────────────────────────────────
 
-/** The dashboard's presets: this year, the last 12 months, everything loaded. */
-export type Preset = "ytd" | "last12" | "all";
-
-const hasData = (d: MonthData) =>
-  d.income > 0 || d.salary > 0 || d.subscriptions > 0 || d.other > 0;
-
 /**
- * The months a preset shows. "all" is everything loaded, trimmed of empty
- * months at both ends — the dashboard loads 13 months, so "all" never reaches
- * further back than that.
+ * The dashboard's presets: this year and the last 12 months. "All time" was
+ * dropped on 2026-09-27 — unused, and it only ever meant the 13 loaded months.
  */
+export type Preset = "ytd" | "last12";
+
+/** The months a preset shows, up to and including the current one. */
 export function filterMonths(monthly: MonthData[], preset: Preset, today: Date): MonthData[] {
   const currentMonth = periodKeyOf(today);
   if (preset === "ytd") {
     const yearStart = `${today.getUTCFullYear()}-01`;
     return monthly.filter((d) => d.month >= yearStart && d.month <= currentMonth);
   }
-  if (preset === "last12") {
-    const from = periodKeyOf(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 11, 1)));
-    return monthly.filter((d) => d.month >= from && d.month <= currentMonth);
-  }
-  const first = monthly.findIndex(hasData);
-  const last = monthly.reduce((acc, d, i) => (hasData(d) ? i : acc), -1);
-  return first === -1 ? [] : monthly.slice(first, last + 1);
+  const from = periodKeyOf(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 11, 1)));
+  return monthly.filter((d) => d.month >= from && d.month <= currentMonth);
 }
 
 // ── Totals ──────────────────────────────────────────────────────────────────
@@ -541,12 +532,11 @@ export function workExpensesByItemOf(
 
 // ── The report GET /api/metrics returns ─────────────────────────────────────
 
-export type MetricsPeriod = "this_year" | "last_12_months" | "all_time";
+export type MetricsPeriod = "this_year" | "last_12_months";
 
 export const PERIOD_PRESET: Record<MetricsPeriod, Preset> = {
   this_year: "ytd",
   last_12_months: "last12",
-  all_time: "all",
 };
 
 export interface MetricsReportInput {
