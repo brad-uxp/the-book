@@ -262,14 +262,19 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 | Doble clic / Enter en un nodo | edición inline con bubble menu, @ y # |
 | Escape / clic afuera | sale de la edición |
 | Delete / Backspace (sin estar editando) | borra lo seleccionado; toast **"Undo"** durante ~6 s |
-| Rueda del mouse (o scroll con dos dedos en el trackpad) | zoom alrededor del cursor; pinch también |
+| Rueda del mouse | zoom alrededor del cursor |
+| Dos dedos en el trackpad | mueve el lienzo, 1:1 como una página; pinch hace zoom |
 | Arrastrar con el botón derecho (o el del medio) | mueve el lienzo |
 | Arrastrar con el botón izquierdo en el vacío | recuadro de selección: toma toda tarjeta que toque |
 | Shift / Cmd / Ctrl + clic en un nodo | lo suma o lo quita de la selección |
 | Arrastrar una tarjeta seleccionada | mueve toda la selección, en una sola escritura |
 
 El modelo de mouse cambió el 2026-09-27 a pedido del dueño: antes era trackpad-first (dos
-dedos movían el lienzo y shift+arrastrar seleccionaba).
+dedos movían el lienzo y shift+arrastrar seleccionaba). Ese mismo día se separaron la rueda
+y el trackpad, que el navegador reporta con el mismo evento `wheel`: `lib/wheel-device.ts`
+los distingue por la firma del delta (120 por muesca en la rueda, píxeles × 3 en el
+trackpad) y juzga cada gesto por su primer evento. React Flow queda en `panOnScroll` (dos
+dedos y pinch nativos) y la rueda del mouse se intercepta antes para hacer zoom.
 
 - **Las tarjetas no tienen scroll.** El ancho lo decide el usuario (manijas a izquierda y
   derecha); el alto se calcula solo según el contenido, siempre con el mismo padding

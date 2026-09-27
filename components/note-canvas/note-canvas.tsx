@@ -44,6 +44,7 @@ import {
   type CanvasConnection,
   type CanvasIdea,
 } from "@/lib/note-canvas";
+import { createWheelDeviceTracker, zoomAtPoint } from "@/lib/wheel-device";
 import { FloatingEdge } from "./floating-edge";
 import {
   IdeaCanvasContext,
@@ -67,6 +68,10 @@ const ARROW = {
   height: 16,
   color: "#94a3b8",
 } as const;
+
+/** How far out and in the canvas zooms, by wheel, pinch or fit. */
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 2;
 
 /** What an idea says is saved this long after the last keystroke. */
 const CONTENT_SAVE_MS = 500;
@@ -156,8 +161,14 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
   const [expanded, setExpanded] = useState(false);
   const base = `/api/issues/${issueId}/canvas`;
 
-  const { screenToFlowPosition, deleteElements, getNodes, getEdges } =
-    useReactFlow<IdeaNode, Edge>();
+  const {
+    screenToFlowPosition,
+    deleteElements,
+    getNodes,
+    getEdges,
+    getViewport,
+    setViewport,
+  } = useReactFlow<IdeaNode, Edge>();
   const paneRef = useRef<HTMLDivElement>(null);
 
   // Distinguishes "let go of a card" from "clicked a card": React Flow fires
@@ -845,6 +856,34 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [expanded]);
 
+  // ── Wheel: the mouse zooms, two fingers pan ─────────────────────────────
+  //
+  // React Flow is set to pan on scroll, which is what two fingers on a
+  // trackpad want — and its pinch zoom comes with it. A mouse wheel is told
+  // apart (lib/wheel-device.ts) and caught before React Flow sees it, to zoom
+  // around the cursor instead.
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    const track = createWheelDeviceTracker();
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return; // a pinch: React Flow zooms
+      if (track(e, e.timeStamp) !== "mouse") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const point = screenToFlowPosition(
+        { x: e.clientX, y: e.clientY },
+        { snapToGrid: false }
+      );
+      void setViewport(
+        zoomAtPoint(getViewport(), point, e, { min: MIN_ZOOM, max: MAX_ZOOM })
+      );
+    };
+    // Capture, so it runs before React Flow's own listener further down.
+    pane.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => pane.removeEventListener("wheel", onWheel, { capture: true });
+  }, [screenToFlowPosition, getViewport, setViewport]);
+
   // ── Mobile sheet ─────────────────────────────────────────────────────────
 
   const closeSheet = useCallback(() => {
@@ -909,8 +948,8 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
           snapToGrid
           snapGrid={[GRID_SIZE, GRID_SIZE]}
-          minZoom={0.2}
-          maxZoom={2}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
           zoomOnDoubleClick={false}
           onConnect={handleConnect}
           onConnectEnd={handleConnectEnd}
@@ -924,14 +963,14 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           connectionLineStyle={{ strokeWidth: 2, stroke: "#94a3b8" }}
           deleteKeyCode={["Backspace", "Delete"]}
           proOptions={{ hideAttribution: true }}
-          // Mouse-first, as a whiteboard: the wheel zooms around the cursor,
-          // the right (or middle) button drags the canvas, and the left
-          // button on empty canvas draws a selection box. This replaced the
-          // first trackpad-first setup (two fingers panned) at the owner's
-          // request: on a trackpad, two-finger scroll now zooms too, and a
-          // pinch still does.
-          zoomOnScroll
-          panOnScroll={false}
+          // As a whiteboard: the mouse wheel zooms around the cursor (see
+          // the wheel effect above), two fingers on a trackpad pan and a
+          // pinch zooms, the right (or middle) button drags the canvas, and
+          // the left button on empty canvas draws a selection box.
+          panOnScroll
+          // One to one, like scrolling a page: the content follows the
+          // fingers. (React Flow's default moves it half as far.)
+          panOnScrollSpeed={1}
           panOnDrag={[1, 2]}
           selectionOnDrag
           // Partial: the box only has to touch a card to take it. Requiring
