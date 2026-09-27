@@ -7,8 +7,8 @@ import { join } from "node:path";
  *
  *  - a PARTIAL unique (uniqueness only among non-soft-deleted payments)
  *  - a FUNCTIONAL unique (case-insensitive invoice numbers)
- *  - CHECK constraints (the settings singleton, the no-self-links on IssueLink
- *    and CanvasEdge, canvas-only-for-notes on Task)
+ *  - CHECK constraints (the settings singleton, the no-self-link on
+ *    CanvasEdge, canvas-only-for-notes on Task)
  *
  * Prisma treats anything it cannot see as drift, so `prisma migrate dev` will
  * happily generate a migration that DROPs them. And `pnpm start` runs
@@ -157,14 +157,12 @@ describe("ninguna migración borra datos sin decirlo", () => {
   );
 });
 
+// IssueLink_no_self_link was here until 20260927190000, which drops the
+// IssueLink table itself — deliberately, with the destructive opt-in.
 const PROTECTED_CONSTRAINTS = [
   {
     name: "settings_singleton_check",
     purpose: "keeps Settings to a single row",
-  },
-  {
-    name: "IssueLink_no_self_link",
-    purpose: "stops an issue from linking to itself on the canvas",
   },
   {
     name: "Task_canvas_only_for_notes",

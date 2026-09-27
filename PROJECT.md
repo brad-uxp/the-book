@@ -167,7 +167,6 @@ guardan como **UTC midnight**.
 | `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`) |
 | `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
 | `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
-| `IssueLink`, `CanvasLabel`, `Task.canvas_x/y` | **Inactivos** desde 2026-09-27: eran del canvas global, que se retiró. Ya no están en `schema.prisma` (el código no los nombra); siguen en la base hasta la migración que los borra, que va en el deploy siguiente |
 
 ### Sistema
 
@@ -191,8 +190,6 @@ guardan como **UTC midnight**.
   entre ideas de dos notas distintas no se puede guardar. Unique `(issue_id, source_id, target_id)`
   y **CHECK `CanvasEdge_no_self_link`**. Nodos y aristas cascadean con su nota (no son historia
   contable).
-- `IssueLink` (inactiva) conserva su unique y su **CHECK `IssueLink_no_self_link`** hasta que
-  se borre la tabla.
 
 ⚠️ Los índices parcial y funcional y los CHECK **no se pueden expresar en `schema.prisma`**,
 así que `prisma migrate dev` los ve como drift y genera su `DROP`.

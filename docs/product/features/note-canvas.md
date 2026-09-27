@@ -1,8 +1,8 @@
 # Notas canvas: un lienzo de ideas dentro de una nota
 
-> Estado: **implementado** en `feat/note-canvas` (2026-09-27), salvo el paso 7 (borrar
-> los datos del canvas viejo), que espera OK explícito. Ver §10 para lo que cambió
-> respecto de este diseño al implementarlo.
+> Estado: **implementado** (2026-09-27), incluido el paso 7: los datos del canvas viejo se
+> borran con `20260927190000_drop_retired_canvas`, en un deploy posterior al código que
+> ya no los nombra. Ver §10 para lo que cambió respecto de este diseño al implementarlo.
 
 ## 1. Qué cambia y por qué
 
