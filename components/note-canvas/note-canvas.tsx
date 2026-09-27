@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTheme } from "next-themes";
 import {
   Background,
   BackgroundVariant,
@@ -13,7 +12,6 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
-  type ColorMode,
   type Connection,
   type Edge,
   type OnConnectEnd,
@@ -156,7 +154,6 @@ export function NoteCanvas(props: Props) {
 }
 
 function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
-  const { theme = "system" } = useTheme();
   const compact = useMediaQuery("(max-width: 639px)");
   const [expanded, setExpanded] = useState(false);
   const base = `/api/issues/${issueId}/canvas`;
@@ -938,7 +935,10 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          colorMode={theme as ColorMode}
+          // The app has one theme, light (there is no ThemeProvider). Left
+          // to "system", React Flow went dark on a Mac in dark mode and the
+          // cards' text, which follows the app, became unreadable.
+          colorMode="light"
           onNodeDragStop={handleDragStop}
           onNodeClick={handleNodeClick}
           onPaneClick={stopEditing}
