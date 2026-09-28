@@ -510,9 +510,12 @@ model SyncTombstone {
  * twice. Purged by the daily job after 30 days.
  */
 model SyncMutation {
-  mutation_id String   @id
-  result      Json
-  created_at  DateTime @default(now())
+  mutation_id  String   @id
+  /// sha256 of the change as first sent (lib/sync.ts mutationPayloadHash):
+  /// the same id with other contents is refused, not answered as the first.
+  payload_hash String?
+  result       Json
+  created_at   DateTime @default(now())
 
   @@index([created_at])
 }

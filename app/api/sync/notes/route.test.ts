@@ -25,7 +25,7 @@ import { GET, POST } from "./route";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { requireSyncSession } from "@/lib/api";
-import { SYNC_MUTATIONS_PER_MINUTE, SYNC_PAGE_LIMITS, encodeCursor } from "@/lib/sync";
+import { SYNC_MUTATIONS_PER_MINUTE, SYNC_PAGE_LIMITS, encodeCursor, mutationPayloadHash } from "@/lib/sync";
 import { resetRateLimits } from "@/lib/rate-limit";
 
 const tx = vi.mocked(prisma.$transaction);
@@ -132,7 +132,27 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
       { mutation_id: MID(2), status: "applied", reason: "already_deleted", row: null },
     ]);
     // Se guarda el veredicto, nunca la fila.
-    expect(record).toHaveBeenCalledWith({ data: { mutation_id: MID(1), result: { status: "rejected", reason: "invalid" } } });
+    expect(record).toHaveBeenCalledWith({
+      data: { mutation_id: MID(1), payload_hash: expect.stringMatching(/^[0-9a-f]{64}$/), result: { status: "rejected", reason: "invalid" } },
+    });
+  });
+
+  it("el mismo id con otro contenido se rechaza: no es un reintento, y no recibe la respuesta del primero", async () => {
+    const first = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
+    stored.mockResolvedValue({ result: { status: "applied" }, payload_hash: mutationPayloadHash(first) } as never);
+    const res = await push({ mutations: [{ ...first, op: "upsert", fields: { title: "otra cosa" } }] });
+    expect((await res.json()).results).toEqual([{ mutation_id: MID(1), status: "rejected", reason: "mutation_id_reused" }]);
+    expect(tx).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+    // El reintento de verdad sigue recibiendo su respuesta.
+    const again = await push({ mutations: [first] });
+    expect((await again.json()).results[0]).toMatchObject({ status: "applied" });
+  });
+
+  it("una respuesta guardada antes del hash (sin payload_hash) se sigue reenviando", async () => {
+    stored.mockResolvedValue({ result: { status: "applied" }, payload_hash: null } as never);
+    const res = await push({ mutations: [{ mutation_id: MID(1), entity: "issue", op: "delete", id: ID }] });
+    expect((await res.json()).results[0]).toMatchObject({ status: "applied" });
   });
 
   it("lo guardado es solo el veredicto; un reintento reconstruye la fila desde la base", async () => {
@@ -210,7 +230,9 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
     expect(results[0]).toMatchObject({ mutation_id: MID(1), status: "rejected", reason: "server_error", row: { id: ID } });
     expect(results[1]).toMatchObject({ mutation_id: MID(2), status: "applied" });
     // Queda guardado: un reintento recibe lo mismo en vez de volver a fallar.
-    expect(record).toHaveBeenCalledWith({ data: { mutation_id: MID(1), result: { status: "rejected", reason: "server_error" } } });
+    expect(record).toHaveBeenCalledWith({
+      data: { mutation_id: MID(1), payload_hash: expect.any(String), result: { status: "rejected", reason: "server_error" } },
+    });
   });
 
   it("la auditoría se escribe después del commit, nunca por un cambio deshecho", async () => {

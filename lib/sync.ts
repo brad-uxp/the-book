@@ -206,6 +206,29 @@ export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/** JSON with object keys sorted, at every depth: one string per value, whatever the key order. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * What a pushed change carried, as a hash: everything but its id, as it was
+ * sent (before validation, which may drop keys). A retry of the same change
+ * hashes the same — the phone never alters a change once sent — so a
+ * different hash under a known id is a reused id, not a retry.
+ */
+export function mutationPayloadHash(item: { mutation_id: string } & Record<string, unknown>): string {
+  const { mutation_id: _id, ...payload } = item;
+  return textHash(canonicalJson(payload));
+}
+
 /**
  * The title of a note holding the phone's side of a conflict. The mark goes at
  * the end so the list still sorts and reads by the original title; a title

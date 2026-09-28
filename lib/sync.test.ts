@@ -11,6 +11,7 @@ import {
   planDelete,
   planIssueUpsert,
   planNodeUpsert,
+  mutationPayloadHash,
   planPull,
   syncPurgeCutoffs,
   textChangedElsewhere,
@@ -295,6 +296,22 @@ describe("planDelete", () => {
   });
   it("si el servidor ya lo vació, no hay palabras que perder", () => {
     expect(planDelete("<p></p>", textHash("<p>a</p>"))).toEqual({ action: "delete" });
+  });
+});
+
+describe("mutationPayloadHash", () => {
+  const change = { mutation_id: "m1", entity: "issue", op: "upsert", id: "i1", fields: { title: "a", description: "<p>b</p>" } };
+
+  it("no depende del orden de las claves, a ninguna profundidad", () => {
+    const reordered = { fields: { description: "<p>b</p>", title: "a" }, id: "i1", op: "upsert", entity: "issue", mutation_id: "m1" };
+    expect(mutationPayloadHash(reordered)).toBe(mutationPayloadHash(change));
+  });
+
+  it("no incluye el id del cambio, sí todo lo que lleva", () => {
+    expect(mutationPayloadHash({ ...change, mutation_id: "otro" })).toBe(mutationPayloadHash(change));
+    expect(mutationPayloadHash({ ...change, fields: { title: "a", description: "<p>c</p>" } })).not.toBe(mutationPayloadHash(change));
+    expect(mutationPayloadHash({ ...change, id: "i2" })).not.toBe(mutationPayloadHash(change));
+    expect(mutationPayloadHash({ ...change, op: "delete" })).not.toBe(mutationPayloadHash(change));
   });
 });
 
