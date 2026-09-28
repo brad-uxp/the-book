@@ -10,6 +10,9 @@ export const runtime = "nodejs";
 const CreateTokenSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(60),
   expires_in_days: z.number().int().min(1).max(365).default(DEFAULT_EXPIRY_DAYS),
+  // `mobile` is never minted here: only the app's own sign-in makes those.
+  // `release` can publish app builds and reach nothing else (lib/api.ts).
+  kind: z.enum(["automation", "release"]).default("automation"),
 });
 
 /** Never selects token_hash — the secret must not be readable after creation. */
@@ -51,6 +54,7 @@ export async function POST(req: NextRequest) {
     const created = await prisma.apiToken.create({
       data: {
         name: parsed.data.name,
+        kind: parsed.data.kind,
         token_prefix: prefix,
         token_hash: hash,
         expires_at: expiresAt,
@@ -66,6 +70,7 @@ export async function POST(req: NextRequest) {
       actor_email: await getActorEmail(),
       after: {
         name: created.name,
+        kind: created.kind,
         token_prefix: created.token_prefix,
         expires_at: created.expires_at,
       },

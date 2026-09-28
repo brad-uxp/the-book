@@ -24,7 +24,7 @@ import { usePolling } from "@/hooks/use-polling";
 interface ApiToken {
   id: string;
   name: string;
-  kind: "mobile" | "automation";
+  kind: "mobile" | "automation" | "release";
   token_prefix: string;
   created_at: string;
   last_used_at: string | null;
@@ -45,6 +45,7 @@ export function ApiTokens() {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [name, setName] = useState("");
   const [days, setDays] = useState(String(DEFAULT_EXPIRY_DAYS));
+  const [kind, setKind] = useState<"automation" | "release">("automation");
   const [creating, setCreating] = useState(false);
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -70,6 +71,7 @@ export function ApiTokens() {
         body: JSON.stringify({
           name: name.trim(),
           expires_in_days: Number(days) || DEFAULT_EXPIRY_DAYS,
+          kind,
         }),
       });
       if (!res.ok) {
@@ -111,7 +113,8 @@ export function ApiTokens() {
         <p className="text-xs text-muted-foreground mt-0.5">
           Credentials for clients other than this browser, such as the mobile
           app or scripts. They have the same access as you, so revoke any you
-          no longer use.
+          no longer use. A release token is the exception: it can only publish
+          builds of the Android app.
         </p>
       </div>
 
@@ -166,6 +169,18 @@ export function ApiTokens() {
             onChange={(e) => setDays(e.target.value)}
           />
         </div>
+        <div className="w-32 space-y-1.5">
+          <Label htmlFor="token_kind">Kind</Label>
+          <select
+            id="token_kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as "automation" | "release")}
+            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+          >
+            <option value="automation">Automation</option>
+            <option value="release">App release</option>
+          </select>
+        </div>
         <Button type="button" onClick={create} disabled={creating}>
           {creating ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -195,6 +210,11 @@ export function ApiTokens() {
                     {t.kind === "mobile" && (
                       <Badge variant="secondary" className="text-[10px]" title="Minted by the app's sign-in; the only kind the phone's sync accepts">
                         Phone
+                      </Badge>
+                    )}
+                    {t.kind === "release" && (
+                      <Badge variant="secondary" className="text-[10px]" title="Publishes Android app builds; refused everywhere else">
+                        App release
                       </Badge>
                     )}
                   </div>

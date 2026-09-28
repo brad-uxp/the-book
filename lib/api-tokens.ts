@@ -63,8 +63,11 @@ export function prefixOf(raw: string): string | null {
   return prefix.length === PREFIX_LENGTH ? prefix : null;
 }
 
-/** What a token is for (the ApiTokenKind enum): the phone's sign-in, or a script. */
-export type TokenKind = "mobile" | "automation";
+/**
+ * What a token is for (the ApiTokenKind enum): the phone's sign-in, a script,
+ * or the release script publishing app builds (and nothing else).
+ */
+export type TokenKind = "mobile" | "automation" | "release";
 
 /** The stored columns this module needs to judge a token. */
 export interface TokenRecord {

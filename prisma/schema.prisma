@@ -566,6 +566,7 @@ model AuditLog {
 enum ApiTokenKind {
   mobile
   automation
+  release // publishes app builds (POST /api/mobile/releases); nothing else
 }
 
 model ApiToken {

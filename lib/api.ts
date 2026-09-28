@@ -73,6 +73,16 @@ export async function requireSession(): Promise<NextResponse | null> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // A release token only publishes app builds (requireReleaseToken). It lives
+  // in the release script's Keychain entry; if it leaked it must not open the
+  // books, so every other route refuses it here.
+  if (actor.kind === "token" && actor.tokenKind === "release") {
+    return NextResponse.json(
+      { error: "A release token can only publish app builds" },
+      { status: 403 }
+    );
+  }
+
   // Only machine callers are limited. A runaway agent loop is the realistic
   // way this API gets hammered; a human in a browser is not.
   if (actor.kind === "token") {
@@ -120,13 +130,46 @@ export async function requireUserSession(): Promise<NextResponse | null> {
  * sync is the costliest endpoint to leave open to them.
  */
 export async function requireSyncSession(): Promise<NextResponse | null> {
+  return requireAppSession("Sync is only for the book. app; use the issue routes with this token");
+}
+
+/**
+ * The browser's user or the phone's own token — for routes that exist for the
+ * app (the sync, its update check). Automation and release tokens get `refusal`.
+ */
+export async function requireAppSession(
+  refusal = "This endpoint is only for the book. app"
+): Promise<NextResponse | null> {
   const denied = await requireSession();
   if (denied) return denied;
   const actor = await resolveActor();
   if (actor?.kind === "token" && actor.tokenKind !== "mobile") {
+    return NextResponse.json({ error: refusal }, { status: 403 });
+  }
+  return null;
+}
+
+/**
+ * Authorization for publishing app builds: a release token and nothing else —
+ * not the browser session, not the phone's token. Publishing is done by the
+ * release script, which reads this token from the Mac's Keychain.
+ */
+export async function requireReleaseToken(): Promise<NextResponse | null> {
+  const actor = await resolveActor();
+  if (!actor) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (actor.kind !== "token" || actor.tokenKind !== "release") {
     return NextResponse.json(
-      { error: "Sync is only for the book. app; use the issue routes with this token" },
+      { error: "Publishing app builds needs a release token" },
       { status: 403 }
+    );
+  }
+  const verdict = checkRateLimit(actor.id);
+  if (!verdict.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } }
     );
   }
   return null;
