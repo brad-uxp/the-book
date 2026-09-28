@@ -4,6 +4,7 @@
  *
  * Pure (no React Native), so `node --test` runs it.
  */
+import { copyIdeas, DUPLICATE_OFFSET } from "../../../lib/note-canvas.ts";
 import type { SyncEdgeRow, SyncNodeRow } from "../../../lib/sync-protocol.ts";
 import type { PendingMutation } from "../sync/outbox.ts";
 
@@ -71,3 +72,19 @@ export function planRowDelete(
 export function newIdeaOrigin(point: { x: number; y: number }, width: number): { x: number; y: number } {
   return { x: point.x - width / 2, y: point.y - 24 };
 }
+
+/**
+ * The copy the Duplicate button makes of an idea: the web's ⌘D (lib's
+ * `copyIdeas`) — the same words, colour and size, a new id, a step down and
+ * to the right on the grid — as a row the phone made and the server has not
+ * seen. Never its connections: those stay with the original.
+ */
+export function duplicateNode<N extends SyncNodeRow & { server_updated_at: string | null }>(src: N, id: string, now: string): N {
+  const [copy] = copyIdeas(
+    [{ id: src.id, content: src.content, color: src.color, x: src.x, y: src.y, width: src.width, height: src.height }],
+    (i) => ({ x: i.x + DUPLICATE_OFFSET, y: i.y + DUPLICATE_OFFSET }),
+    () => id
+  );
+  return { ...src, id: copy.id, x: copy.x, y: copy.y, created_at: now, updated_at: now, server_updated_at: null };
+}
+

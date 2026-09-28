@@ -9,7 +9,7 @@ import { newId, textHash } from "@/lib/hash";
 import { announceIssue, notifyLocalWrite } from "@/notes/store";
 import { isBlankHtml } from "@/notes/text";
 import { coalesce, type PendingMutation } from "@/sync/outbox";
-import { connectionProblem, edgeCreateFields, nodeCreateFields, planRowDelete } from "./changes";
+import { connectionProblem, duplicateNode, edgeCreateFields, nodeCreateFields, planRowDelete } from "./changes";
 
 /**
  * Everything the phone does to a canvas, offline first — like
@@ -75,6 +75,23 @@ async function editIn(db: SQLiteDatabase, id: string, edit: IdeaEdit, previousCo
   return true;
 }
 
+/** Writes an idea the phone just made and queues its create. */
+async function insertIdea(db: SQLiteDatabase, node: LocalNode): Promise<void> {
+  // The server accepts an idea only on a canvas it has.
+  await announceIssue(db, node.issue_id);
+  await repo.putLocalNode(db, node);
+  await repo.enqueue(db, {
+    mutation_id: newId(),
+    entity: "canvas_node",
+    op: "upsert",
+    entity_id: node.id,
+    fields: nodeCreateFields(node),
+    base_updated_at: null,
+    base_hash: null,
+    title_hint: null,
+  });
+}
+
 /** A new idea on a canvas, where the person put it. Queued at once — like the web, which creates it before it is typed in. */
 export async function createIdea(
   issueId: string,
@@ -83,10 +100,8 @@ export async function createIdea(
 ): Promise<string> {
   const id = newId();
   await write(TABLES, async (db) => {
-    // The server accepts an idea only on a canvas it has.
-    await announceIssue(db, issueId);
     const now = new Date().toISOString();
-    const node: LocalNode = {
+    await insertIdea(db, {
       id,
       issue_id: issueId,
       content: opts.content ?? "",
@@ -98,19 +113,26 @@ export async function createIdea(
       created_at: now,
       updated_at: now,
       server_updated_at: null,
-    };
-    await repo.putLocalNode(db, node);
-    await repo.enqueue(db, {
-      mutation_id: newId(),
-      entity: "canvas_node",
-      op: "upsert",
-      entity_id: id,
-      fields: nodeCreateFields(node),
-      base_updated_at: null,
-      base_hash: null,
-      title_hint: null,
     });
   });
+  notifyLocalWrite();
+  return id;
+}
+
+/**
+ * A copy of an idea as the phone has it now (duplicateNode): its words,
+ * colour and width, a step down and to the right, no connections. Returns
+ * the copy's id, or null if the idea is gone.
+ */
+export async function duplicateIdea(sourceId: string): Promise<string | null> {
+  const id = newId();
+  const made = await write(TABLES, async (db) => {
+    const src = await repo.getNode(db, sourceId);
+    if (!src) return false;
+    await insertIdea(db, duplicateNode(src, id, new Date().toISOString()));
+    return true;
+  });
+  if (!made) return null;
   notifyLocalWrite();
   return id;
 }

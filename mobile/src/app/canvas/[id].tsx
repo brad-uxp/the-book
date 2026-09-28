@@ -19,6 +19,7 @@ import {
   deleteConnection,
   deleteIdea,
   discardIdeaIfBlank,
+  duplicateIdea,
   editIdea,
   moveIdeas,
   restoreConnection,
@@ -168,6 +169,11 @@ export default function CanvasScreen() {
         onEditIdea={(ideaId) => openIdea(ideaId)}
         onCreateIdeaAt={(at) => void newIdeaAt(at)}
         onMoveIdea={(ideaId, x, y) => void moveIdeas([{ id: ideaId, x, y }])}
+        onResizeIdea={(ideaId, x, width) => void editIdea(ideaId, { x, width })}
+        onDuplicateIdea={async (ideaId) => {
+          const copyId = await duplicateIdea(ideaId);
+          if (copyId) board.current?.select(copyId);
+        }}
         onConnect={(input) =>
           void createConnection({ issueId: id, ...input }).then((made) => {
             if (!made) toast("Those ideas are already connected that way.");

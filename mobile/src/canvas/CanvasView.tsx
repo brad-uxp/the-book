@@ -10,9 +10,10 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
-import { Ban, Check, Palette as PaletteIcon, PencilLine, RotateCcw, Trash2, X } from "lucide-react-native";
+import { Ban, Check, Copy, Palette as PaletteIcon, PencilLine, RotateCcw, Trash2, X } from "lucide-react-native";
 import { CANVAS_COLORS, CANVAS_COLOR_KEYS, canvasColor } from "@shared/canvas-palette";
 import { snapToGrid } from "@shared/canvas-geometry";
+import { NODE_MAX_SIZE, NODE_MIN_WIDTH } from "@shared/note-canvas";
 import { font, type Palette } from "@/lib/theme";
 import type { CanvasConnectionRow, CanvasIdeaRow } from "@/notes/hooks";
 import {
@@ -24,7 +25,11 @@ import {
   edgeScreenPaths,
   fitView,
   grabRadius,
+  gripPoints,
+  gripsShown,
+  handleAt,
   pinchStep,
+  resizeWidth,
   toWorld,
   type CardBox,
   type EdgePath,
@@ -38,6 +43,8 @@ import { RichTextView } from "./RichTextView";
 const UNMEASURED_HEIGHT = 80;
 /** How close (screen px) a fingertip must land to a dot to grab it. */
 const DOT_RADIUS = 26;
+/** How close (screen px) a fingertip must land to a width grip to grab it. */
+const GRIP_RADIUS = 24;
 /** How close (screen px) a tap must land to a line to select it. */
 const EDGE_TAP_PX = 16;
 /** Two taps this close in time, on the same thing, are a double tap. */
@@ -57,6 +64,9 @@ export interface CanvasViewProps {
   onEditIdea: (id: string) => void;
   onCreateIdeaAt: (at: { x: number; y: number }) => void;
   onMoveIdea: (id: string, x: number, y: number) => void;
+  /** A card's new width — and x, when it was dragged from the left. */
+  onResizeIdea: (id: string, x: number, width: number) => void;
+  onDuplicateIdea: (id: string) => void;
   onConnect: (input: { sourceId: string; sourceSide: Side; targetId: string; targetSide: Side | null }) => void;
   onConnectToEmpty: (input: { sourceId: string; sourceSide: Side; at: { x: number; y: number } }) => void;
   onColor: (id: string, color: string | null) => void;
@@ -77,7 +87,8 @@ type Selection = { kind: "idea"; id: string } | { kind: "edge"; id: string } | n
  * in the editor, or makes an idea on empty space. A selected card drags; a
  * dot drags out a connection — onto another card's dot it pins both sides,
  * onto a card's body that end is left to the canvas, onto empty space it
- * makes a new connected idea.
+ * makes a new connected idea. A selected card's grips, at its bottom
+ * corners, drag its width; its height follows its content.
  *
  * Pan and zoom run on the UI thread (the viewport is three shared values
  * driving one transform). Where a touch starts decides what it does, also on
@@ -92,6 +103,8 @@ export function CanvasView({
   onEditIdea,
   onCreateIdeaAt,
   onMoveIdea,
+  onResizeIdea,
+  onDuplicateIdea,
   onConnect,
   onConnectToEmpty,
   onColor,
@@ -106,6 +119,10 @@ export function CanvasView({
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   /** Where a moved card was dropped, until the store has it — no jump back meanwhile. */
   const [landed, setLanded] = useState<Record<string, { x: number; y: number }>>({});
+  /** A card whose width grip is being dragged: its live x and width. */
+  const [resize, setResize] = useState<{ id: string; x: number; w: number } | null>(null);
+  /** Where a resized card ended, until the store has it — no jump back meanwhile. */
+  const [sized, setSized] = useState<Record<string, { x: number; w: number }>>({});
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -124,15 +141,16 @@ export function CanvasView({
       ideas.map((idea) => {
         const at = landed[idea.id] ?? { x: idea.x, y: idea.y };
         const moving = drag && drag.id === idea.id;
+        const size = resize && resize.id === idea.id ? resize : sized[idea.id];
         return {
           id: idea.id,
-          x: moving ? snapToGrid(at.x + drag.dx) : at.x,
+          x: moving ? snapToGrid(at.x + drag.dx) : size ? size.x : at.x,
           y: moving ? snapToGrid(at.y + drag.dy) : at.y,
-          w: idea.width,
+          w: size ? size.w : idea.width,
           h: heights[idea.id] ?? UNMEASURED_HEIGHT,
         };
       }),
-    [ideas, landed, drag, heights]
+    [ideas, landed, drag, resize, sized, heights]
   );
   const boxById = useMemo(() => new Map(boxes.map((b) => [b.id, b])), [boxes]);
 
@@ -152,13 +170,30 @@ export function CanvasView({
       }
       return changed ? next : prev;
     });
+    setSized((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [id, s] of Object.entries(prev)) {
+        const idea = ideas.find((i) => i.id === id);
+        if (!idea || (idea.x === s.x && idea.width === s.w)) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [ideas]);
 
-  // A selection whose card or line is gone is no selection.
+  // A selection whose card or line is gone is no selection — except a card
+  // selected from outside (a new idea, a copy) the store has not shown yet.
   const selected = selection?.kind === "idea" ? (boxById.get(selection.id) ?? null) : null;
   const selectedEdge = selection?.kind === "edge" ? (connections.find((e) => e.id === selection.id) ?? null) : null;
+  const awaited = useRef<string | null>(null);
   useEffect(() => {
-    if (selection && !selected && !selectedEdge) setSelection(null); // eslint-disable-line react-hooks/set-state-in-effect
+    if (selected && awaited.current === selected.id) awaited.current = null;
+    if (!selection || selected || selectedEdge) return;
+    if (selection.kind === "idea" && awaited.current === selection.id) return;
+    setSelection(null);
   }, [selection, selected, selectedEdge]);
 
   const paths = useMemo(() => {
@@ -205,7 +240,10 @@ export function CanvasView({
     () => ({
       viewCenter: () => toWorld(currentView(), size.w / 2, size.h / 2.4),
       fit: () => fit(true),
-      select: (id) => setSelection(id ? { kind: "idea", id } : null),
+      select: (id) => {
+        awaited.current = id;
+        setSelection(id ? { kind: "idea", id } : null);
+      },
     }),
     [currentView, fit, size]
   );
@@ -257,6 +295,19 @@ export function CanvasView({
       setLanded((prev) => ({ ...prev, [idea.id]: { x, y } }));
       onMoveIdea(idea.id, x, y);
     },
+    resize: (x: number, w: number) => {
+      if (selected) setResize({ id: selected.id, x, w });
+    },
+    resizeEnd: (x: number, w: number) => {
+      setResize(null);
+      if (!selected) return;
+      const idea = ideas.find((i) => i.id === selected.id);
+      if (!idea) return;
+      const from = sized[idea.id] ?? { x: landed[idea.id]?.x ?? idea.x, w: idea.width };
+      if (x === from.x && w === from.w) return;
+      setSized((prev) => ({ ...prev, [idea.id]: { x, w } }));
+      onResizeIdea(idea.id, x, w);
+    },
     connectStart: () => {
       setConnecting(true);
       setPalette(false);
@@ -304,7 +355,7 @@ export function CanvasView({
   }, []);
 
   // ── Gestures (worklets) ────────────────────────────────────────────────────
-  const mode = useSharedValue(0); // 0 none · 1 pan · 2 move · 3 connect
+  const mode = useSharedValue(0); // 0 none · 1 pan · 2 move · 3 connect · 4 resize
   const active = useSharedValue(false);
   const sx0 = useSharedValue(0);
   const sy0 = useSharedValue(0);
@@ -325,6 +376,11 @@ export function CanvasView({
   const ps0 = useSharedValue(1);
   const pn0 = useSharedValue(2);
   const tapTouches = useSharedValue(0);
+  const gripLeft = useSharedValue(false);
+  const rx0 = useSharedValue(0);
+  const rw0 = useSharedValue(0);
+  const resizeX = useSharedValue(0);
+  const resizeW = useSharedValue(0);
 
   /* eslint-disable react-hooks/refs -- The callbacks below are worklets the
      gesture system runs on the UI thread, never during render; `dispatch`
@@ -345,8 +401,16 @@ export function CanvasView({
         if (idx >= 0 && idx < all.length) {
           const b = all[idx];
           const w0 = toWorld(v, e.x, e.y);
-          const side = dotAt(b, v, e.x, e.y, grabRadius(b, v, w0.x, w0.y, DOT_RADIUS));
-          if (side) {
+          const handle = handleAt(b, v, e.x, e.y, grabRadius(b, v, w0.x, w0.y, DOT_RADIUS), GRIP_RADIUS);
+          if (handle && handle.kind === "grip") {
+            mode.set(4);
+            gripLeft.set(handle.side === "left");
+            rx0.set(b.x);
+            rw0.set(b.w);
+            resizeX.set(b.x);
+            resizeW.set(b.w);
+          } else if (handle && handle.kind === "dot") {
+            const side = handle.side;
             mode.set(3);
             const sides = ["top", "right", "bottom", "left"];
             sideIdx.set(sides.indexOf(side));
@@ -381,18 +445,33 @@ export function CanvasView({
           lineX1.set(e.x);
           lineY1.set(e.y);
           runOnJS(dispatch)("hover", e.x, e.y, 0);
+        } else if (mode.get() === 4) {
+          const r = resizeWidth(
+            { x: rx0.get(), w: rw0.get() },
+            gripLeft.get() ? "left" : "right",
+            e.translationX / sz0.get(),
+            NODE_MIN_WIDTH,
+            NODE_MAX_SIZE
+          );
+          if (r.x !== resizeX.get() || r.w !== resizeW.get()) {
+            resizeX.set(r.x);
+            resizeW.set(r.w);
+            runOnJS(dispatch)("resize", r.x, r.w, 0);
+          }
         }
       })
       .onEnd((e) => {
         if (mode.get() === 2) runOnJS(dispatch)("moveEnd", moveX.get(), moveY.get(), 0);
         else if (mode.get() === 3) runOnJS(dispatch)("connectEnd", e.x, e.y, sideIdx.get());
+        else if (mode.get() === 4) runOnJS(dispatch)("resizeEnd", resizeX.get(), resizeW.get(), 0);
         mode.set(0);
       })
       .onFinalize(() => {
-        // Cut short (a second finger, the system): a move keeps where it got
-        // to, a connection is dropped.
+        // Cut short (a second finger, the system): a move or a resize keeps
+        // where it got to, a connection is dropped.
         if (active.get() && mode.get() === 2) runOnJS(dispatch)("moveEnd", moveX.get(), moveY.get(), 0);
         if (active.get() && mode.get() === 3) runOnJS(dispatch)("connectCancel", 0, 0, 0);
+        if (active.get() && mode.get() === 4) runOnJS(dispatch)("resizeEnd", resizeX.get(), resizeW.get(), 0);
         mode.set(0);
         active.set(false);
         lineOn.set(0);
@@ -487,6 +566,11 @@ export function CanvasView({
     ps0,
     pn0,
     tapTouches,
+    gripLeft,
+    rx0,
+    rw0,
+    resizeX,
+    resizeW,
   ]);
   /* eslint-enable react-hooks/refs */
 
@@ -546,10 +630,12 @@ export function CanvasView({
       {/* Screen-space controls, over the canvas and outside its gestures. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {selected ? <Dots box={selected} color={c.accent} ring={c.bg} vx={vx} vy={vy} vz={vz} /> : null}
+        {selected && !connecting && !drag ? <Grips box={selected} c={c} vx={vx} vy={vy} vz={vz} /> : null}
         {connecting && hover ? <Dots box={hover} color={c.accent} ring={c.bg} vx={vx} vy={vy} vz={vz} faint /> : null}
-        {selected && !connecting && !drag ? (
+        {selected && !connecting && !drag && !resize ? (
           <Toolbar
             box={selected}
+            screenWidth={size.w}
             vx={vx}
             vy={vy}
             vz={vz}
@@ -558,6 +644,7 @@ export function CanvasView({
             palette={palette}
             onPalette={() => setPalette((p) => !p)}
             onEdit={() => onEditIdea(selected.id)}
+            onDuplicate={() => onDuplicateIdea(selected.id)}
             onColor={(color) => {
               onColor(selected.id, color);
               setPalette(false);
@@ -779,8 +866,59 @@ function Dot({
   );
 }
 
+/**
+ * A selected card's width grips, at its bottom corners (see gripPoints),
+ * following the view on the UI thread like the dots. Hidden while the card is
+ * too short on screen to keep them clear of its side dots (gripsShown).
+ */
+function Grips({ box, c, vx, vy, vz }: { box: CardBox; c: Palette; vx: SharedValue<number>; vy: SharedValue<number>; vz: SharedValue<number> }) {
+  return (
+    <>
+      {gripPoints(box).map((g) => (
+        <Grip key={g.side} box={box} x={g.x} y={g.y} c={c} vx={vx} vy={vy} vz={vz} testID={`idea-grip-${g.side}`} />
+      ))}
+    </>
+  );
+}
+
+function Grip({
+  box,
+  x,
+  y,
+  c,
+  vx,
+  vy,
+  vz,
+  testID,
+}: {
+  box: CardBox;
+  x: number;
+  y: number;
+  c: Palette;
+  vx: SharedValue<number>;
+  vy: SharedValue<number>;
+  vz: SharedValue<number>;
+  testID: string;
+}) {
+  const style = useAnimatedStyle(() => {
+    const view = { x: vx.get(), y: vy.get(), z: vz.get() };
+    return {
+      opacity: gripsShown(box, view) ? 1 : 0,
+      transform: [{ translateX: x * view.z + view.x - 5 }, { translateY: y * view.z + view.y - 12 }],
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      testID={testID}
+      style={[styles.grip, { backgroundColor: c.accent, borderColor: c.bg }, style]}
+    />
+  );
+}
+
 function Toolbar({
   box,
+  screenWidth,
   vx,
   vy,
   vz,
@@ -789,10 +927,13 @@ function Toolbar({
   palette,
   onPalette,
   onEdit,
+  onDuplicate,
   onColor,
   onDelete,
 }: {
   box: CardBox;
+  /** The canvas's width on screen: the bar stays inside it. */
+  screenWidth: number;
   vx: SharedValue<number>;
   vy: SharedValue<number>;
   vz: SharedValue<number>;
@@ -801,6 +942,7 @@ function Toolbar({
   palette: boolean;
   onPalette: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onColor: (color: string | null) => void;
   onDelete: () => void;
 }) {
@@ -808,7 +950,9 @@ function Toolbar({
   const style = useAnimatedStyle(() => {
     const cx = (box.x + box.w / 2) * vz.get() + vx.get();
     const top = box.y * vz.get() + vy.get() - 58;
-    return { transform: [{ translateX: cx - width / 2 }, { translateY: Math.max(8, top) }] };
+    // Over the card, but never off the screen: a card near an edge would cut the bar.
+    const left = Math.min(Math.max(8, cx - width / 2), Math.max(8, screenWidth - width - 8));
+    return { transform: [{ translateX: left }, { translateY: Math.max(8, top) }] };
   });
   return (
     <Animated.View
@@ -837,6 +981,7 @@ function Toolbar({
         <>
           <ToolButton icon={<PencilLine size={16} color={c.ink} />} label="Edit" c={c} onPress={onEdit} testID="idea-edit" />
           <ToolButton icon={<PaletteIcon size={16} color={c.ink} />} label="Color" c={c} onPress={onPalette} testID="idea-color" />
+          <ToolButton icon={<Copy size={16} color={c.ink} />} label="Duplicate" c={c} onPress={onDuplicate} testID="idea-duplicate" />
           <ToolButton icon={<Trash2 size={16} color={c.danger} />} c={c} onPress={onDelete} testID="idea-delete" label="" />
         </>
       )}
@@ -919,6 +1064,7 @@ const styles = StyleSheet.create({
   cardBodyRing: { paddingHorizontal: 11, paddingVertical: 9 },
   stripe: { position: "absolute", left: 0, right: 0, top: 0, height: 3 },
   dot: { position: "absolute", left: 0, top: 0, width: 18, height: 18, borderRadius: 9, borderWidth: 3 },
+  grip: { position: "absolute", left: 0, top: 0, width: 10, height: 24, borderRadius: 5, borderWidth: 2 },
   toolbar: {
     position: "absolute",
     left: 0,
