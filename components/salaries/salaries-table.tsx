@@ -48,7 +48,8 @@ import { MoreHorizontal, Plus, ArrowUpDown, ArrowUp, ArrowDown, History, User, F
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCents, parseToCents, centsToDecimalString } from "@/lib/currency";
-import { formatDate } from "@/lib/dates";
+import { formatDate, getTodayInTZ } from "@/lib/dates";
+import { wasPaidForMonth } from "@/lib/salaries";
 import dynamic from "next/dynamic";
 import { PersonForm } from "./person-form";
 import { RoleManager } from "./role-manager";
@@ -149,21 +150,19 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
   // Unpaid this month filter
   const [unpaidThisMonth, setUnpaidThisMonth] = useState(false);
 
-  const isPaidThisMonth = (p: Person) => {
-    const last = p.salary_payments[0];
-    if (!last) return false;
-    const d = new Date(last.due_date);
-    const now = new Date();
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  };
+  // This month as seen from Montevideo, as "YYYY-MM".
+  const thisMonth = getTodayInTZ().toISOString().slice(0, 7);
+  const isPaidThisMonth = (p: Person) => wasPaidForMonth(p.salary_payments, thisMonth);
 
   const filteredData = useMemo(() => {
     let result = data;
     if (!showInactive) result = result.filter((p) => p.status === "active");
     if (unpaidThisMonth)
-      result = result.filter((p) => p.status === "active" && !isPaidThisMonth(p));
+      result = result.filter(
+        (p) => p.status === "active" && !wasPaidForMonth(p.salary_payments, thisMonth)
+      );
     return result;
-  }, [data, showInactive, unpaidThisMonth]);
+  }, [data, showInactive, unpaidThisMonth, thisMonth]);
 
   // Report state
   const [reportSelected, setReportSelected] = useState<Set<string>>(new Set());
@@ -536,7 +535,7 @@ export function SalariesTable({ initialData, initialRoles }: Props) {
         if (!last) return <span className="text-muted-foreground">—</span>;
         return (
           <span className="text-sm">
-            {new Date(last.due_date).toLocaleString("en", { month: "short", year: "numeric" })} · {formatCents(last.total_cents)}
+            {new Date(last.due_date).toLocaleString("en", { month: "short", year: "numeric", timeZone: "UTC" })} · {formatCents(last.total_cents)}
           </span>
         );
       },
