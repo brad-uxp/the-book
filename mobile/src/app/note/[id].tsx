@@ -436,26 +436,36 @@ export default function NoteScreen() {
         </ScrollView>
       </Sheet>
 
-      <MentionSheet mention={mention} people={people} invoices={invoices} onClose={() => setMention(null)} />
+      <MentionSheet
+        mention={mention}
+        people={people}
+        invoices={invoices}
+        onClose={() => setMention(null)}
+        onOpenInvoice={(invoiceId) => {
+          setMention(null);
+          void flush().then(() => router.push({ pathname: "/invoice/[id]", params: { id: invoiceId } }));
+        }}
+      />
     </View>
   );
 }
 
 /**
- * What a tapped @ or # is. People and invoices have no screens on the phone
- * yet (invoices arrive in phase 4), so this says who or which it is, from
- * what the last sync brought.
+ * What a tapped @ or # is, from what the last sync brought. An invoice opens
+ * its screen; people have none on the phone, so this says who they are.
  */
 function MentionSheet({
   mention,
   people,
   invoices,
   onClose,
+  onOpenInvoice,
 }: {
   mention: { kind: "person" | "invoice"; id: string } | null;
   people: PersonRef[];
   invoices: InvoiceRef[];
   onClose: () => void;
+  onOpenInvoice: (id: string) => void;
 }) {
   const c = usePalette();
   const person = mention?.kind === "person" ? people.find((p) => p.id === mention.id) : undefined;
@@ -476,8 +486,8 @@ function MentionSheet({
           testID="mention-invoice"
           icon={<FileText size={18} color={c.ink} />}
           label={`${invoice.client_name} · ${formatCents(invoice.amount_cents)}`}
-          detail={`${invoice.status.charAt(0).toUpperCase()}${invoice.status.slice(1).replace("_", " ")} · invoices arrive on the phone in phase 4`}
-          onPress={onClose}
+          detail={`${invoice.status.charAt(0).toUpperCase()}${invoice.status.slice(1).replace("_", " ")} · open the invoice`}
+          onPress={() => onOpenInvoice(invoice.id)}
         />
       ) : (
         <Text testID="mention-missing" style={[styles.meta, { color: c.muted, margin: 10 }]}>

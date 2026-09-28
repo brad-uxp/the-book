@@ -59,6 +59,7 @@ function Gate({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="note/[id]" />
           <Stack.Screen name="canvas/[id]" />
+          <Stack.Screen name="invoice/[id]" />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="sign-in" />
