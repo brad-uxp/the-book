@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
-import { AppState, Keyboard, KeyboardAvoidingView, PixelRatio, StyleSheet } from "react-native";
+import { AppState, Keyboard, PixelRatio, StyleSheet, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { useIsDark, usePalette } from "@/lib/theme";
 import { EditorToolbar } from "./EditorToolbar";
@@ -96,6 +96,9 @@ export function RichTextEditor({
   const [active, setActive] = useState<ActiveFormats>(NOTHING_ACTIVE);
   const [suggestion, setSuggestion] = useState<{ kind: MentionKind; query: string } | null>(null);
   const [keyboardUp, setKeyboardUp] = useState(false);
+  /** How much of the editor the keyboard covers — room kept free under the toolbar. */
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const rootRef = useRef<View>(null);
 
   const labels = useMemo(
     () => ({
@@ -253,9 +256,20 @@ export function RichTextEditor({
     onFocusChangeRef.current = onFocusChange;
   }, [onMentionPress, onFocusChange]);
 
+  // Not a KeyboardAvoidingView: it measures itself against its parent, so
+  // below a title and a task's fields it saw no overlap and left the
+  // toolbar under the keyboard. The editor measures where it is in the window.
   useEffect(() => {
-    const shown = Keyboard.addListener("keyboardDidShow", () => setKeyboardUp(true));
-    const hidden = Keyboard.addListener("keyboardDidHide", () => setKeyboardUp(false));
+    const shown = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardUp(true);
+      rootRef.current?.measureInWindow((_x, y, _width, height) => {
+        setKeyboardInset(Math.max(0, Math.round(y + height - e.endCoordinates.screenY)));
+      });
+    });
+    const hidden = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardUp(false);
+      setKeyboardInset(0);
+    });
     return () => {
       shown.remove();
       hidden.remove();
@@ -312,7 +326,7 @@ export function RichTextEditor({
   const showBar = editable && focused && keyboardUp;
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={[styles.root, { backgroundColor: c.bg }]}>
+    <View ref={rootRef} style={[styles.root, { backgroundColor: c.bg, paddingBottom: keyboardInset }]}>
       <WebView
         key={webKey}
         ref={webRef}
@@ -373,7 +387,7 @@ export function RichTextEditor({
           }}
         />
       ) : null}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
