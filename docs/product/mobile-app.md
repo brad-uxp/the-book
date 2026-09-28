@@ -356,11 +356,44 @@ plugin de Android de React Native 0.86 toma por error, y el build nativo falla.
     EV_ABS:ABS_MT_POSITION_X:… EV_ABS:ABS_MT_POSITION_Y:… EV_ABS:ABS_MT_SLOT:1 … EV_KEY:BTN_TOUCH:1
     EV_SYN:0:0`, un comando por cuadro, con posiciones de 0 a 32767 sobre la pantalla y
     `TRACKING_ID:-1` + `BTN_TOUCH:0` para soltar (`EV_SYN` va con código numérico).
-- `pnpm android:release`: APK firmado en `~/Downloads/book-<versión>-<code>.apk`. La clave
-  es `~/.android/book-release.jks` (alias `book`); la contraseña sale del Llavero de macOS
-  (`book. Android release keystore`) directo al entorno de Gradle. El script se niega a
-  copiar el APK si el certificado no es el de release. **Sin esa clave no se pueden
-  publicar actualizaciones: guarda un respaldo fuera de esta máquina.**
+- `pnpm android:release [--notes "…"] [--no-publish]`: APK firmado en
+  `~/Downloads/book-<versión>-<code>.apk`, solo arm64-v8a (52 MB en vez de 118,6 MB con las
+  cuatro ABI). La clave es `~/.android/book-release.jks` (alias `book`); la contraseña sale
+  del Llavero de macOS (`book. Android release keystore`) por un pipe a apksigner. El script
+  se niega a copiar el APK si el certificado no es el de release y, salvo `--no-publish`, lo
+  **publica como actualización** (ver abajo). **Sin esa clave no se pueden publicar
+  actualizaciones: guarda un respaldo fuera de esta máquina.**
+
+## Actualizaciones sin cable
+
+El teléfono se actualiza solo desde la app, sin USB:
+
+1. `pnpm android:release --notes "Qué cambia"` compila, firma y llama a
+   `scripts/publish-release.sh`, que registra la versión (`POST /api/mobile/releases`), sube el
+   APK a R2 con una URL firmada de 15 minutos (tamaño y tipo firmados en la URL) y la publica
+   (`POST …/<code>/publish`) cuando R2 tiene exactamente los bytes declarados. `versionCode`
+   tiene que superar al último publicado; si la subida falla, se reintenta con el mismo
+   comando.
+2. La app pregunta `GET /api/mobile/releases/latest` al abrir y al volver a ella (como mucho
+   cada 6 h) y desde la cuenta → **Check for updates**. Si hay una versión más nueva muestra
+   un aviso en Notes; **Download** baja el APK a `cache/updates/`, compara su sha256 con el
+   publicado y **Install** se lo pasa al instalador de Android, que pide confirmar. La primera
+   vez Android pide además permitir instalaciones desde book.
+3. Integridad: Android solo instala una actualización firmada con la misma clave que la app
+   instalada, así que un archivo cambiado no puede reemplazarla; el sha256 atrapa una
+   descarga rota antes de llegar al instalador. `modules/app-update` (Kotlin) hace el hash y
+   el paso al instalador, y solo acepta archivos de `cache/updates/`.
+
+**Una sola vez, en el Mac** — el script lee un token de release del Llavero:
+
+1. book. → Settings → API tokens → nombre `book-release`, Kind **App release** → Create, y
+   copiarlo.
+2. `security add-generic-password -s "book. release token" -a book-release -U -w` (pide el
+   token; pegarlo).
+
+Ese token solo publica versiones: todas las demás rutas lo rechazan (403), así que si se
+filtrara no abre la contabilidad. Revocarlo en Settings corta la publicación. Sin él, el
+script compila igual y avisa que no publicó.
 
 ## Editor
 

@@ -17,9 +17,12 @@ Read the `expo` major in `package.json` (57 today) and use the versioned docs,
   it prints a native-access warning that AGP 8.12 (React Native 0.86) takes for a
   prefab error, and the native build fails.
   - debug: `pnpm android` (prebuild + install on the running emulator/phone);
-  - release: `pnpm android:release` → signed APK in `~/Downloads`
-    (`scripts/android-release.sh`; the keystore password comes from the macOS
-    Keychain and never touches disk).
+  - release: `pnpm android:release [--notes "…"] [--no-publish]` → signed
+    arm64 APK in `~/Downloads` (`scripts/android-release.sh`; the keystore
+    password comes from the macOS Keychain and never touches disk), then
+    published as an in-app update by `scripts/publish-release.sh` (release
+    token from the Keychain; see ../docs/product/mobile-app.md →
+    Actualizaciones sin cable).
 - **`android/` is generated** (`pnpm expo prebuild`); never edit it. Native config
   lives in `app.json` and `plugins/` — `with-release-signing.js` points debug
   builds at `~/.android/debug.keystore` (its SHA-1 is the one registered with
@@ -45,6 +48,10 @@ Read the `expo` major in `package.json` (57 today) and use the versioned docs,
   --experimental-strip-types`). The shared `../lib` modules import each other
   without extensions, as the web expects; `scripts/test-resolve.mjs` (loaded by
   `pnpm test`) retries those imports as `.ts`.
+- **In-app updates** (`src/update/`): checks `/api/mobile/releases/latest`,
+  downloads into `cache/updates/`, checks sha256 and opens Android's installer
+  through `modules/app-update` (Kotlin: streamed hash, its own FileProvider,
+  only files from `cache/updates/`).
 - **Google sign-in** is `modules/google-id` (a local Expo module on Android's
   Credential Manager). The app asks Google for a token for the WEB OAuth client;
   the server verifies it (`/api/mobile/sign-in`).

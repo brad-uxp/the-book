@@ -62,7 +62,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 51 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 54 rutas API (REST) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -194,7 +194,8 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
-| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync) o `automation` (hecho en Settings) |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings) o `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) |
+| `MobileRelease` | Versión publicada de la app Android (versión, `version_code` único y creciente, sha256, tamaño, clave en R2, notas, `published_at`) para las actualizaciones sin cable |
 
 ### Invariantes que la base enforza
 
@@ -286,6 +287,9 @@ navegador o un token `mobile` (los que emite el login de la app), no los tokens
 | Mobile nonce      | POST (público)  | `/api/mobile/nonce`                  |
 | Mobile sign-in    | POST (público)  | `/api/mobile/sign-in`                |
 | Mobile sign-out   | POST            | `/api/mobile/sign-out`               |
+| App releases      | POST            | `/api/mobile/releases` (token release) |
+| Publicar release  | POST            | `/api/mobile/releases/[code]/publish` (token release) |
+| Última versión    | GET             | `/api/mobile/releases/latest`        |
 | Sync notas        | GET/POST        | `/api/sync/notes`                    |
 | Sync refs         | GET             | `/api/sync/refs`                     |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
