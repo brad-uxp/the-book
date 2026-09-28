@@ -27,6 +27,10 @@ export async function ensureChannel(): Promise<void> {
     description: "Invoices, salaries and tasks that are due",
     importance: Notifications.AndroidImportance.HIGH,
     lightColor: "#8B5CF6",
+    // A reminder can carry an amount: on a locked screen Android shows only
+    // "book." and hides the text until the phone is unlocked. A channel's
+    // settings are fixed once created, so this has to ship in its first build.
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
   });
 }
 
