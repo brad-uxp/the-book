@@ -22,6 +22,7 @@ import {
   dotPoints,
   edgePath,
   fitView,
+  grabRadius,
   pinchView,
   toWorld,
   type CardBox,
@@ -281,7 +282,7 @@ export function CanvasView({
           sourceId: selected.id,
           sourceSide,
           targetId: target.id,
-          targetSide: dotAt(target, v, sx, sy, DOT_RADIUS),
+          targetSide: dotAt(target, v, sx, sy, grabRadius(target, v, w.x, w.y, DOT_RADIUS)),
         });
         return;
       }
@@ -340,7 +341,8 @@ export function CanvasView({
         const all = boxesSV.get();
         if (idx >= 0 && idx < all.length) {
           const b = all[idx];
-          const side = dotAt(b, v, e.x, e.y, DOT_RADIUS);
+          const w0 = toWorld(v, e.x, e.y);
+          const side = dotAt(b, v, e.x, e.y, grabRadius(b, v, w0.x, w0.y, DOT_RADIUS));
           if (side) {
             mode.set(3);
             const sides = ["top", "right", "bottom", "left"];

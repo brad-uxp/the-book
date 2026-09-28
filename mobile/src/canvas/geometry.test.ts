@@ -11,6 +11,7 @@ import {
   dotPoints,
   edgePath,
   fitView,
+  grabRadius,
   pinchView,
   toScreen,
   toWorld,
@@ -108,4 +109,24 @@ test("encuadrar: todo entra, centrado, sin pasar de zoom 1", () => {
 
 test("encuadrar un canvas vacío deja el origen a la vista", () => {
   assert.deepEqual(fitView([], 400, 900), { x: 200, y: 300, z: 1 });
+});
+
+test("zoom lejano: el centro de una tarjeta chica la agarra a ella, no a un punto", () => {
+  const b = box("a", 0, 0, 280, 70);
+  const far = { x: 0, y: 0, z: 0.57 };
+  const center = { x: 140, y: 35 };
+  const r = grabRadius(b, far, center.x, center.y, 26);
+  // 70 × 0.57 ≈ 40 px tall on screen: a quarter of it is ~10 px.
+  assert.ok(r < 11, String(r));
+  const sx = center.x * far.z;
+  const sy = center.y * far.z;
+  assert.equal(dotAt(b, far, sx, sy, r), null);
+  // Just outside the bottom edge, the full radius still finds the dot.
+  assert.equal(grabRadius(b, far, 140, 75, 26), 26);
+  assert.equal(dotAt(b, far, 140 * 0.57, 75 * 0.57, 26), "bottom");
+});
+
+test("zoom cercano: dentro de una tarjeta grande el radio completo vale", () => {
+  const b = box("a", 0, 0, 280, 160);
+  assert.equal(grabRadius(b, { x: 0, y: 0, z: 1.5 }, 140, 150, 26), 26);
 });

@@ -117,6 +117,19 @@ export function dotAt(box: CardBox, view: View, sx: number, sy: number, radius: 
   return best;
 }
 
+/**
+ * How far from a dot a touch still grabs it, in screen pixels. Outside the
+ * card, the full `radius` — a fingertip is wide. Inside it, never more than a
+ * quarter of the card's smaller side on screen: zoomed out, a card can be a
+ * few fingertips tall, and its middle must still pick up the card, not a dot.
+ */
+export function grabRadius(box: CardBox, view: View, wx: number, wy: number, radius: number): number {
+  "worklet";
+  const inside = wx >= box.x && wx <= box.x + box.w && wy >= box.y && wy <= box.y + box.h;
+  if (!inside) return radius;
+  return Math.min(radius, 0.25 * Math.min(box.w, box.h) * view.z);
+}
+
 // ── Connections ──────────────────────────────────────────────────────────────
 
 export interface EdgePath {
