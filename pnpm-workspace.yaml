@@ -17,3 +17,40 @@ allowBuilds:
   prisma: false
   sharp: false
   unrs-resolver: false
+
+# Security floors for transitive dependencies `pnpm audit` flags and no direct
+# dependency's latest release pulls in yet. Each stays inside the major its
+# parents already accept; drop an entry once its parent ships the fix itself.
+#
+# Not overridden: deepmerge-ts <8 (stack exhaustion on recursive objects),
+# pinned at exactly 7.1.5 by @prisma/config; it only merges our own
+# prisma.config.ts, and the fix needs a major Prisma doesn't accept yet.
+overrides:
+  # Prisma CLI (runs `migrate deploy` at start) — @prisma/studio-core, @prisma/dev.
+  lodash: ^4.18.1 # _.template code injection, _.unset/_.omit prototype pollution
+  mysql2: ^3.24.4 # auth plugin downgrade, unbounded zlib inflate
+  fast-uri: ^3.1.8 # host confusion / path traversal (also via shadcn's ajv)
+  # Next's own PostCSS and Babel, eslint-config-next, vite (build and lint only).
+  postcss: ^8.5.28 # arbitrary file read / source-map path traversal
+  nanoid@^3: ^3.3.19 # integer overflow, infinite loop on bad sizes
+  browserslist: ^4.28.9 # unbounded cache growth, prototype write
+  baseline-browser-mapping: ^2.11.26 # stale data advisory
+  '@babel/core@^7': ^7.29.7 # low-severity advisory
+  # eslint and its plugins (lint only).
+  brace-expansion@^1: ^1.1.21 # DoS via unbounded expansion
+  brace-expansion@^5: ^5.0.12 # DoS via unbounded intermediate arrays
+  js-yaml@^4: ^4.3.2 # quadratic CPU on merge keys / !!omap
+  picomatch@^2: ^2.3.2 # ReDoS via extglob quantifiers
+  picomatch@^4: ^4.0.7 # ReDoS via extglob quantifiers
+  # shadcn CLI's MCP server (dev only).
+  '@hono/node-server': ^1.19.17 # static path authorization bypass
+  hono: ^4.13.9 # CORS reflection, serveStatic file access
+  body-parser: ^2.3.0 # low-severity advisory
+  express-rate-limit: ^8.2.2 # IPv4-mapped IPv6 bypass
+  path-to-regexp@^8: ^8.4.2 # ReDoS on sequential optional groups
+  ip-address: ^10.7.2 # leading-zero octet parsing
+  qs: ^6.16.0 # prototype-pollution / DoS in query parsing
+  postcss-selector-parser@^7: ^7.1.6 # low-severity advisory
+  # jspdf (invoice PDFs, client side).
+  dompurify: ^3.4.16 # several sanitizer bypasses
+  fflate: ^0.8.3 # decompression advisory
