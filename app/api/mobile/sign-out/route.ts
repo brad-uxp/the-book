@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { requireSession, resolveActor, toApiResponse } from "@/lib/api";
+import { forgetDevice } from "@/lib/push";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,9 @@ export async function POST() {
   }
 
   try {
+    // No more pushes to this phone. Revoking keeps the token row (for the
+    // audit trail), so the device's cascade would never fire on its own.
+    await forgetDevice(actor.id);
     const revoked = await prisma.apiToken.updateMany({
       where: { id: actor.id, revoked_at: null },
       data: { revoked_at: new Date() },

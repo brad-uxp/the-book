@@ -201,15 +201,15 @@ enum NotificationType {
 }
 
 model Notification {
-  id             String           @id @default(uuid())
-  type           NotificationType
-  title          String
-  body           String
-  entity_type    String
-  entity_id      String
-  event_date     DateTime
-  created_at     DateTime         @default(now())
-  read_at        DateTime?
+  id          String           @id @default(uuid())
+  type        NotificationType
+  title       String
+  body        String
+  entity_type String
+  entity_id   String
+  event_date  DateTime
+  created_at  DateTime         @default(now())
+  read_at     DateTime?
 
   @@unique([type, entity_id, event_date])
   @@index([read_at, created_at])
@@ -218,41 +218,32 @@ model Notification {
 }
 
 // ============================================================
-// Push Subscriptions (Web Push) — DORMANT
+// Push Subscriptions (Web Push) — being dropped
 // ============================================================
 
-/// DORMANT since 2026-09-27: web push was removed together with the PWA, and
-/// nothing reads or writes this table any more. It is left in place, not
-/// dropped, for the React Native plan to decide: native push tokens (Expo /
-/// FCM / APNs) have a different shape, so it will most likely be dropped —
-/// in a reviewed two-phase migration — rather than reused.
-model PushSubscription {
-  id         String   @id @default(uuid())
-  endpoint   String   @unique
-  p256dh     String
-  auth       String
-  user_email String
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-
-  @@index([user_email])
-}
+// PushSubscription (web push, removed with the PWA on 2026-09-27) left this
+// schema on 2026-09-28: phase 1 of its two-phase drop. The TABLE is still in
+// the database, untouched, so the running code never meets a missing table
+// during the deploy. Phase 2 — the next deploy — is a migration that drops
+// it, carrying `ACEPTO PERDER ESTOS DATOS` (the rows are old browser push
+// endpoints, useless without the VAPID keys deleted the same day). Native
+// push lives in MobileDevice, next to ApiToken.
 
 // ============================================================
 // Settings
 // ============================================================
 
 model Settings {
-  id                       String   @id @default("singleton")
-  days_before_subscription Int      @default(2)
-  days_before_salary       Int      @default(4)
-  days_before_invoice      Int      @default(0)
+  id                            String   @id @default("singleton")
+  days_before_subscription      Int      @default(2)
+  days_before_salary            Int      @default(4)
+  days_before_invoice           Int      @default(0)
   /// Clients whose income is left out of corporate profitability and the
   /// partner split (the dashboard's corporate chart and GET /api/metrics).
   /// Chosen in Settings. Not a relation: a stale id of a deleted client simply
   /// excludes nothing.
   corporate_excluded_client_ids String[] @default([])
-  updated_at               DateTime @updatedAt
+  updated_at                    DateTime @updatedAt
 }
 
 // ============================================================
@@ -260,14 +251,14 @@ model Settings {
 // ============================================================
 
 model OtherExpense {
-  id           String    @id @default(uuid())
+  id           String   @id @default(uuid())
   name         String
   category     Category
   paid_at      DateTime
   amount_cents Int
   notes        String?
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 
   @@index([paid_at])
 }
@@ -400,25 +391,23 @@ model Issue {
   created_at  DateTime      @default(now())
   updated_at  DateTime      @updatedAt
 
-  client        Client?     @relation(fields: [client_id], references: [id], onDelete: SetNull)
-  canvas_nodes  CanvasNode[]
-  canvas_edges  CanvasEdge[]
+  client       Client?      @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  canvas_nodes CanvasNode[]
+  canvas_edges CanvasEdge[]
 
-  @@map("Task")
   @@index([status])
   @@index([client_id])
   @@index([category])
   /// "What changed since" for the phone's sync.
   @@index([updated_at, id])
+  @@map("Task")
 }
 
 /**
  * One idea on a canvas note. A node only ever holds rich text — there is no
  * canvas inside a canvas.
- *
  * `content` is TipTap HTML, the same format as Issue.description, so @person
  * and #invoice mentions inside a node are found by the same `contains` query.
- *
  * The id may be chosen by the client (a UUID). That is what lets a node be
  * drawn, focused and typed into before the server answers without its id —
  * and so its React key — ever changing underneath the cursor.
@@ -449,7 +438,6 @@ model CanvasNode {
 
 /**
  * A directed connection between two ideas on the SAME canvas.
- *
  * Both ends are compound foreign keys on (issue_id, node_id), so the database
  * itself refuses an edge between nodes of two different notes — not only the
  * API. Self-links are refused by a CHECK that lives only in the migration.
@@ -485,13 +473,11 @@ model CanvasEdge {
 /**
  * A deleted issue, idea or connection, so a phone that pulls "what changed
  * since" hears about rows that no longer exist.
- *
  * Written ONLY by the AFTER DELETE row triggers the migration puts on Task,
  * CanvasNode and CanvasEdge — never by application code. A trigger sees every
  * way a row goes: a route, a bulk delete, a cascade from its issue or its
  * node, Prisma Studio, psql. The triggers are invisible to Prisma, so
  * prisma/migrations.test.ts guards them.
- *
  * Purged by the daily job after 60 days; a phone whose cursor is older than
  * that starts over with a full sync (lib/sync.ts, SYNC_TOMBSTONE_RETENTION_MS).
  */
@@ -510,7 +496,6 @@ model SyncTombstone {
 
 /**
  * The answer to every change a phone has pushed, by the id the phone gave it.
- *
  * A push whose response is lost is retried with the same ids; this is what
  * makes the retry return the first answer instead of applying the change
  * twice. Purged by the daily job after 30 days.
@@ -532,13 +517,13 @@ model SyncMutation {
 
 model AuditLog {
   id          String   @id @default(uuid())
-  entity_type String   // "invoice" | "subscription" | "person" | ...
+  entity_type String // "invoice" | "subscription" | "person" | ...
   entity_id   String
-  entity_name String   // denormalized label for list display (no JOIN needed)
-  action      String   // "create" | "update" | "delete"
-  actor_email String?  // who performed the action; null for legacy/system events
-  before      Json?    // previous state (update/delete)
-  after       Json?    // new state (create/update)
+  entity_name String // denormalized label for list display (no JOIN needed)
+  action      String // "create" | "update" | "delete"
+  actor_email String? // who performed the action; null for legacy/system events
+  before      Json? // previous state (update/delete)
+  after       Json? // new state (create/update)
   created_at  DateTime @default(now())
 
   @@index([created_at])
@@ -553,7 +538,6 @@ model AuditLog {
  * Bearer credentials for non-browser clients. Deliberately separate from the
  * Google session: a leaked token is scoped to this app, revocable in one
  * click, and shows up in the audit log as itself rather than as the human.
- *
  * The secret is never stored. `token_prefix` is the readable head of the token
  * (also the lookup key, so verification is one indexed read), and `token_hash`
  * is a SHA-256 of the whole thing — the token is 256 bits of CSPRNG output, so
@@ -574,10 +558,31 @@ model ApiToken {
   kind         ApiTokenKind @default(automation)
   token_prefix String       @unique // first chars of the token; shown in the UI
   token_hash   String // sha256 of the full token
-  created_at   DateTime  @default(now())
+  created_at   DateTime     @default(now())
   last_used_at DateTime?
   expires_at   DateTime?
   revoked_at   DateTime?
 
+  /// The phone this token signed in, when it registered for push.
+  device MobileDevice?
+
   @@index([revoked_at])
+}
+
+/// A phone that receives push notifications: the native FCM registration
+/// token of one install of the app, tied to the API token that install signed
+/// in with (one device per token). Signing out or revoking the token deletes
+/// it (tokens are revoked, not deleted, so that is explicit — see
+/// lib/push.ts); the cascade covers a token row deleted outright. Pushes only
+/// go to devices whose token is still live.
+model MobileDevice {
+  id           String   @id @default(uuid())
+  api_token_id String   @unique
+  fcm_token    String   @unique
+  platform     String // "android"
+  app_version  String?
+  created_at   DateTime @default(now())
+  last_seen_at DateTime @default(now())
+
+  api_token ApiToken @relation(fields: [api_token_id], references: [id], onDelete: Cascade)
 }
