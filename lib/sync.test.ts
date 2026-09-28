@@ -71,6 +71,21 @@ describe("planPull", () => {
     expect(planPull(encodeCursor({ t: fresh }), NOW).reset).toBe(false);
   });
 
+  it.each([
+    ["t fuera del rango de Date", { t: 1e300 }],
+    ["t en el futuro", { t: NOW + 60 * 60 * 1000 }],
+    ["t negativo", { t: -1 }],
+    ["t con decimales", { t: NOW - 1000.5 }],
+    ["at fuera de rango", { t: NOW - DAY, at: 8.64e15 + 1 }],
+    ["posición fuera de rango", { t: NOW - DAY, at: NOW - 1000, k: { issues: [1e300, "i9"] as [number, string] } }],
+  ])("un cursor con tiempos que este servidor no emitió (%s): reset, nunca un error", (_label, data) => {
+    expect(planPull(encodeCursor(data), NOW)).toMatchObject({ from: null, reset: true, at: NOW });
+  });
+
+  it("un cursor con la hora un poco adelantada (reloj de la base) se acepta", () => {
+    expect(planPull(encodeCursor({ t: NOW + 60_000 }), NOW).reset).toBe(false);
+  });
+
   it("a mitad de una ronda paginada sigue desde donde quedó, con el mismo inicio", () => {
     const raw = encodeCursor({ t: NOW - DAY, at: NOW - 1000, k: { issues: [NOW - 5000, "i9"] } });
     expect(planPull(raw, NOW)).toEqual({

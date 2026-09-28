@@ -206,6 +206,17 @@ describe("GET /api/sync/notes", () => {
     expect(cursor.k.issues).toEqual([Date.parse("2026-09-28T10:00:00Z"), "id-0199"]);
   });
 
+  it("un cursor manipulado (tiempos imposibles) es una sync completa con reset, no un 500", async () => {
+    const t = fakeTx({ issues: [] });
+    const res = await pull(encodeCursor({ t: 1e300, at: 1e300, k: { issues: [1e300, "x"] } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ reset: true, has_more: false });
+    // Ninguna consulta recibe una fecha: es la sync completa, sin límite inferior.
+    const where = JSON.stringify(t.issue.findMany.mock.calls[0][0]);
+    expect(where).not.toMatch(/Invalid Date|null/);
+    expect(t.syncTombstone.findMany).not.toHaveBeenCalled();
+  });
+
   it("un tombstone de algo que volvió a existir (deshacer) no se manda", async () => {
     fakeTx({
       tombstones: [
