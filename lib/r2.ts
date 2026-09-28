@@ -1,6 +1,13 @@
-import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "node:crypto";
+import { APK_CONTENT_TYPE, isReleaseKey } from "./mobile-releases";
 
 const accountId = process.env.R2_ACCOUNT_ID;
 const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -78,3 +85,58 @@ export async function deleteObject(key: string): Promise<void> {
   assertSafeKey(key);
   await getClient().send(new DeleteObjectCommand({ Bucket: bucket!, Key: key }));
 }
+
+// ── App releases (mobile/releases/…) ─────────────────────────────────────────
+//
+// Separate from the invoice helpers on purpose: each set checks its own key
+// shape, so an invoice route can never sign a URL for a build or the other
+// way round.
+
+function assertReleaseKey(key: string): void {
+  if (!isReleaseKey(key)) {
+    throw new Error("Refusing to operate on an unrecognised release key");
+  }
+}
+
+/**
+ * A URL the release script PUTs the signed APK to. Content type and length
+ * are signed into it, so the upload must be exactly the declared file size.
+ */
+export async function getReleaseUploadUrl(
+  key: string,
+  sizeBytes: number,
+  expiresIn: number
+): Promise<string> {
+  assertReleaseKey(key);
+  const cmd = new PutObjectCommand({
+    Bucket: bucket!,
+    Key: key,
+    ContentType: APK_CONTENT_TYPE,
+    ContentLength: sizeBytes,
+  });
+  return getSignedUrl(getClient(), cmd, {
+    expiresIn,
+    signableHeaders: new Set(["content-type", "content-length"]),
+  });
+}
+
+/** A short-lived URL the phone downloads a published build from. */
+export async function getReleaseDownloadUrl(key: string, expiresIn: number): Promise<string> {
+  assertReleaseKey(key);
+  const cmd = new GetObjectCommand({ Bucket: bucket!, Key: key });
+  return getSignedUrl(getClient(), cmd, { expiresIn });
+}
+
+/** How many bytes R2 holds for a build, or null when nothing was uploaded. */
+export async function releaseObjectSize(key: string): Promise<number | null> {
+  assertReleaseKey(key);
+  try {
+    const head = await getClient().send(new HeadObjectCommand({ Bucket: bucket!, Key: key }));
+    return head.ContentLength ?? null;
+  } catch (err) {
+    const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+    if (status === 404) return null;
+    throw err;
+  }
+}
+
