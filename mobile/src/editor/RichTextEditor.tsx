@@ -42,6 +42,8 @@ export interface RichTextEditorProps {
   /** For # suggestions and for keeping chips' labels current. */
   invoices: MentionInvoice[];
   onMentionPress?: (m: { kind: "person" | "invoice"; id: string }) => void;
+  /** Called when the text gains or loses focus — a screen can make room while it is typed in. */
+  onFocusChange?: (focused: boolean) => void;
   ref?: Ref<RichTextEditorHandle>;
 }
 
@@ -79,6 +81,7 @@ export function RichTextEditor({
   people,
   invoices,
   onMentionPress,
+  onFocusChange,
   ref,
 }: RichTextEditorProps) {
   const c = usePalette();
@@ -113,6 +116,8 @@ export function RichTextEditor({
   const autoFocusRef = useRef(autoFocus);
   const liveRef = useRef({ editable, placeholder, dark, labels });
   const onMentionPressRef = useRef(onMentionPress);
+  const onFocusChangeRef = useRef(onFocusChange);
+  const focusedRef = useRef(false);
   const pendingRef = useRef<{ docKey: string; html: string; since: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -165,6 +170,10 @@ export function RichTextEditor({
         case "state":
           setShown(true);
           setFocused(message.focused);
+          if (message.focused !== focusedRef.current) {
+            focusedRef.current = message.focused;
+            onFocusChangeRef.current?.(message.focused);
+          }
           setActive(message.active);
           if (!message.focused) {
             setSuggestion(null);
@@ -241,7 +250,8 @@ export function RichTextEditor({
 
   useEffect(() => {
     onMentionPressRef.current = onMentionPress;
-  }, [onMentionPress]);
+    onFocusChangeRef.current = onFocusChange;
+  }, [onMentionPress, onFocusChange]);
 
   useEffect(() => {
     const shown = Keyboard.addListener("keyboardDidShow", () => setKeyboardUp(true));
@@ -281,6 +291,10 @@ export function RichTextEditor({
     readyRef.current = false;
     setShown(false);
     setFocused(false);
+    if (focusedRef.current) {
+      focusedRef.current = false;
+      onFocusChangeRef.current?.(false);
+    }
     setSuggestion(null);
     setWebKey((k) => k + 1);
   }, []);

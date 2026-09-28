@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
-  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,14 +17,17 @@ import {
   ChevronLeft,
   CloudOff,
   Ellipsis,
+  FileText,
   SquareCheck,
   StickyNote,
   Trash2,
+  User,
   Users,
   Waypoints,
   X,
 } from "lucide-react-native";
 import { formatCents } from "@shared/currency";
+import { formatInvoiceLabel } from "@shared/mentions";
 import { ProgressSlider } from "@/components/ProgressSlider";
 import { Sheet, SheetOption } from "@/components/Sheet";
 import { StateView } from "@/components/StateView";
@@ -33,7 +35,7 @@ import { useToast } from "@/components/Toast";
 import { RichTextEditor, type MentionInvoice, type MentionPerson } from "@/editor/RichTextEditor";
 import { dueLabel, relativeTime } from "@/lib/format";
 import { font, statusColor, statusLabel, usePalette } from "@/lib/theme";
-import { useClients, useInvoices, useIssue, usePeople } from "@/notes/hooks";
+import { useClients, useInvoices, useIssue, usePeople, type InvoiceRef, type PersonRef } from "@/notes/hooks";
 import { deleteIssue, discardIfBlank, editIssue, undoDelete, type IssueEdit } from "@/notes/store";
 
 /** Typing is saved this long after the last keystroke — and at once on leaving. */
@@ -79,6 +81,9 @@ export default function NoteScreen() {
   const [title, setTitle] = useState<string | null>(null);
   const [doc, setDoc] = useState<{ key: number; html: string } | null>(null);
   const [sheet, setSheet] = useState<"type" | "more" | "client" | null>(null);
+  const [mention, setMention] = useState<{ kind: "person" | "invoice"; id: string } | null>(null);
+  // While the text is typed in, a task's fields fold away to give it room.
+  const [bodyFocused, setBodyFocused] = useState(false);
 
   // What the editor holds that is not saved yet, and the text it last saved:
   // the next save's `previousDescription` (see editIssue).
@@ -152,12 +157,12 @@ export default function NoteScreen() {
     () => people.map((p) => ({ id: p.id, name: p.name, role: p.role, active: p.status === "active" })),
     [people]
   );
-  // The same label the web writes into a #mention (components/rich-text/invoice-mention-list.tsx).
+  // The label the web writes into a #mention, from the same function.
   const mentionInvoices = useMemo<MentionInvoice[]>(
     () =>
       invoices.map((i) => ({
         id: i.id,
-        label: `Inv ${i.invoice_number ?? "?"}: ${i.client_name} — ${formatCents(i.amount_cents)}`,
+        label: formatInvoiceLabel({ invoice_number: i.invoice_number, client: { name: i.client_name }, amount_cents: i.amount_cents }),
         status: i.status,
       })),
     [invoices]
@@ -192,7 +197,9 @@ export default function NoteScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={[styles.screen, { backgroundColor: c.bg }]}>
+    // No KeyboardAvoidingView here: the editor, at the bottom, keeps itself
+    // and its toolbar above the keyboard.
+    <View style={[styles.screen, { backgroundColor: c.bg, paddingBottom: insets.bottom }]}>
       <View style={[styles.bar, { paddingTop: insets.top + 4 }]}>
         <Pressable onPress={() => router.back()} hitSlop={8} style={styles.iconBtn} accessibilityLabel="Back" testID="note-back">
           <ChevronLeft size={24} color={c.ink} />
@@ -214,7 +221,7 @@ export default function NoteScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]} keyboardShouldPersistTaps="handled">
+      <View style={styles.content}>
         <TextInput
           testID="note-title"
           value={title ?? ""}
@@ -254,7 +261,7 @@ export default function NoteScreen() {
           </View>
         ) : null}
 
-        {isTask ? (
+        {isTask && !bodyFocused ? (
           <View style={[styles.rows, { borderColor: c.line }]}>
             <View style={[styles.row, { borderColor: c.line }]}>
               <Text style={[styles.rowLabel, { color: c.muted }]}>Status</Text>
@@ -321,7 +328,10 @@ export default function NoteScreen() {
           </View>
         ) : null}
 
-        {doc ? (
+      </View>
+
+      {doc ? (
+        <View style={styles.body}>
           <RichTextEditor
             docKey={`${id}:${doc.key}`}
             initialHtml={doc.html}
@@ -332,9 +342,11 @@ export default function NoteScreen() {
             placeholder={isTask ? "Details" : "Write something…"}
             people={mentionPeople}
             invoices={mentionInvoices}
+            onMentionPress={setMention}
+            onFocusChange={setBodyFocused}
           />
-        ) : null}
-      </ScrollView>
+        </View>
+      ) : null}
 
       <Sheet visible={sheet === "type"} title="Type" onClose={() => setSheet(null)}>
         <SheetOption
@@ -404,7 +416,56 @@ export default function NoteScreen() {
           {clients.length === 0 ? <Text style={[styles.meta, { color: c.muted, margin: 10 }]}>Clients appear here after the first sync.</Text> : null}
         </ScrollView>
       </Sheet>
-    </KeyboardAvoidingView>
+
+      <MentionSheet mention={mention} people={people} invoices={invoices} onClose={() => setMention(null)} />
+    </View>
+  );
+}
+
+/**
+ * What a tapped @ or # is. People and invoices have no screens on the phone
+ * yet (invoices arrive in phase 4), so this says who or which it is, from
+ * what the last sync brought.
+ */
+function MentionSheet({
+  mention,
+  people,
+  invoices,
+  onClose,
+}: {
+  mention: { kind: "person" | "invoice"; id: string } | null;
+  people: PersonRef[];
+  invoices: InvoiceRef[];
+  onClose: () => void;
+}) {
+  const c = usePalette();
+  const person = mention?.kind === "person" ? people.find((p) => p.id === mention.id) : undefined;
+  const invoice = mention?.kind === "invoice" ? invoices.find((i) => i.id === mention.id) : undefined;
+  const title = person ? person.name : invoice ? `Invoice ${invoice.invoice_number ?? "without number"}` : mention?.kind === "invoice" ? "Invoice" : "Person";
+  return (
+    <Sheet visible={mention !== null} title={title} onClose={onClose}>
+      {person ? (
+        <SheetOption
+          testID="mention-person"
+          icon={<User size={18} color={c.ink} />}
+          label={person.role ?? "No role"}
+          detail={person.status === "active" ? "Active · salaries and people are on the web" : "No longer active"}
+          onPress={onClose}
+        />
+      ) : invoice ? (
+        <SheetOption
+          testID="mention-invoice"
+          icon={<FileText size={18} color={c.ink} />}
+          label={`${invoice.client_name} · ${formatCents(invoice.amount_cents)}`}
+          detail={`${invoice.status.charAt(0).toUpperCase()}${invoice.status.slice(1).replace("_", " ")} · invoices arrive on the phone in phase 4`}
+          onPress={onClose}
+        />
+      ) : (
+        <Text testID="mention-missing" style={[styles.meta, { color: c.muted, margin: 10 }]}>
+          Not on this phone. It may have been deleted — or it is new and the next sync brings it.
+        </Text>
+      )}
+    </Sheet>
   );
 }
 
@@ -416,6 +477,8 @@ const styles = StyleSheet.create({
   typeChip: { flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 10, borderRadius: 9 },
   typeText: { fontFamily: font.semibold, fontSize: 13 },
   content: { paddingHorizontal: 20 },
+  // The editor page pads its text by 16; 4 more lines it up with the title.
+  body: { flex: 1, marginHorizontal: 4 },
   title: { fontFamily: font.bold, fontSize: 24, lineHeight: 30, letterSpacing: -0.4, padding: 0, marginTop: 4, marginBottom: 6 },
   props: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 14 },
   pill: { flexDirection: "row", alignItems: "center", gap: 6, height: 24, paddingHorizontal: 9, borderRadius: 12 },
