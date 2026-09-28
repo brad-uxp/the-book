@@ -36,7 +36,13 @@ pnpm editor:build
 
 pnpm expo prebuild --platform android --clean --no-install
 
-(cd android && ./gradlew --no-daemon --quiet assembleRelease)
+# Expo's template caps Gradle at 2 GB of heap, which D8's dex merge outgrew
+# once expo-sharing and expo-file-system joined (OutOfMemoryError in
+# mergeDexRelease, 0.3.0). prebuild --clean rewrites gradle.properties, so the
+# cap is raised here, for this build only.
+(cd android && ./gradlew --no-daemon --quiet \
+  "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+  assembleRelease)
 
 UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
 [[ -f "$UNSIGNED" ]] || { echo "Gradle did not produce $UNSIGNED" >&2; exit 1; }
