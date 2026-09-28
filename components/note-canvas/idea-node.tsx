@@ -268,6 +268,8 @@ export const IdeaNodeView = memo(function IdeaNodeView({
         would turn the canvas into a pegboard. Selected is what a touch
         screen has instead of hover. The dot is 12 px, and its ::before
         widens the target to 24 px, so it does not have to be hunted for.
+        Never on the card being typed in: there they sit on the text and get
+        grabbed instead of it. They come back when typing ends.
         Siblings of the card, not children: the card clips its overflow, and
         a dot sits half outside.
 
@@ -286,9 +288,11 @@ export const IdeaNodeView = memo(function IdeaNodeView({
           className={cn(
             "!h-3 !w-3 !rounded-full !border-2 !border-background !bg-primary shadow-sm transition-[opacity,scale] hover:scale-150",
             "before:absolute before:-inset-1.5 before:rounded-full",
-            selected
-              ? "opacity-100"
-              : "opacity-0 group-hover/idea:opacity-100"
+            editing
+              ? "opacity-0 !pointer-events-none"
+              : selected
+                ? "opacity-100"
+                : "opacity-0 group-hover/idea:opacity-100"
           )}
         />
       ))}

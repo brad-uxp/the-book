@@ -260,7 +260,7 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 | Arrastrar desde el punto de un nodo y soltar en el vacío | **nodo nuevo conectado** ahí, en edición (el gesto de mapa mental) |
 | Pasar el mouse por un nodo | muestra sus cuatro puntos de conexión |
 | Clic en un nodo | lo selecciona: aparecen los cuatro puntos de conexión, las manijas de ancho (izquierda y derecha) y la barra de color |
-| Doble clic / Enter en un nodo | edición inline con bubble menu, @ y # |
+| Doble clic / Enter en un nodo | edición inline con bubble menu (incluye resaltado, ⌘⇧H), @ y #; mientras se escribe, esa tarjeta no muestra sus puntos de conexión |
 | Escape / clic afuera | sale de la edición |
 | Delete / Backspace (sin estar editando) | borra lo seleccionado; toast **"Undo"** durante ~6 s |
 | Rueda del mouse | zoom alrededor del cursor |
