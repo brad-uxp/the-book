@@ -3,6 +3,7 @@ import { FlatList, RefreshControl, StyleSheet, TextInput, View } from "react-nat
 import { useRouter } from "expo-router";
 import { Search, X } from "lucide-react-native";
 import { Fab } from "@/components/Fab";
+import { UpdateBanner } from "@/update/UpdateBanner";
 import { FilterChips } from "@/components/FilterChips";
 import { NoteCard } from "@/components/NoteCard";
 import { StateView } from "@/components/StateView";
@@ -81,6 +82,7 @@ export default function Notes() {
 
   return (
     <View style={[styles.screen, { backgroundColor: c.bg }]}>
+      <UpdateBanner />
       <View style={[styles.search, { backgroundColor: c.surface }]}>
         <Search size={16} color={c.muted} />
         <TextInput

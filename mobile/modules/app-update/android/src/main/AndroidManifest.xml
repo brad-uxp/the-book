@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Lets the app open the system installer for its own updates. Android
+       still asks the owner to allow installs from book. once, and to confirm
+       every update. -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+  <application>
+    <!-- Its own subclass and authority, so it never collides with another
+         library's FileProvider. Exposes only cache/updates/. -->
+    <provider
+      android:name="com.bolstro.book.appupdate.UpdateFileProvider"
+      android:authorities="${applicationId}.appupdate.files"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/app_update_paths" />
+    </provider>
+  </application>
+</manifest>

@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { font, usePalette } from "@/lib/theme";
 import { syncSummary } from "@/sync/status";
 import { useSync } from "@/sync/SyncProvider";
+import { useUpdate } from "@/update/UpdateProvider";
 
 /**
  * Signing out on purpose also clears the notes from this phone. Changes that
@@ -15,8 +16,23 @@ import { useSync } from "@/sync/SyncProvider";
 function AccountButton() {
   const { state, signOut } = useAuth();
   const { status, pending } = useSync();
+  const update = useUpdate();
   const c = usePalette();
   const email = state.status === "signed-in" ? state.email : null;
+
+  const checkForUpdates = async () => {
+    const result = await update.check(true);
+    if (result === "error") {
+      Alert.alert("Couldn't check for updates", "Check your connection and try again.");
+    } else if (result === "current") {
+      Alert.alert("You're up to date", `book. ${update.installed.name} is the latest version.`);
+    } else if (update.state.status !== "downloading" && update.state.status !== "ready") {
+      Alert.alert("Update available", "Download it now? You can keep using the app meanwhile.", [
+        { text: "Later", style: "cancel" },
+        { text: "Download", onPress: () => void update.download() },
+      ]);
+    }
+  };
 
   const leave = async () => {
     await signOut();
@@ -43,10 +59,15 @@ function AccountButton() {
       hitSlop={10}
       style={{ marginRight: 16 }}
       onPress={() =>
-        Alert.alert(email ?? "Signed in", `This phone is signed in to book.\n\n${syncSummary(status, pending, new Date())}`, [
-          { text: "Cancel", style: "cancel" },
-          { text: "Sign out", style: "destructive", onPress: confirmSignOut },
-        ])
+        Alert.alert(
+          email ?? "Signed in",
+          `This phone is signed in to book.\n\n${syncSummary(status, pending, new Date())}\n\nVersion ${update.installed.name} (${update.installed.code})`,
+          [
+            { text: "Check for updates", onPress: () => void checkForUpdates() },
+            { text: "Cancel", style: "cancel" },
+            { text: "Sign out", style: "destructive", onPress: confirmSignOut },
+          ]
+        )
       }
     >
       <CircleUser size={24} color={c.ink} strokeWidth={1.8} />

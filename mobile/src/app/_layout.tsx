@@ -15,6 +15,7 @@ import {
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ToastProvider } from "@/components/Toast";
 import { SyncProvider } from "@/sync/SyncProvider";
+import { UpdateProvider } from "@/update/UpdateProvider";
 import { useIsDark, usePalette } from "@/lib/theme";
 
 // The splash stays up until fonts and the saved session are both ready, so the
@@ -28,9 +29,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={StyleSheet.absoluteFill}>
       <AuthProvider>
         <SyncProvider>
-          <ToastProvider>
-            <Gate fontsLoaded={fontsLoaded} />
-          </ToastProvider>
+          <UpdateProvider>
+            <ToastProvider>
+              <Gate fontsLoaded={fontsLoaded} />
+            </ToastProvider>
+          </UpdateProvider>
         </SyncProvider>
       </AuthProvider>
     </GestureHandlerRootView>
