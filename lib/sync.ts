@@ -55,6 +55,47 @@ export const SYNC_PAGE_LIMITS = {
 
 export type PullEntity = keyof typeof SYNC_PAGE_LIMITS;
 
+/**
+ * The most a pull page carries, in bytes of JSON. A page of full rows can be
+ * big — 200 notes and 500 ideas of up to 200 000 characters each is well over
+ * a hundred megabytes — so a page also ends once its rows reach this, with
+ * `has_more`. The same size as a push's answer budget.
+ */
+export const SYNC_PULL_BUDGET_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Decides, row by row in page order, which rows fit in a page of `maxBytes`.
+ *
+ * The first row always fits, however big — a page must make progress. Once a
+ * row does not fit, the page is full: nothing after it is taken, not even a
+ * row small enough, so every list ends at its last row taken and the cursor
+ * resumes each from there. `null` is a row read but not sent (a tombstone of
+ * a row that exists again): it costs nothing, and is passed only while the
+ * page has room.
+ */
+export function createPageBudget(maxBytes: number) {
+  let used = 0;
+  let taken = 0;
+  let full = false;
+  return {
+    fits(row: unknown): boolean {
+      if (full) return false;
+      if (row === null) return true;
+      const size = Buffer.byteLength(JSON.stringify(row), "utf8") + 1;
+      if (taken > 0 && used + size > maxBytes) {
+        full = true;
+        return false;
+      }
+      used += size;
+      taken += 1;
+      return true;
+    },
+    get full(): boolean {
+      return full;
+    },
+  };
+}
+
 /** Keyset position in one entity's (timestamp, id) order. Tombstone ids are bigints, as strings. */
 export type Position = [number, string];
 export type Positions = Partial<Record<PullEntity, Position>>;

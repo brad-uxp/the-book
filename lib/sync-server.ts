@@ -7,7 +7,9 @@ import {
 } from "@/lib/validations";
 import {
   SYNC_PAGE_LIMITS,
+  SYNC_PULL_BUDGET_BYTES,
   SYNC_PUSH_BUDGET,
+  createPageBudget,
   conflictTitle,
   isTombstoneId,
   mutationPayloadHash,
@@ -169,8 +171,17 @@ function tombstonePosition(pos: [number, string] | undefined): [number, string] 
  * Read in one REPEATABLE READ transaction, so the four lists are one snapshot:
  * a row and its own tombstone can never both appear, and a tombstone whose row
  * exists again (deleted, then restored with the same id) is left out.
+ *
+ * A page ends at SYNC_PAGE_LIMITS rows per list, or once its rows reach
+ * `budgetBytes` of JSON (createPageBudget), whichever comes first. Each list
+ * keeps its own position in the cursor, at its last row sent, so the next
+ * page resumes every list exactly there: no row skipped, none repeated.
  */
-export async function pullNotes(cursor: string | null, now: number = Date.now()): Promise<SyncPullResponse> {
+export async function pullNotes(
+  cursor: string | null,
+  now: number = Date.now(),
+  budgetBytes: number = SYNC_PULL_BUDGET_BYTES
+): Promise<SyncPullResponse> {
   const plan = planPull(cursor, now);
   const L = SYNC_PAGE_LIMITS;
   const tombAfter = tombstonePosition(plan.after.tombstones);
@@ -212,36 +223,53 @@ export async function pullNotes(cursor: string | null, now: number = Date.now())
 
   const positions: Positions = { ...plan.after };
   let hasMore = false;
-  function take<T extends { id: string | bigint }>(name: PullEntity, rows: T[], stamp: (r: T) => Date): T[] {
+  const budget = createPageBudget(budgetBytes);
+
+  /** The rows of one list that go in this page, as sent (`null`: read but not sent). */
+  function take<T extends { id: string | bigint }, W>(
+    name: PullEntity,
+    rows: T[],
+    stamp: (r: T) => Date,
+    wire: (r: T) => W | null
+  ): W[] {
     const limit = SYNC_PAGE_LIMITS[name];
     if (rows.length > limit) hasMore = true;
-    const kept = rows.slice(0, limit);
-    const last = kept[kept.length - 1];
+    const sent: W[] = [];
+    let last: T | undefined;
+    for (const r of rows.slice(0, limit)) {
+      const w = wire(r);
+      if (!budget.fits(w)) {
+        hasMore = true;
+        break;
+      }
+      if (w !== null) sent.push(w);
+      last = r;
+    }
     if (last) positions[name] = [stamp(last).getTime(), String(last.id)];
-    return kept;
+    return sent;
   }
 
-  const issues = take("issues", page.issues, (r) => r.updated_at);
-  const nodes = take("canvas_nodes", page.nodes, (r) => r.updated_at);
-  const edges = take("canvas_edges", page.edges, (r) => r.created_at);
-  const tombs = take("tombstones", page.tombstones, (r) => r.deleted_at);
-
-  const tombstones: SyncTombstoneRow[] = tombs
-    .filter((t) => !page.alive.has(`${t.entity}:${t.entity_id}`))
-    .map((t) => ({
-      entity: t.entity as SyncTombstoneRow["entity"],
-      entity_id: t.entity_id,
-      issue_id: t.issue_id,
-      deleted_at: t.deleted_at.toISOString(),
-    }));
+  const issues = take("issues", page.issues, (r) => r.updated_at, toIssueRow);
+  const nodes = take("canvas_nodes", page.nodes, (r) => r.updated_at, toNodeRow);
+  const edges = take("canvas_edges", page.edges, (r) => r.created_at, toEdgeRow);
+  const tombstones = take("tombstones", page.tombstones, (r) => r.deleted_at, (t): SyncTombstoneRow | null =>
+    page.alive.has(`${t.entity}:${t.entity_id}`)
+      ? null
+      : {
+          entity: t.entity as SyncTombstoneRow["entity"],
+          entity_id: t.entity_id,
+          issue_id: t.issue_id,
+          deleted_at: t.deleted_at.toISOString(),
+        }
+  );
 
   return {
     cursor: nextCursor(plan, positions, hasMore),
     reset: plan.reset,
     has_more: hasMore,
-    issues: issues.map(toIssueRow),
-    canvas_nodes: nodes.map(toNodeRow),
-    canvas_edges: edges.map(toEdgeRow),
+    issues,
+    canvas_nodes: nodes,
+    canvas_edges: edges,
     tombstones,
   };
 }

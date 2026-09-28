@@ -11,6 +11,7 @@ import {
   planDelete,
   planIssueUpsert,
   planNodeUpsert,
+  createPageBudget,
   isTombstoneId,
   mutationPayloadHash,
   planPull,
@@ -126,6 +127,42 @@ describe("planPull", () => {
       at: NOW,
       k: { issues: [NOW - 1, "x"] },
     });
+  });
+});
+
+describe("createPageBudget", () => {
+  const row = (chars: number) => ({ d: "x".repeat(chars) });
+
+  it("toma filas mientras entran y corta en la primera que no", () => {
+    const b = createPageBudget(1000);
+    expect([row(320), row(320), row(320), row(10)].map((r) => b.fits(r))).toEqual([true, true, true, false]); // 3 × 329 bytes + 19 > 1000
+    expect(b.full).toBe(true);
+  });
+
+  it("una vez lleno no toma nada más, ni una fila chica: cada lista termina en su última fila tomada", () => {
+    const b = createPageBudget(1000);
+    b.fits(row(900));
+    expect(b.fits(row(900))).toBe(false);
+    expect(b.fits(row(1))).toBe(false);
+    expect(b.fits(null)).toBe(false);
+  });
+
+  it("la primera fila entra aunque sola pase el límite: la página siempre avanza", () => {
+    const b = createPageBudget(1000);
+    expect(b.fits(row(5000))).toBe(true);
+    expect(b.fits(row(1))).toBe(false);
+  });
+
+  it("una fila que no se manda (null) no ocupa lugar", () => {
+    const b = createPageBudget(1000);
+    expect(b.fits(null)).toBe(true);
+    expect(b.fits(row(900))).toBe(true);
+  });
+
+  it("cuenta bytes, no caracteres", () => {
+    const b = createPageBudget(1000);
+    expect(b.fits({ d: "é".repeat(300) })).toBe(true); // ~600 bytes
+    expect(b.fits({ d: "é".repeat(300) })).toBe(false);
   });
 });
 

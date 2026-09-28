@@ -401,6 +401,85 @@ describe("GET /api/sync/notes", () => {
     expect(cursor.k.issues).toEqual([Date.parse("2026-09-28T10:00:00Z"), "id-0199"]);
   });
 
+  describe("tope de bytes por página", () => {
+    // Un findMany que respeta el where de keyset, el orden y el take, para
+    // paginar de verdad.
+    type Row = Record<string, unknown> & { id: string };
+    const cmp = (a: unknown, b: unknown) => {
+      const x = a instanceof Date ? a.getTime() : a;
+      const y = b instanceof Date ? b.getTime() : b;
+      return x === y ? 0 : (x as number | string) < (y as number | string) ? -1 : 1;
+    };
+    function matches(row: Row, where: Record<string, unknown>): boolean {
+      if (Array.isArray(where.AND)) return (where.AND as Record<string, unknown>[]).every((c) => matches(row, c));
+      if (Array.isArray(where.OR)) return (where.OR as Record<string, unknown>[]).some((c) => matches(row, c));
+      return Object.entries(where).every(([k, cond]) => {
+        if (cond instanceof Date || typeof cond !== "object" || cond === null) return cmp(row[k], cond) === 0;
+        const c = cond as { gt?: unknown; gte?: unknown };
+        if ("gte" in c) return cmp(row[k], c.gte) >= 0;
+        if ("gt" in c) return cmp(row[k], c.gt) > 0;
+        return false;
+      });
+    }
+    function table(rows: Row[], stamp: string) {
+      return vi.fn(async (args: { where: Record<string, unknown>; take: number }) =>
+        rows
+          .filter((r) => matches(r, args.where))
+          .sort((a, b) => cmp(a[stamp], b[stamp]) || cmp(a.id, b.id))
+          .slice(0, args.take)
+      );
+    }
+
+    it("una página no pasa de ~4 MB; las páginas siguientes siguen justo donde quedó, sin saltear ni repetir", async () => {
+      // En el pasado: una posición del futuro sería un cursor que este servidor no emitió.
+      const at = new Date(Date.now() - 60 * 60 * 1000);
+      // Todas con la misma fecha: el orden depende del desempate por id.
+      const issues: Row[] = Array.from({ length: 45 }, (_, i) => ({
+        ...issueRow(`i-${String(i).padStart(3, "0")}`, at.toISOString()),
+        // Una fila de 4,5 MB sola en su página; el resto, de 190 000 caracteres.
+        description: i === 7 ? "d".repeat(4_500_000) : "d".repeat(190_000),
+      }));
+      const nodes: Row[] = Array.from({ length: 30 }, (_, i) => ({
+        id: `n-${String(i).padStart(3, "0")}`,
+        issue_id: "canvas",
+        content: "c".repeat(190_000),
+        color: null, x: 0, y: 0, width: 280, height: 160,
+        created_at: at,
+        updated_at: new Date(at.getTime() + i),
+      }));
+      tx.mockImplementation((async (fn: (x: unknown) => unknown) =>
+        fn({
+          issue: { findMany: table(issues, "updated_at") },
+          canvasNode: { findMany: table(nodes, "updated_at") },
+          canvasEdge: { findMany: vi.fn(async () => []) },
+          syncTombstone: { findMany: vi.fn(async () => []) },
+        })) as never);
+
+      const seenIssues: string[] = [];
+      const seenNodes: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      for (;;) {
+        const res = await pull(cursor);
+        const text = await res.text();
+        const body = JSON.parse(text);
+        pages += 1;
+        const bytes = Buffer.byteLength(text);
+        const onlyTheHugeRow = body.issues.length === 1 && body.issues[0].id === "i-007";
+        expect(onlyTheHugeRow || bytes <= 4 * 1024 * 1024 + 1024).toBe(true);
+        expect(body.issues.length + body.canvas_nodes.length).toBeGreaterThan(0);
+        seenIssues.push(...body.issues.map((r: Row) => r.id));
+        seenNodes.push(...body.canvas_nodes.map((r: Row) => r.id));
+        if (!body.has_more) break;
+        cursor = body.cursor;
+        expect(pages).toBeLessThan(30);
+      }
+      expect(seenIssues).toEqual(issues.map((r) => r.id));
+      expect(seenNodes).toEqual(nodes.map((r) => r.id));
+      expect(pages).toBeGreaterThan(3);
+    });
+  });
+
   it("un cursor manipulado (tiempos imposibles) es una sync completa con reset, no un 500", async () => {
     const t = fakeTx({ issues: [] });
     const res = await pull(encodeCursor({ t: 1e300, at: 1e300, k: { issues: [1e300, "x"] } }));
