@@ -200,7 +200,8 @@ Todas con `requireSession()`, Zod y `toApiResponse`, como el resto. Si la nota n
 | PATCH | `/api/issues/{id}/canvas/nodes/{nodeId}` | `content` / `color`; solo escribe las claves enviadas |
 | DELETE | `/api/issues/{id}/canvas/nodes/{nodeId}` | borra el nodo (y sus aristas, por cascada); 404 = ya borrado |
 | PATCH | `/api/issues/{id}/canvas/layout` | lote `{nodes: [{id, x, y, width?, height?}]}` (máx. 1000), sin auditar |
-| POST | `/api/issues/{id}/canvas/edges` | `{id?, source_id, target_id}` → 201; duplicado 409; auto-enlace o nodo ajeno 400 |
+| POST | `/api/issues/{id}/canvas/edges` | `{id?, source_id, target_id, source_side?, target_side?}` → 201; duplicado 409; auto-enlace o nodo ajeno 400 |
+| PATCH | `/api/issues/{id}/canvas/edges/{edgeId}` | cualquiera de `source_id`, `target_id`, `source_side`, `target_side` (lado `null` = automático); auto-enlace 400, duplicado 409 |
 | DELETE | `/api/issues/{id}/canvas/edges/{edgeId}` | 404 = ya borrada |
 
 Cambios en las rutas existentes:
@@ -256,8 +257,11 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 |---|---|
 | Doble clic en un espacio vacío | nodo nuevo ahí, ya en edición |
 | Botón `+` | nodo nuevo en el centro de la vista, ya en edición |
-| Arrastrar desde el punto de un nodo y soltar sobre otro nodo | conexión |
+| Arrastrar desde el punto de un nodo y soltar sobre un punto de otro | conexión fijada a esos dos lados: sale por el lado del punto de origen y llega por el del punto de destino |
+| Arrastrar desde el punto de un nodo y soltar sobre el cuerpo de otro | conexión que sale por el lado del punto de origen; el lado de llegada lo elige el lienzo (el que mira hacia el origen) |
 | Arrastrar desde el punto de un nodo y soltar en el vacío | **nodo nuevo conectado** ahí, en edición (el gesto de mapa mental) |
+| Conexión seleccionada: arrastrar una de sus puntas | a un punto de una tarjeta: mueve esa punta a ese lado (o a esa tarjeta); al cuerpo de una tarjeta: esa punta queda libre ahí; a otro lado: no cambia nada |
+| Conexión seleccionada: botón ↺ junto a la × | le devuelve los dos lados al lienzo (solo aparece si tiene alguno fijado) |
 | Pasar el mouse por un nodo | muestra sus cuatro puntos de conexión |
 | Clic en un nodo | lo selecciona: aparecen los cuatro puntos de conexión, las manijas de ancho (izquierda y derecha) y la barra de color |
 | Doble clic / Enter en un nodo | edición inline con bubble menu (incluye resaltado, ⌘⇧H), @ y #; mientras se escribe, esa tarjeta no muestra sus puntos de conexión |
@@ -397,3 +401,16 @@ tiempo real · exportar el lienzo como imagen.
 - 44 chequeos HTTP contra la API con un token de prueba.
 - Recorridos en Chromium headless (sesión local, base descartable): editor de notas,
   lienzo completo, flujo mobile a 390px e integración con la página de Issues.
+
+### Lados de las conexiones (2026-09-28)
+
+A pedido del dueño: algunas líneas quedaban por debajo de otras tarjetas, y él prefiere elegir
+por dónde entra y sale una conexión antes que mover las tarjetas por las flechas. Cada punta de
+una conexión puede quedar **fijada** a un lado de su tarjeta (`CanvasEdge.source_side` /
+`target_side`: `top`, `right`, `bottom`, `left`; CHECK `CanvasEdge_sides_valid`) o **libre**
+(`null`, como todas las conexiones anteriores). Una punta fijada se dibuja en el medio de ese
+lado y sale perpendicular; una libre sigue calculándose como antes, pero apuntando al punto
+fijado del otro extremo si lo hay (`connectionAnchors` en `lib/canvas-geometry.ts`). Las
+conexiones ahora cambian después de creadas, así que tienen `updated_at` y la sync del teléfono
+las trae por esa columna; el teléfono guarda los lados (SQLite v3) para el canvas de la fase 3.
+Fijar los lados no esquiva obstáculos: una tarjeta justo en el camino sigue cruzándose.

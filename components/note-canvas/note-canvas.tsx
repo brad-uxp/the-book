@@ -31,7 +31,7 @@ import {
 import { RichTextEditor } from "@/components/rich-text/rich-text-editor";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
-import { GRID_SIZE } from "@/lib/canvas-geometry";
+import { GRID_SIZE, isSide, type Side } from "@/lib/canvas-geometry";
 import { isBlankHtml } from "@/lib/notes";
 import {
   NODE_DEFAULT_HEIGHT,
@@ -46,7 +46,7 @@ import {
   type CanvasIdea,
 } from "@/lib/note-canvas";
 import { createWheelDeviceTracker, zoomAtPoint } from "@/lib/wheel-device";
-import { FloatingEdge } from "./floating-edge";
+import { FloatingEdge, type EdgeEnd, type FloatingEdgeData } from "./floating-edge";
 import {
   IdeaCanvasContext,
   IdeaNodeView,
@@ -68,6 +68,21 @@ const edgeTypes = { floating: FloatingEdge };
  */
 const GHOST_PREFIX = "ghost:";
 const isGhost = (id: string) => id.startsWith(GHOST_PREFIX);
+
+/** A handle id is a side: the four dots of a card are named after theirs. */
+const sideOf = (handle: string | null | undefined): Side | null =>
+  isSide(handle) ? handle : null;
+
+/** A drawn connection as the API knows it, sides included. */
+function connectionOf(e: Edge): CanvasConnection {
+  return {
+    id: e.id,
+    source_id: e.source,
+    target_id: e.target,
+    source_side: sideOf(e.sourceHandle),
+    target_side: sideOf(e.targetHandle),
+  };
+}
 
 /** Arrow head. A literal colour: a CSS var does not resolve inside <marker>. */
 const ARROW = {
@@ -196,16 +211,33 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
     [deleteElements]
   );
 
+  // What a selected connection can ask for besides its removal. Filled in
+  // after each commit (the functions are defined further down and depend on
+  // state); the edges carry stable wrappers, so they never need rebuilding.
+  const edgeActions = useRef<Pick<FloatingEdgeData, "onResetSides" | "onMoveEnd">>({});
+  const edgeData = useMemo<FloatingEdgeData>(
+    () => ({
+      onDelete: deleteEdge,
+      onResetSides: (id) => edgeActions.current.onResetSides?.(id),
+      onMoveEnd: (id, end, nodeId, side) =>
+        edgeActions.current.onMoveEnd?.(id, end, nodeId, side),
+    }),
+    [deleteEdge]
+  );
+
+  // A pinned side travels as the edge's handle — the dot it is attached to.
   const toEdge = useCallback(
     (c: CanvasConnection): Edge => ({
       id: c.id,
       source: c.source_id,
       target: c.target_id,
+      sourceHandle: c.source_side ?? null,
+      targetHandle: c.target_side ?? null,
       type: "floating",
       markerEnd: ARROW,
-      data: { onDelete: deleteEdge },
+      data: edgeData,
     }),
-    [deleteEdge]
+    [edgeData]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<IdeaNode>(
@@ -431,9 +463,12 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
     [base]
   );
 
+  /** Connections still being created, which a change to them waits for — as cards do. */
+  const creatingEdges = useRef(new Map<string, Promise<void>>());
+
   const postConnection = useCallback(
-    (c: CanvasConnection) =>
-      whenCreated([c.source_id, c.target_id]).then(() =>
+    (c: CanvasConnection) => {
+      const done = whenCreated([c.source_id, c.target_id]).then(() =>
         fetch(`${base}/edges`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -441,7 +476,20 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         }).then((res) => {
           if (!res.ok) throw new Error(`POST edge ${res.status}`);
         })
-      ),
+      );
+      const tracked: Promise<void> = done
+        .then(
+          () => undefined,
+          () => undefined
+        )
+        .finally(() => {
+          if (creatingEdges.current.get(c.id) === tracked) {
+            creatingEdges.current.delete(c.id);
+          }
+        });
+      creatingEdges.current.set(c.id, tracked);
+      return done;
+    },
     [base, whenCreated]
   );
 
@@ -490,15 +538,22 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
   );
 
   const connect = useCallback(
-    (source: string, target: string) => {
+    (
+      source: string,
+      target: string,
+      sourceSide: Side | null = null,
+      targetSide: Side | null = null
+    ) => {
       if (source === target) return;
       if (getEdges().some((e) => e.source === source && e.target === target)) {
         return;
       }
-      const connection = {
+      const connection: CanvasConnection = {
         id: crypto.randomUUID(),
         source_id: source,
         target_id: target,
+        source_side: sourceSide,
+        target_side: targetSide,
       };
       setEdges((prev) => [...prev, toEdge(connection)]);
       postConnection(connection).catch((err) => {
@@ -519,7 +574,7 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
    * does.
    */
   const createIdea = useCallback(
-    (center: { x: number; y: number }, connectFrom?: string) => {
+    (center: { x: number; y: number }, connectFrom?: string, fromSide: Side | null = null) => {
       if (editingRef.current) stopEditing();
 
       const idea: CanvasIdea = {
@@ -530,8 +585,14 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         width: NODE_DEFAULT_WIDTH,
         height: NODE_DEFAULT_HEIGHT,
       };
-      const connection = connectFrom
-        ? { id: crypto.randomUUID(), source_id: connectFrom, target_id: idea.id }
+      const connection: CanvasConnection | null = connectFrom
+        ? {
+            id: crypto.randomUUID(),
+            source_id: connectFrom,
+            target_id: idea.id,
+            source_side: fromSide,
+            target_side: null,
+          }
         : null;
 
       setNodes((prev) => [
@@ -605,11 +666,7 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
       // Captured before anything else, with the words as they are now, so
       // undo brings back what was on screen.
       const ideas: CanvasIdea[] = goneNodes.map(ideaOf);
-      const connections: CanvasConnection[] = goneEdges.map((e) => ({
-        id: e.id,
-        source_id: e.source,
-        target_id: e.target,
-      }));
+      const connections: CanvasConnection[] = goneEdges.map(connectionOf);
 
       for (const id of goneIds) {
         const timer = contentTimers.current.get(id);
@@ -681,6 +738,86 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
     (id: string) => void deleteElements({ nodes: [{ id }] }),
     [deleteElements]
   );
+
+  // ── Changing a connection ───────────────────────────────────────────────
+
+  /**
+   * Moves a connection's ends or sides: drawn at once, written after the
+   * connection and both its cards exist on the server, undone on failure.
+   */
+  const updateConnection = useCallback(
+    (id: string, patch: Partial<Omit<CanvasConnection, "id">>) => {
+      const before = getEdges().find((e) => e.id === id);
+      if (!before) return;
+      const after = { ...connectionOf(before), ...patch };
+      setEdges((prev) =>
+        prev.map((e) => (e.id === id ? { ...toEdge(after), selected: e.selected } : e))
+      );
+      Promise.all([
+        creatingEdges.current.get(id),
+        whenCreated([after.source_id, after.target_id]),
+      ])
+        .then(() =>
+          fetch(`${base}/edges/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          })
+        )
+        .then((res) => {
+          if (!res.ok) throw new Error(`PATCH edge ${res.status}`);
+        })
+        .catch((err) => {
+          console.error(err);
+          setEdges((prev) => prev.map((e) => (e.id === id ? before : e)));
+          toast.error("Could not change the connection");
+        });
+    },
+    [base, getEdges, setEdges, toEdge, whenCreated]
+  );
+
+  const resetSides = useCallback(
+    (id: string) => updateConnection(id, { source_side: null, target_side: null }),
+    [updateConnection]
+  );
+
+  /** An end of a selected connection dragged onto a card: a dot pins that side, the body lets it float. */
+  const moveConnectionEnd = useCallback(
+    (id: string, end: EdgeEnd, nodeId: string, side: Side | null) => {
+      const edge = getEdges().find((e) => e.id === id);
+      if (!edge) return;
+      const now = connectionOf(edge);
+      const patch =
+        end === "source"
+          ? { source_id: nodeId, source_side: side }
+          : { target_id: nodeId, target_side: side };
+      const next = { ...now, ...patch };
+      const unchanged =
+        next.source_id === now.source_id &&
+        next.target_id === now.target_id &&
+        next.source_side === now.source_side &&
+        next.target_side === now.target_side;
+      if (unchanged) return;
+      if (next.source_id === next.target_id) {
+        toast.error("An idea cannot connect to itself");
+        return;
+      }
+      if (
+        getEdges().some(
+          (e) => e.id !== id && e.source === next.source_id && e.target === next.target_id
+        )
+      ) {
+        toast.error("These ideas are already connected");
+        return;
+      }
+      updateConnection(id, patch);
+    },
+    [getEdges, updateConnection]
+  );
+
+  useEffect(() => {
+    edgeActions.current = { onResetSides: resetSides, onMoveEnd: moveConnectionEnd };
+  });
 
   // ── Duplicating ─────────────────────────────────────────────────────────
   //
@@ -877,9 +1014,13 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
     [getEdges]
   );
 
+  // Dragged from a dot: that side of the source. Let go on a dot: that side
+  // of the target. Both stay pinned until moved or given back to the canvas.
   const handleConnect = useCallback(
     (c: Connection) => {
-      if (c.source && c.target) connect(c.source, c.target);
+      if (c.source && c.target) {
+        connect(c.source, c.target, sideOf(c.sourceHandle), sideOf(c.targetHandle));
+      }
     },
     [connect]
   );
@@ -895,6 +1036,7 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
       if (state.isValid) return; // onConnect has it.
       const from = state.fromNode?.id;
       if (!from) return;
+      const fromSide = sideOf(state.fromHandle?.id);
 
       const point =
         "changedTouches" in event ? event.changedTouches[0] : (event as MouseEvent);
@@ -904,14 +1046,16 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
 
       const card = under.closest(".react-flow__node");
       if (card) {
+        // On the card's body rather than a dot: its side floats.
         const to = card.getAttribute("data-id");
-        if (to) connect(from, to);
+        if (to) connect(from, to, fromSide, null);
         return;
       }
       if (!under.closest(".react-flow__pane")) return;
       createIdea(
         screenToFlowPosition({ x: point.clientX, y: point.clientY }),
-        from
+        from,
+        fromSide
       );
     },
     [connect, createIdea, screenToFlowPosition]
@@ -1137,8 +1281,10 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           // Loose: a connection can be dropped on any handle, not only on one
           // declared as a target. All four dots on a card are sources.
           connectionMode={ConnectionMode.Loose}
-          // Generous, so dropping near a card counts as dropping on it.
-          connectionRadius={40}
+          // Tight, so only a drop on (or right by) a dot pins that side. A
+          // drop anywhere else on a card still connects to it, with a
+          // floating side — handleConnectEnd.
+          connectionRadius={16}
           connectionLineStyle={{ strokeWidth: 2, stroke: "#94a3b8" }}
           deleteKeyCode={["Backspace", "Delete"]}
           proOptions={{ hideAttribution: true }}
