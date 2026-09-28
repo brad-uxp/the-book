@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { useLiveQuery, write } from "@/db/database";
+import { useLiveQuery } from "@/db/database";
+import { clearBusinessCache, saveCached } from "./snapshots";
 import { ApiError, apiRequest } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSync } from "@/sync/SyncProvider";
+
+export { clearBusinessCache, saveCached };
 
 /**
  * What the Invoices, Salaries and Metrics tabs show: the last answer each got
@@ -38,27 +41,6 @@ function useCacheRow(key: string): { key: string; row: CacheRow | null } | undef
     },
     [key]
   );
-}
-
-export function saveCached(key: string, payload: unknown): Promise<void> {
-  return write(["business_cache"], async (db) => {
-    await db.runAsync(
-      `INSERT INTO business_cache (key, payload, fetched_at) VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at`,
-      [key, JSON.stringify(payload), new Date().toISOString()]
-    );
-  });
-}
-
-/**
- * Forgets every business snapshot. On a 401 the token is gone (revoked from
- * Settings, say, because the phone was lost): unlike unsent notes there is
- * nothing here the person wrote, so nothing is lost by dropping it.
- */
-export function clearBusinessCache(): Promise<void> {
-  return write(["business_cache"], async (db) => {
-    await db.runAsync("DELETE FROM business_cache");
-  });
 }
 
 /**
