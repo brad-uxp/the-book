@@ -20,7 +20,8 @@ import {
 import { InvoiceForm } from "@/components/invoices/invoice-form";
 import type { InvoiceInput } from "@/lib/validations";
 import type { MentionPerson } from "./mention-list";
-import { formatInvoiceLabel, type MentionInvoice } from "./invoice-mention-list";
+import { formatInvoiceLabel } from "@/lib/mentions";
+import type { MentionInvoice } from "./invoice-mention-list";
 
 type InsertMention = (attrs: { id: string; label: string }) => void;
 

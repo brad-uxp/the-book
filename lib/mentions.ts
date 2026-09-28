@@ -7,12 +7,28 @@
  * each idea on it.
  */
 
+import { formatCents } from "./currency";
+
 export const MENTION_ATTR = {
   person: "data-mention-id",
   invoice: "data-invoice-id",
 } as const;
 
 export type MentionKind = keyof typeof MENTION_ATTR;
+
+/**
+ * The label an invoice mention carries, written into the note's HTML — the
+ * web and the phone must spell it the same, or opening a note on one would
+ * rewrite every invoice chip the other wrote.
+ */
+export function formatInvoiceLabel(inv: {
+  invoice_number: string | null;
+  client: { name: string };
+  amount_cents: number;
+}): string {
+  const num = inv.invoice_number ?? "?";
+  return `Inv ${num}: ${inv.client.name} \u2014 ${formatCents(inv.amount_cents)}`;
+}
 
 /** The exact substring that marks a mention of `id`, for a `contains` query. */
 export function mentionNeedle(kind: MentionKind, id: string): string {

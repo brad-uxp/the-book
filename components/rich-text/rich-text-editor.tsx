@@ -11,8 +11,6 @@ import {
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
 import type {
   SuggestionProps,
@@ -33,8 +31,9 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { deletedMentionLabel } from "@/lib/mentions";
-import { InvoiceMention, PersonMention } from "./mention-extensions";
+import { formatInvoiceLabel } from "@/lib/mentions";
+import { MENTION_NODE, richTextExtensions } from "@/lib/rich-text/extensions";
+import { syncMentionLabels } from "@/lib/rich-text/mention-sync";
 import { useMentionData } from "./mention-data";
 import {
   MentionList,
@@ -43,7 +42,6 @@ import {
 } from "./mention-list";
 import {
   InvoiceMentionList,
-  formatInvoiceLabel,
   type InvoiceMentionListRef,
   type MentionInvoice,
 } from "./invoice-mention-list";
@@ -415,8 +413,6 @@ export function RichTextEditor({
   } | null>(null);
 
   const [suggestionConfig] = useState(() => ({
-    char: "@",
-    allowSpaces: false,
     items: ({ query }: { query: string }) => {
       const active = peopleRef.current.filter((p) => p.status === "active");
       if (!query) return active.slice(0, 8);
@@ -468,8 +464,6 @@ export function RichTextEditor({
   } | null>(null);
 
   const [invoiceSuggestionConfig] = useState(() => ({
-    char: "#",
-    allowSpaces: false,
     items: ({ query }: { query: string }) => {
       const all = invoicesRef.current;
       if (!query) return all.slice(0, 8);
@@ -521,46 +515,13 @@ export function RichTextEditor({
   const editor = useEditor({
     immediatelyRender: false,
     editable,
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder }),
-      PersonMention.configure({
-        HTMLAttributes: {
-          class: "mention",
-        },
-        suggestion: suggestionConfig,
-        renderHTML({ options, node }) {
-          return [
-            "span",
-            {
-              ...options.HTMLAttributes,
-              "data-mention-id": node.attrs.id,
-              "data-mention-label": node.attrs.label,
-              ...(node.attrs.deleted ? { "data-deleted": "true" } : {}),
-            },
-            `${node.attrs.label}`,
-          ];
-        },
-      }),
-      InvoiceMention.configure({
-        HTMLAttributes: {
-          class: "invoice-mention",
-        },
-        suggestion: invoiceSuggestionConfig,
-        renderHTML({ options, node }) {
-          return [
-            "span",
-            {
-              ...options.HTMLAttributes,
-              "data-invoice-id": node.attrs.id,
-              "data-invoice-label": node.attrs.label,
-              ...(node.attrs.deleted ? { "data-deleted": "true" } : {}),
-            },
-            `${node.attrs.label}`,
-          ];
-        },
-      }),
-    ],
+    // The schema and the mention markup are shared with the phone's editor;
+    // only how the suggestion lists are drawn is decided here.
+    extensions: richTextExtensions({
+      placeholder,
+      personSuggestion: suggestionConfig,
+      invoiceSuggestion: invoiceSuggestionConfig,
+    }),
     content: value,
     onUpdate: ({ editor: ed }) => {
       if (isSyncingRef.current) return;
@@ -687,76 +648,26 @@ export function RichTextEditor({
     return () => editorEl.removeEventListener("click", handleClick);
   }, [editor]);
 
-  // Dynamic label sync for person mentions (+ deleted detection)
+  // Keep person chips in line with the people list: renamed, or marked
+  // deleted. Only once the list has loaded — see syncMentionLabels.
   useEffect(() => {
     if (!editor || !peopleFetched) return;
-    const { doc } = editor.state;
-    const tr = editor.state.tr;
-    let changed = false;
-    doc.descendants((node, pos) => {
-      if (node.type.name === "mention") {
-        const person = people.find((p) => p.id === node.attrs.id);
-        if (person) {
-          // Entity exists — sync label and clear deleted flag
-          if (node.attrs.label !== person.name || node.attrs.deleted) {
-            tr.setNodeMarkup(pos, undefined, {
-              ...node.attrs,
-              label: person.name,
-              deleted: false,
-            });
-            changed = true;
-          }
-        } else {
-          // Entity was deleted — mark the chip, and bring an older
-          // " (eliminado)" to the current suffix.
-          const deletedLabel = deletedMentionLabel(node.attrs.label);
-          if (!node.attrs.deleted || node.attrs.label !== deletedLabel) {
-            tr.setNodeMarkup(pos, undefined, {
-              ...node.attrs,
-              label: deletedLabel,
-              deleted: true,
-            });
-            changed = true;
-          }
-        }
-      }
-    });
-    if (changed) editor.view.dispatch(tr);
+    const tr = syncMentionLabels(
+      editor.state,
+      MENTION_NODE.person,
+      (id) => people.find((p) => p.id === id)?.name ?? null
+    );
+    if (tr) editor.view.dispatch(tr);
   }, [editor, people, peopleFetched, docKey]);
 
-  // Dynamic label sync for invoice mentions (+ deleted detection)
+  // The same for invoice chips.
   useEffect(() => {
     if (!editor || !invoicesFetched) return;
-    const { doc } = editor.state;
-    const tr = editor.state.tr;
-    let changed = false;
-    doc.descendants((node, pos) => {
-      if (node.type.name === "invoiceMention") {
-        const inv = invoices.find((i) => i.id === node.attrs.id);
-        if (inv) {
-          const label = formatInvoiceLabel(inv);
-          if (node.attrs.label !== label || node.attrs.deleted) {
-            tr.setNodeMarkup(pos, undefined, {
-              ...node.attrs,
-              label,
-              deleted: false,
-            });
-            changed = true;
-          }
-        } else {
-          const deletedLabel = deletedMentionLabel(node.attrs.label);
-          if (!node.attrs.deleted || node.attrs.label !== deletedLabel) {
-            tr.setNodeMarkup(pos, undefined, {
-              ...node.attrs,
-              label: deletedLabel,
-              deleted: true,
-            });
-            changed = true;
-          }
-        }
-      }
+    const tr = syncMentionLabels(editor.state, MENTION_NODE.invoice, (id) => {
+      const inv = invoices.find((i) => i.id === id);
+      return inv ? formatInvoiceLabel(inv) : null;
     });
-    if (changed) editor.view.dispatch(tr);
+    if (tr) editor.view.dispatch(tr);
   }, [editor, invoices, invoicesFetched, docKey]);
 
   const floating =

@@ -43,3 +43,6 @@ yarn-error.*
 # build output of local Expo modules
 modules/*/android/build/
 modules/*/android/.cxx/
+
+# the editor page, built by scripts/build-editor.mjs
+src/editor/editor-html.generated.ts

@@ -24,7 +24,7 @@ demás.
 | **Sin Firebase como base de datos.** Los datos siguen en el Postgres de Railway, a través de la API. | Ya hay backend. Firebase duplicaría los datos en Google sin aportar nada. |
 | **Push directo del servidor a FCM**, con mensajes *data-only* ("algo cambió"). La app pide el detalle a la API y muestra una notificación local. | FCM es la única vía de push en Android y es la única pieza de Firebase que se usa. Así Google nunca ve el contenido. |
 | **Notas sin conexión**: SQLite en el teléfono y sincronización propia (traer cambios desde un momento; empujar una cola de cambios con UUIDs generados en el teléfono). Gana la última escritura por fila; en conflicto sobre el texto de una nota, la otra versión se guarda como copia. | Escribir sin señal era un requisito. Un solo usuario con pocos datos no justifica un servicio de sync externo. |
-| **Editor**: TipTap dentro de una WebView (10tap-editor), empaquetado en la app, con las mismas extensiones de @persona y #factura que la web. | Mismo editor y mismo HTML que la web. Al ir empaquetado, funciona sin conexión. |
+| **Editor**: TipTap dentro de una WebView, con un puente propio (no 10tap-editor), empaquetado en la app, con las mismas extensiones de @persona y #factura que la web. Detalle en [Editor](#editor). | Mismo editor y mismo HTML que la web. Al ir empaquetado, funciona sin conexión. |
 | **Canvas**: Gesture Handler + Reanimated, con los gestos del prototipo. Zoom solo por pinch; doble toque con dos dedos para encuadrar. Tarjetas con ancho elegido y alto según el contenido, sin scroll, igual que la web desde el 2026-09-27 (`height` en la base queda como dato, no como tamaño). | 60 fps en el hilo de UI; los gestos ya se probaron en el prototipo. |
 | **Login**: Google Sign-In nativo (Credential Manager de Android). El servidor verifica el ID token de Google contra `ALLOWED_EMAILS` y emite un `ApiToken`, revocable desde Settings. Detalle en [Login](#login). | Reusa los tokens que ya existen. ⚠️ Reabre el login mobile que se eliminó: **revisión de seguridad antes de producción**. |
 | **Copy de la UI en inglés**, web y app. | Una sola lengua en las dos plataformas. |
@@ -202,6 +202,36 @@ plugin de Android de React Native 0.86 toma por error, y el build nativo falla.
   (`book. Android release keystore`) directo al entorno de Gradle. El script se niega a
   copiar el APK si el certificado no es el de release. **Sin esa clave no se pueden
   publicar actualizaciones: guarda un respaldo fuera de esta máquina.**
+
+## Editor
+
+El editor de una nota en el teléfono es el TipTap de la web corriendo en una página
+empaquetada dentro de la app, en una WebView (`mobile/src/editor/RichTextEditor.tsx`).
+
+- **Mismo HTML que la web, por construcción.** Todo lo que da forma al HTML guardado
+  (extensiones, marcado de las menciones, los caracteres `@`/`#`, la sincronización de
+  etiquetas de personas o facturas renombradas o borradas) vive en `lib/rich-text`, sin
+  React, y lo usan los dos editores. La página se compila con la **misma instalación de
+  TipTap que la web** (la de la raíz). `lib/rich-text/extensions.test.ts` fija el HTML que
+  escribía la web antes del cambio y comprueba que la web y la página guardan lo mismo.
+- **La página**: `mobile/editor-web/` (TipTap sin React + el puente), compilada con esbuild
+  por `pnpm editor:build` a un único HTML en `src/editor/editor-html.generated.ts` (no se
+  versiona; `start`, `android`, `typecheck`, `lint` y el release la generan). Pide tener
+  instalada la raíz del repo. Unos 366 KB.
+- **Puente**: mensajes JSON por `postMessage` en los dos sentidos, validados de cada lado
+  (`src/editor/protocol.ts`); nunca JavaScript armado con texto. La lista de `@`/`#` se
+  dibuja en nativo sobre la barra de formato, que va pegada al teclado.
+- **Cerrada**: CSP `default-src 'none'` con el script permitido solo por su hash (la
+  compilación falla si el bundle nombra una URL que no sabe inerte), sin almacenamiento,
+  caché, archivos ni ventanas, y toda navegación rechazada — en la página (`window.open`
+  anulado, enlaces inertes) y en nativo.
+- **Nada se pierde**: la página manda cada cambio en el acto y el lado nativo agrupa los
+  `onChange` (300 ms, y al menos cada 2 s). Lo pendiente se entrega al perder el foco, al ir
+  la app a segundo plano, al cambiar de documento (al `onChange` de ese documento) y al
+  desmontar.
+- **Límites**: los enlaces de una nota no se abren desde el teléfono; `#` no ofrece "crear
+  factura" como en la web; una lista de personas o facturas vacía se toma como "todavía no
+  cargó" y no marca nada como borrado.
 
 ## Riesgos
 
