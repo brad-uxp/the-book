@@ -116,6 +116,7 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
   it("un cambio malformado se rechaza solo, y se guarda esa respuesta", async () => {
     tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
       fn({
+        $queryRaw: vi.fn(async () => []),
         syncMutation: { create: vi.fn(), update: vi.fn() },
         issue: { findUnique: vi.fn(async () => null) },
       })) as never);
@@ -151,6 +152,7 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
     const update = vi.fn();
     tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
       fn({
+        $queryRaw: vi.fn(async () => []),
         syncMutation: { create: vi.fn(), update },
         issue: { findUnique: vi.fn(async () => before) },
       })) as never);
@@ -194,7 +196,8 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
       })
     );
     tx.mockImplementationOnce((async (fn: (t: unknown) => unknown) =>
-      fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } })) as never);
+      fn({ $queryRaw: vi.fn(async () => []),
+        syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } })) as never);
     const res = await push({
       mutations: [
         { mutation_id: MID(1), entity: "issue", op: "upsert", id: ID, fields: { title: "t" } },
@@ -214,6 +217,7 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
     const before = issueRow(ID, "2026-09-28T10:00:00Z");
     tx.mockImplementation((async (fn: (t: unknown) => Promise<unknown>) => {
       await fn({
+        $queryRaw: vi.fn(async () => []),
         syncMutation: { create: vi.fn(), update: vi.fn() },
         issue: { findUnique: vi.fn(async () => before), delete: vi.fn() },
       });
@@ -222,6 +226,29 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     await push({ mutations: [{ mutation_id: MID(1), entity: "issue", op: "delete", id: ID }] });
     expect(auditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/sync/notes — el texto se juzga con la fila bloqueada", () => {
+  it.each([
+    ["editar una nota", { entity: "issue", op: "upsert", fields: { description: "<p>x</p>" }, base_hash: "a".repeat(64) }, "Task"],
+    ["borrar una nota", { entity: "issue", op: "delete" }, "Task"],
+    ["editar una idea", { entity: "canvas_node", op: "upsert", fields: { content: "<p>x</p>" }, base_hash: "a".repeat(64) }, "CanvasNode"],
+    ["borrar una idea", { entity: "canvas_node", op: "delete" }, "CanvasNode"],
+  ])("%s: FOR UPDATE antes de leer, en la misma transacción", async (_label, change, table) => {
+    const order: string[] = [];
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({
+        $queryRaw: vi.fn(async (sql: TemplateStringsArray) => {
+          order.push(`lock:${sql.join("?").match(/FROM "(\w+)"/)?.[1]}:${/FOR UPDATE/.test(sql.join("")) ? "for-update" : "?"}`);
+          return [];
+        }),
+        syncMutation: { create: vi.fn(), update: vi.fn() },
+        issue: { findUnique: vi.fn(async () => (order.push("read"), null)) },
+        canvasNode: { findUnique: vi.fn(async () => (order.push("read"), null)) },
+      })) as never);
+    await push({ mutations: [{ mutation_id: MID(1), id: ID, base_updated_at: "2026-09-28T10:00:00Z", ...change }] });
+    expect(order.slice(0, 2)).toEqual([`lock:${table}:for-update`, "read"]);
   });
 });
 
@@ -239,7 +266,8 @@ describe("POST /api/sync/notes — presupuesto de un push", () => {
   function rowsOf(description: string) {
     const row = { ...issueRow(ID, "2026-09-28T10:00:00Z"), description };
     tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
-      fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => row) } })) as never);
+      fn({ $queryRaw: vi.fn(async () => []),
+        syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => row) } })) as never);
   }
 
   it("corta cuando la respuesta pasa de unos megas y avisa con more: el resto se manda enseguida", async () => {
@@ -279,7 +307,8 @@ describe("POST /api/sync/notes — costo", () => {
 
   beforeEach(() => {
     tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
-      fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } })) as never);
+      fn({ $queryRaw: vi.fn(async () => []),
+        syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } })) as never);
   });
 
   it("se cobra por cambio: pasado el presupuesto del minuto, 429 con Retry-After y sin tocar la base", async () => {
@@ -301,7 +330,8 @@ describe("POST /api/sync/notes — costo", () => {
       running += 1;
       most = Math.max(most, running);
       await new Promise((r) => setTimeout(r, 5));
-      const out = await fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } });
+      const out = await fn({ $queryRaw: vi.fn(async () => []),
+        syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } });
       running -= 1;
       return out;
     }) as never);

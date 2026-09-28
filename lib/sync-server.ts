@@ -546,6 +546,20 @@ async function currentRow(m: SyncMutation, db: Db = prisma): Promise<SyncResult[
   return r ? toEdgeRow(r) : null;
 }
 
+/**
+ * Locks the row a change is about to judge, until the change's transaction
+ * ends. Taken before the row is read: a conflict is decided by comparing the
+ * server's text with the one the phone started from, and without the lock a
+ * web autosave landing between that read and the write would be overwritten
+ * with no conflict copy. With it, a concurrent write either committed before
+ * the lock — and the read sees it — or waits until this change is done.
+ * Nothing to lock is fine: the row does not exist (yet).
+ */
+async function lockRow(tx: Db, table: "Task" | "CanvasNode", id: string): Promise<void> {
+  if (table === "Task") await tx.$queryRaw`SELECT 1 FROM "Task" WHERE id = ${id} FOR UPDATE`;
+  else await tx.$queryRaw`SELECT 1 FROM "CanvasNode" WHERE id = ${id} FOR UPDATE`;
+}
+
 function apply(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
   if (m.entity === "issue") return m.op === "delete" ? deleteIssueChange(tx, m, ctx) : upsertIssue(tx, m, ctx);
   if (m.entity === "canvas_node") return m.op === "delete" ? deleteNodeChange(tx, m, ctx) : upsertNode(tx, m, ctx);
@@ -562,6 +576,7 @@ async function upsertIssue(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<
   if (!parsed.success) return answer(m, { status: "rejected", reason: "invalid", row: await currentRow(m, tx) });
   const patch = pickSent(m.fields, parsed.data) as IssuePatch;
 
+  await lockRow(tx, "Task", m.id);
   const current = await tx.issue.findUnique({ where: { id: m.id } });
 
   // A client deleted on the web while the phone was offline: keep the note,
@@ -634,6 +649,7 @@ async function upsertIssue(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<
 }
 
 async function deleteIssueChange(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
+  await lockRow(tx, "Task", m.id);
   const current = await tx.issue.findUnique({ where: { id: m.id } });
   const plan = planDelete(current ? current.description : null, m.base_hash);
   if (plan.action === "noop") return answer(m, { status: "applied", reason: "already_deleted", row: null });
@@ -647,6 +663,7 @@ async function upsertNode(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<S
   if (!parsed.success) return answer(m, { status: "rejected", reason: "invalid", row: await currentRow(m, tx) });
   const patch = pickSent(m.fields, parsed.data) as NodePatch;
 
+  await lockRow(tx, "CanvasNode", m.id);
   const current = await tx.canvasNode.findUnique({ where: { id: m.id }, select: NODE_SELECT });
   const issueId = current?.issue_id ?? patch.issue_id;
   const canvas = issueId ? await canvasOf(tx, issueId) : null;
@@ -691,6 +708,7 @@ async function upsertNode(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<S
 }
 
 async function deleteNodeChange(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
+  await lockRow(tx, "CanvasNode", m.id);
   const current = await tx.canvasNode.findUnique({ where: { id: m.id }, select: NODE_SELECT });
   const plan = planDelete(current ? current.content : null, m.base_hash);
   if (plan.action === "noop") return answer(m, { status: "applied", reason: "already_deleted", row: null });
