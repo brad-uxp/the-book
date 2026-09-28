@@ -38,7 +38,10 @@ import {
   NODE_DEFAULT_WIDTH,
   NODE_MAX_SIZE,
   NODE_MIN_HEIGHT,
+  DUPLICATE_OFFSET,
+  copyIdeas,
   nodeOriginAt,
+  repointConnections,
   type CanvasConnection,
   type CanvasIdea,
 } from "@/lib/note-canvas";
@@ -58,6 +61,13 @@ import {
  */
 const nodeTypes = { idea: IdeaNodeView };
 const edgeTypes = { floating: FloatingEdge };
+
+/**
+ * The stand-in drawn where a card started while it is ⌥-dragged. Only ever
+ * in client state: never saved, selected, dragged or deleted.
+ */
+const GHOST_PREFIX = "ghost:";
+const isGhost = (id: string) => id.startsWith(GHOST_PREFIX);
 
 /** Arrow head. A literal colour: a CSS var does not resolve inside <marker>. */
 const ARROW = {
@@ -284,6 +294,25 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
       getNodes().find((n) => n.id === id)?.data.content ??
       "",
     [getNodes]
+  );
+
+  /** A card as the API knows it, with the words as they are now — not as they were loaded. */
+  const ideaOf = useCallback(
+    (n: IdeaNode): CanvasIdea => ({
+      id: n.id,
+      content: contentOf(n.id),
+      color: n.data.color,
+      x: n.position.x,
+      y: n.position.y,
+      width: n.width ?? n.measured?.width ?? NODE_DEFAULT_WIDTH,
+      // Only stored, never applied (the card sizes to its content) — but it
+      // travels in a create, so keep it inside what the API accepts.
+      height: Math.min(
+        NODE_MAX_SIZE,
+        Math.max(NODE_MIN_HEIGHT, Math.round(n.measured?.height ?? NODE_DEFAULT_HEIGHT))
+      ),
+    }),
+    [contentOf]
   );
 
   // ── Layout ───────────────────────────────────────────────────────────────
@@ -573,22 +602,9 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
 
       const goneIds = new Set(goneNodes.map((n) => n.id));
 
-      // Captured before anything else, with the words as they are now — not as
-      // they were loaded — so undo brings back what was on screen.
-      const ideas: CanvasIdea[] = goneNodes.map((n) => ({
-        id: n.id,
-        content: contentOf(n.id),
-        color: n.data.color,
-        x: n.position.x,
-        y: n.position.y,
-        width: n.width ?? n.measured?.width ?? NODE_DEFAULT_WIDTH,
-        // Only stored, never applied (the card sizes to its content) — but it
-        // travels in the re-create, so keep it inside what the API accepts.
-        height: Math.min(
-          NODE_MAX_SIZE,
-          Math.max(NODE_MIN_HEIGHT, Math.round(n.measured?.height ?? NODE_DEFAULT_HEIGHT))
-        ),
-      }));
+      // Captured before anything else, with the words as they are now, so
+      // undo brings back what was on screen.
+      const ideas: CanvasIdea[] = goneNodes.map(ideaOf);
       const connections: CanvasConnection[] = goneEdges.map((e) => ({
         id: e.id,
         source_id: e.source,
@@ -658,12 +674,131 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         },
       });
     },
-    [base, contentOf, restore, whenCreated]
+    [base, ideaOf, restore, whenCreated]
   );
 
   const deleteIdea = useCallback(
     (id: string) => void deleteElements({ nodes: [{ id }] }),
     [deleteElements]
+  );
+
+  // ── Duplicating ─────────────────────────────────────────────────────────
+  //
+  // A copy has the card's words, colour and width, a new id, and none of its
+  // connections: those stay with the original, which stays where it is.
+
+  const persistCopies = useCallback(
+    (copies: CanvasIdea[]) => {
+      for (const copy of copies) {
+        postIdea(copy).catch((err) => {
+          console.error(err);
+          setNodes((prev) => prev.filter((n) => n.id !== copy.id));
+          toast.error("Could not duplicate the idea");
+        });
+      }
+    },
+    [postIdea, setNodes]
+  );
+
+  /** ⌘D: copies of the selected cards, a step down and to the right, selected instead of them. */
+  const duplicateSelection = useCallback(() => {
+    const selected = getNodes().filter((n) => n.selected && !isGhost(n.id));
+    if (selected.length === 0) return;
+    const copies = copyIdeas(
+      selected.map(ideaOf),
+      (i) => ({ x: i.x + DUPLICATE_OFFSET, y: i.y + DUPLICATE_OFFSET }),
+      () => crypto.randomUUID()
+    );
+    setNodes((prev) => [
+      ...prev.map((n) => (n.selected ? { ...n, selected: false } : n)),
+      ...copies.map((c) => toNode(c, true)),
+    ]);
+    persistCopies(copies);
+  }, [getNodes, ideaOf, persistCopies, setNodes]);
+
+  /**
+   * ⌥ + drag: the cards under the pointer become the copies, and the
+   * originals stay put. React Flow drags the cards it grabbed — the
+   * originals — so while it does, a stand-in of each is drawn where it
+   * started, holding its connections; on drop the originals go back in
+   * place of their stand-ins and copies are created where they were dropped.
+   */
+  const altDrag = useRef<{
+    origins: Map<string, { x: number; y: number }>;
+    ghosts: Map<string, string>;
+  } | null>(null);
+
+  const handleDragStart = useCallback<OnNodeDrag<IdeaNode>>(
+    (event, _node, dragged) => {
+      if (!event.altKey || compactRef.current) return;
+      const originals = dragged.filter((n) => !isGhost(n.id));
+      if (originals.length === 0) return;
+      const ghosts = new Map(originals.map((n) => [n.id, `${GHOST_PREFIX}${n.id}`]));
+      altDrag.current = {
+        origins: new Map(originals.map((n) => [n.id, { ...n.position }])),
+        ghosts,
+      };
+      setNodes((prev) => [
+        // First, so the dragged cards stay on top of them. `measured`, so
+        // they are drawn at once instead of waiting to be measured.
+        ...originals.map(
+          (n): IdeaNode => ({
+            ...toNode(ideaOf(n)),
+            id: ghosts.get(n.id)!,
+            measured: n.measured,
+            selectable: false,
+            draggable: false,
+            connectable: false,
+            deletable: false,
+            focusable: false,
+          })
+        ),
+        ...prev,
+      ]);
+      setEdges((prev) => repointConnections(prev, ghosts));
+    },
+    [ideaOf, setEdges, setNodes]
+  );
+
+  /**
+   * The end of a ⌥ + drag, in two steps so nothing blinks: first the copies
+   * are added under the cards still sitting where they were dropped (a new
+   * card paints its words a frame after it mounts); once they have, the
+   * originals go back over their stand-ins and the copies take the selection.
+   */
+  const finishAltDrag = useCallback(
+    (dragged: IdeaNode[]) => {
+      const alt = altDrag.current;
+      if (!alt) return;
+      altDrag.current = null;
+      const originals = dragged.filter((n) => alt.origins.has(n.id));
+      const copies = copyIdeas(originals.map(ideaOf), (i) => i, () => crypto.randomUUID());
+      const measured = new Map(originals.map((n, i) => [copies[i].id, n.measured]));
+      setNodes((prev) => [
+        ...copies.map((c): IdeaNode => ({ ...toNode(c), measured: measured.get(c.id) })),
+        ...prev,
+      ]);
+      persistCopies(copies);
+
+      const back = new Map([...alt.ghosts].map(([id, ghost]) => [ghost, id]));
+      const copyIds = new Set(copies.map((c) => c.id));
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          setNodes((prev) =>
+            prev
+              .filter((n) => !back.has(n.id))
+              .map((n) => {
+                const origin = alt.origins.get(n.id);
+                if (origin) return { ...n, position: origin, selected: false };
+                if (copyIds.has(n.id)) return { ...n, selected: true };
+                return n.selected ? { ...n, selected: false } : n;
+              })
+          );
+          setEdges((prev) => repointConnections(prev, back));
+        })
+      );
+    },
+    [ideaOf, persistCopies, setEdges, setNodes]
   );
 
   // ── Colour and size ──────────────────────────────────────────────────────
@@ -785,12 +920,17 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
   const handleDragStop = useCallback<OnNodeDrag<IdeaNode>>(
     (_event, _node, dragged) => {
       draggedAt.current = Date.now();
+      // A ⌥ + drag moved copies, not the originals: nothing of theirs to save.
+      if (altDrag.current) {
+        finishAltDrag(dragged);
+        return;
+      }
       // One gesture, one write, however many cards it moved.
       queueLayout(
         dragged.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }))
       );
     },
-    [queueLayout]
+    [finishAltDrag, queueLayout]
   );
 
   const handleNodeClick = useCallback(
@@ -817,19 +957,53 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      // Enter on a selected card opens it for typing, like a double-click.
-      if (event.key !== "Enter" || editingRef.current || compactRef.current) {
-        return;
-      }
+      if (editingRef.current || compactRef.current) return;
       const target = event.target as HTMLElement;
       if (target.isContentEditable || target.closest("input, textarea")) return;
+
+      // ⌘D (Ctrl+D off a Mac) duplicates the selection. Prevented, or the
+      // browser would bookmark the page.
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "d"
+      ) {
+        event.preventDefault();
+        duplicateSelection();
+        return;
+      }
+
+      // Enter on a selected card opens it for typing, like a double-click.
+      if (event.key !== "Enter") return;
       const selected = getNodes().filter((n) => n.selected);
       if (selected.length !== 1) return;
       event.preventDefault();
       startEditing(selected[0].id);
     },
-    [getNodes, startEditing]
+    [duplicateSelection, getNodes, startEditing]
   );
+
+  // ⌥ over a card shows the copy cursor: what a ⌥ + drag will do. On the
+  // wrapper, not in state — a key held down must not re-render the canvas.
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    const set = (on: boolean) => {
+      if (on) pane.dataset.duplicating = "";
+      else delete pane.dataset.duplicating;
+    };
+    const onKey = (e: KeyboardEvent) => set(e.altKey);
+    const off = () => set(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", off);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", off);
+    };
+  }, []);
 
   const handleMoveEnd = useCallback(
     (_event: unknown, viewport: Viewport) => {
@@ -943,6 +1117,7 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
           // to "system", React Flow went dark on a Mac in dark mode and the
           // cards' text, which follows the app, became unreadable.
           colorMode="light"
+          onNodeDragStart={handleDragStart}
           onNodeDragStop={handleDragStop}
           onNodeClick={handleNodeClick}
           onPaneClick={stopEditing}

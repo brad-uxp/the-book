@@ -249,6 +249,7 @@
    Flow's pointing hand said otherwise. A pan (right or middle button) shows
    the grabbing hand, which React Flow's own `.selection` rule, later in its
    stylesheet, used to override. Cards keep grab, dots crosshair, text the
-   I-beam. */
+   I-beam. With ⌥ held, a card shows it will be copied by a drag. */
 .note-canvas .react-flow__pane.selection { cursor: default; }
 .note-canvas .react-flow__pane.dragging { cursor: grabbing; }
+.note-canvas[data-duplicating] .react-flow__node { cursor: copy; }

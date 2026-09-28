@@ -269,6 +269,8 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 | Arrastrar con el botón izquierdo en el vacío | recuadro de selección: toma toda tarjeta que toque |
 | Shift / Cmd / Ctrl + clic en un nodo | lo suma o lo quita de la selección |
 | Arrastrar una tarjeta seleccionada | mueve toda la selección, en una sola escritura |
+| ⌥ + arrastrar una tarjeta (o la selección) | la copia: los originales quedan en su lugar con sus conexiones; las copias (texto, color y ancho, sin conexiones) quedan donde se sueltan, seleccionadas. Con ⌥ apretado el cursor sobre una tarjeta es el de copiar |
+| ⌘D (Ctrl+D) con tarjetas seleccionadas | las duplica 24 px abajo a la derecha, sin conexiones, y selecciona las copias |
 
 El modelo de mouse cambió el 2026-09-27 a pedido del dueño: antes era trackpad-first (dos
 dedos movían el lienzo y shift+arrastrar seleccionaba). Ese mismo día se separaron la rueda

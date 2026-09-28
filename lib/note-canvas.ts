@@ -71,3 +71,40 @@ export function nodeOriginAt(
     y: snapToGrid(point.y - height / 2),
   };
 }
+
+// ── Duplicating ─────────────────────────────────────────────────────────────
+
+/** How far ⌘D puts a copy from its original: down and right, on the grid. */
+export const DUPLICATE_OFFSET = 24;
+
+/**
+ * Copies of ideas: the same words, colour and size, each with a new id and
+ * the position `place` gives it. Never their connections — those stay with
+ * the originals, which keep their place in the argument.
+ */
+export function copyIdeas(
+  ideas: CanvasIdea[],
+  place: (idea: CanvasIdea) => { x: number; y: number },
+  newId: () => string
+): CanvasIdea[] {
+  return ideas.map((idea) => {
+    const at = place(idea);
+    return { ...idea, id: newId(), x: snapToGrid(at.x), y: snapToGrid(at.y) };
+  });
+}
+
+/**
+ * Connections with some ends moved to other cards, by id. A connection
+ * touching none of them comes back as the same object, so a list that did
+ * not change keeps its identity.
+ */
+export function repointConnections<T extends { source: string; target: string }>(
+  connections: T[],
+  to: ReadonlyMap<string, string>
+): T[] {
+  return connections.map((c) => {
+    const source = to.get(c.source) ?? c.source;
+    const target = to.get(c.target) ?? c.target;
+    return source === c.source && target === c.target ? c : { ...c, source, target };
+  });
+}
