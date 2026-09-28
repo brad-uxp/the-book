@@ -1,7 +1,7 @@
 {
   "name": "book-mobile",
   "version": "0.1.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
     "@react-native-community/datetimepicker": "9.1.0",
@@ -13,6 +13,7 @@
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
     "expo-linking": "~57.0.11",
+    "expo-notifications": "~57.0.21",
     "expo-router": "~57.0.23",
     "expo-secure-store": "~57.0.4",
     "expo-sharing": "~57.0.22",
@@ -20,6 +21,7 @@
     "expo-sqlite": "~57.0.3",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "expo-task-manager": "~57.0.20",
     "lucide-react-native": "^1.48.0",
     "react": "19.2.3",
     "react-native": "0.86.3",
@@ -40,12 +42,13 @@
   },
   "scripts": {
     "start": "pnpm editor:build && expo start",
-    "android": "pnpm editor:build && JAVA_HOME=$(/usr/libexec/java_home -v 21) expo run:android",
+    "android": "pnpm google-services && pnpm editor:build && JAVA_HOME=$(/usr/libexec/java_home -v 21) expo run:android",
     "android:release": "./scripts/android-release.sh",
     "typecheck": "pnpm editor:build && tsc --noEmit",
     "lint": "pnpm editor:build && expo lint",
     "test": "node --import ./scripts/test-resolve.mjs --test --experimental-strip-types 'src/**/*.test.ts'",
-    "editor:build": "node scripts/build-editor.mjs"
+    "editor:build": "node scripts/build-editor.mjs",
+    "google-services": "node scripts/google-services.mjs"
   },
   "private": true
 }

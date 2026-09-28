@@ -46,3 +46,7 @@ modules/*/android/.cxx/
 
 # the editor page, built by scripts/build-editor.mjs
 src/editor/editor-html.generated.ts
+
+# Firebase config for push: copied in by scripts/google-services.mjs, kept
+# out of git (lives in theBookApp/, next to the repo).
+/google-services.json

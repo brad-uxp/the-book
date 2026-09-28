@@ -10,8 +10,8 @@ import { GOOGLE_WEB_CLIENT_ID } from "./config";
  * phone's secure storage (Android Keystore-backed), never in plain storage.
  */
 
-const TOKEN_KEY = "book.api-token";
-const EMAIL_KEY = "book.account-email";
+// In their own module: the push task reads the token headless, without React.
+import { EMAIL_KEY, TOKEN_KEY } from "./session";
 
 type AuthState =
   | { status: "loading" }
