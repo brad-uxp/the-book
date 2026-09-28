@@ -4,21 +4,24 @@
  * The canvas zooms with the mouse wheel and pans with two fingers, but the
  * browser reports both as the same `wheel` event — there is no field that
  * says which device sent it. So each gesture is judged by what its events
- * look like, from what real hardware sends:
+ * look like, from what real hardware sends (recorded with the canvas wheel
+ * probe on the owner's Mac, Chrome 152):
  *
  * - A classic notched wheel in Chrome reports 120 per notch in the legacy
  *   `wheelDeltaY` (with an accelerated `deltaY`, 4.000244140625 for a slow
  *   notch on a Mac). Firefox, asked for `deltaMode` first, reports lines.
  *   Either is certainly a wheel.
- * - Many mice are continuous instead (the owner's, in Chrome 152 on macOS:
- *   one event per notch of 12–13 px, 44–130 ms apart, legacy exactly -3 ×
- *   deltaY — the same arithmetic as a trackpad, which is why the legacy delta
- *   alone cannot tell them apart). Safari derives every legacy delta that way.
- * - A trackpad reports at the display's rate, about every 10 ms; a gesture
- *   starts with a pixel or two, often on both axes.
+ * - Many mice are continuous instead. The owner's sends 11–309 px per event,
+ *   straight down or up (deltaX always 0), with legacy exactly -3 × deltaY —
+ *   the same arithmetic as a trackpad. Spun at a normal pace its events come
+ *   every ~10 ms, the trackpad's rate, so timing cannot tell them apart.
+ *   Safari derives every legacy delta that way too.
+ * - A trackpad gesture starts with a pixel or two and moves sideways too, a
+ *   little, on almost every event; its momentum ends in single pixels.
  *
- * A Magic Mouse is a trackpad by all of these, so it pans — as it scrolls
- * everywhere else.
+ * A pinch arrives with ctrlKey set and is not judged here: it always zooms.
+ * A Magic Mouse behaves like a trackpad by all of these, so it pans — as it
+ * scrolls everywhere else.
  */
 
 export type WheelDevice = "mouse" | "trackpad";
@@ -33,22 +36,20 @@ export interface WheelSample {
 }
 
 /**
- * The least one wheel notch moves: 4 px for a slow notch on a Mac. A trackpad
- * gesture starts smaller, with the first pixel or two of the fingers' travel.
+ * The least one wheel event moves: 4 px for a slow notch on a Mac (11 px on
+ * the owner's continuous mouse). Anything between 0 and this is fingers.
  */
 export const MIN_NOTCH_PX = 4;
-
-/**
- * Events closer together than this come from a trackpad, which reports at
- * the display's rate. Wheel notches arrive 40 ms apart or more even when the
- * wheel is spun fast.
- */
-export const TRACKPAD_INTERVAL_MS = 20;
 
 interface Verdict {
   device: WheelDevice;
   /** Decided by something only one device does; never revised. */
   certain: boolean;
+}
+
+/** What no wheel ever sends: a sideways movement, or less than a notch. */
+function looksLikeFingers(e: WheelSample): boolean {
+  return e.deltaX !== 0 || (e.deltaY !== 0 && Math.abs(e.deltaY) < MIN_NOTCH_PX);
 }
 
 /** What the first event of a gesture says about the device. */
@@ -57,14 +58,11 @@ function judgeFirstEvent(e: WheelSample): Verdict {
   // before the deltas. Lines and pages come from notched wheels.
   if (e.deltaMode !== 0) return { device: "mouse", certain: true };
 
-  // Two axes at once is fingers. (Shift + wheel scrolls sideways on some
-  // systems; it lands here too, and panning sideways is the right answer.)
-  if (e.deltaX !== 0) return { device: "trackpad", certain: true };
-
   // Whole notches of a classic wheel: a multiple of 120 that is not merely
   // three times the pixels, as every continuous device's is.
   const legacy = e.wheelDeltaY;
   if (
+    e.deltaX === 0 &&
     legacy !== undefined &&
     legacy !== 0 &&
     legacy % 120 === 0 &&
@@ -73,11 +71,13 @@ function judgeFirstEvent(e: WheelSample): Verdict {
     return { device: "mouse", certain: true };
   }
 
-  // Continuous: a notch's worth at once is a wheel, a pixel or two is fingers.
-  return {
-    device: Math.abs(e.deltaY) >= MIN_NOTCH_PX ? "mouse" : "trackpad",
-    certain: false,
-  };
+  // Sideways, or a pixel or two: fingers. (Shift + wheel scrolls sideways on
+  // some systems; it lands here too, and panning sideways is right for it.)
+  if (looksLikeFingers(e)) return { device: "trackpad", certain: true };
+
+  // A notch's worth, straight up or down: a wheel, unless the gesture later
+  // shows it was fingers after all.
+  return { device: e.deltaY !== 0 ? "mouse" : "trackpad", certain: false };
 }
 
 /** Which device one wheel event, taken as the first of a gesture, came from. */
@@ -122,25 +122,22 @@ export const WHEEL_GESTURE_GAP_MS = 250;
 
 /**
  * Judges each gesture by its first event and keeps that answer until the
- * wheel rests, so one gesture never flips between zoom and pan. The one
- * exception: a gesture taken for a wheel on size alone switches to the
- * trackpad as soon as its events come at the trackpad's rate — a fast swipe
- * can start with a notch-sized movement, but no wheel sends every 10 ms.
+ * wheel rests, so one gesture does not flip between zoom and pan. The one
+ * exception: a gesture taken for a wheel on size alone becomes a trackpad
+ * gesture as soon as it does something no wheel does (moves sideways, or by
+ * less than a notch) — a swipe that starts with a big vertical movement.
+ * Never on timing: a wheel spun at a normal pace sends as often as fingers.
  */
 export function createWheelDeviceTracker(gapMs: number = WHEEL_GESTURE_GAP_MS) {
   let current: Verdict | null = null;
   let lastAt = Number.NEGATIVE_INFINITY;
 
   return (e: WheelSample, now: number): WheelDevice => {
-    const interval = now - lastAt;
+    const fresh = current === null || now - lastAt > gapMs;
     lastAt = now;
-    if (current === null || interval > gapMs) {
+    if (fresh || current === null) {
       current = judgeFirstEvent(e);
-    } else if (
-      !current.certain &&
-      current.device === "mouse" &&
-      interval < TRACKPAD_INTERVAL_MS
-    ) {
+    } else if (!current.certain && looksLikeFingers(e)) {
       current = { device: "trackpad", certain: true };
     }
     return current.device;
