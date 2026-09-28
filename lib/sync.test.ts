@@ -11,6 +11,7 @@ import {
   planDelete,
   planIssueUpsert,
   planNodeUpsert,
+  isTombstoneId,
   mutationPayloadHash,
   planPull,
   syncPurgeCutoffs,
@@ -81,6 +82,24 @@ describe("planPull", () => {
     ["posición fuera de rango", { t: NOW - DAY, at: NOW - 1000, k: { issues: [1e300, "i9"] as [number, string] } }],
   ])("un cursor con tiempos que este servidor no emitió (%s): reset, nunca un error", (_label, data) => {
     expect(planPull(encodeCursor(data), NOW)).toMatchObject({ from: null, reset: true, at: NOW });
+  });
+
+  it.each([
+    ["por encima de bigint", "9223372036854775808"],
+    ["19 nueves", "9999999999999999999"],
+    ["negativo", "-1"],
+    ["con ceros adelante", "007"],
+    ["no numérico", "abc"],
+  ])("una posición de tombstone que no es un bigint (%s): reset", (_label, id) => {
+    const raw = encodeCursor({ t: NOW - DAY, at: NOW - 1000, k: { tombstones: [NOW - 5000, id] } });
+    expect(planPull(raw, NOW)).toMatchObject({ from: null, reset: true });
+  });
+
+  it("el bigint más grande sí es una posición válida", () => {
+    const raw = encodeCursor({ t: NOW - DAY, at: NOW - 1000, k: { tombstones: [NOW - 5000, "9223372036854775807"] } });
+    expect(planPull(raw, NOW).reset).toBe(false);
+    expect(isTombstoneId("0")).toBe(true);
+    expect(isTombstoneId("9223372036854775807")).toBe(true);
   });
 
   it("un cursor con la hora un poco adelantada (reloj de la base) se acepta", () => {

@@ -9,6 +9,7 @@ import {
   SYNC_PAGE_LIMITS,
   SYNC_PUSH_BUDGET,
   conflictTitle,
+  isTombstoneId,
   mutationPayloadHash,
   nextCursor,
   planDelete,
@@ -154,9 +155,12 @@ function window(field: "updated_at" | "created_at" | "deleted_at", from: Date | 
   return { AND: clauses } as any;
 }
 
-/** A tombstone position is its bigint id; anything else restarts that list, which is harmless. */
+/**
+ * A tombstone position is its bigint id. planPull already resets on anything
+ * else; this is the backstop that keeps a bad id from reaching the query.
+ */
 function tombstonePosition(pos: [number, string] | undefined): [number, string] | undefined {
-  return pos && /^\d{1,19}$/.test(pos[1]) ? pos : undefined;
+  return pos && isTombstoneId(pos[1]) ? pos : undefined;
 }
 
 /**

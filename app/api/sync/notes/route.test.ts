@@ -412,6 +412,15 @@ describe("GET /api/sync/notes", () => {
     expect(t.syncTombstone.findMany).not.toHaveBeenCalled();
   });
 
+  it("una posición de tombstone por encima de bigint es reset, no un 500", async () => {
+    const t = fakeTx({ issues: [] });
+    const now = Date.now();
+    const res = await pull(encodeCursor({ t: now - 60_000, at: now - 1000, k: { tombstones: [now - 5000, "9999999999999999999"] } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ reset: true });
+    expect(t.syncTombstone.findMany).not.toHaveBeenCalled();
+  });
+
   it("un tombstone de algo que volvió a existir (deshacer) no se manda", async () => {
     fakeTx({
       tombstones: [
