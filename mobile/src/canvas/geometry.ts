@@ -70,6 +70,39 @@ export function pinchView(start: View, focal0: Point, focal: Point, scale: numbe
   return { x: focal.x - wx * z, y: focal.y - wy * z, z };
 }
 
+/**
+ * Where a pinch measures from: the view, focal point and cumulative scale at
+ * the moment the fingers last changed, and how many fingers there were.
+ */
+export interface PinchAnchor {
+  view: View;
+  focal: Point;
+  scale: number;
+  pointers: number;
+}
+
+/**
+ * One pinch update. When a finger lifts (or lands again) the focal point jumps
+ * to the new centroid — on Android the last update of a pinch has one finger
+ * and the focal point is that finger, half the fingers' distance away — so a
+ * change in the number of fingers re-anchors at the current view instead of
+ * moving it. The remaining finger then pans on from where the view is, and
+ * the scale counts only from the re-anchor on.
+ */
+export function pinchStep(
+  anchor: PinchAnchor,
+  current: View,
+  focal: Point,
+  scale: number,
+  pointers: number
+): { view: View; anchor: PinchAnchor } {
+  "worklet";
+  const a =
+    pointers === anchor.pointers ? anchor : { view: current, focal, scale, pointers };
+  const view = pinchView(a.view, a.focal, focal, a.scale > 0 ? scale / a.scale : 1);
+  return { view, anchor: a };
+}
+
 /** The topmost card under a world point (the last one drawn wins), or -1. */
 export function cardAt(boxes: CardBox[], wx: number, wy: number): number {
   "worklet";

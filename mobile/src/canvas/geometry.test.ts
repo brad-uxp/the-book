@@ -14,6 +14,7 @@ import {
   fitView,
   grabRadius,
   pinchView,
+  pinchStep,
   toScreen,
   toWorld,
   type CardBox,
@@ -157,4 +158,43 @@ test("la flecha escala con el zoom, como cuando la dibujaba el mundo", () => {
   const [tip2, c2] = corners(edgeScreenPaths(e.points, { x: 0, y: 0, z: 2 }).arrow);
   const len = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   assert.ok(Math.abs(len(tip2, c2) - 2 * len(tip1, c1)) < 0.05);
+});
+
+// Secuencias grabadas en el emulador (2026-09-28, RNGH en Android): la última
+// actualización de un pellizco trae un solo dedo y el foco salta a ese dedo.
+test("pellizco: al levantar un dedo el lienzo no salta", () => {
+  const start = { x: 24, y: 353.8, z: 0.324 };
+  let anchor = { view: start, focal: { x: 205.7, y: 418.6 }, scale: 1, pointers: 2 };
+  let view = start;
+  for (const s of [1.108, 1.275, 1.549]) {
+    ({ view, anchor } = pinchStep(anchor, view, { x: 205.7, y: 418.6 }, s, 2));
+  }
+  const before = view;
+  // Se levanta el dedo izquierdo: foco en el derecho, misma escala.
+  ({ view, anchor } = pinchStep(anchor, view, { x: 331.4, y: 418.6 }, 1.549, 1));
+  assert.ok(Math.abs(view.x - before.x) < 1e-9 && Math.abs(view.y - before.y) < 1e-9, `saltó a ${view.x},${view.y}`);
+  assert.equal(view.z, before.z);
+});
+
+test("pellizco: el dedo que queda sigue moviendo el lienzo, sin saltos", () => {
+  let anchor = { view: { x: 0, y: 0, z: 1 }, focal: { x: 200, y: 400 }, scale: 1, pointers: 2 };
+  let view = anchor.view;
+  ({ view, anchor } = pinchStep(anchor, view, { x: 200, y: 400 }, 1.5, 2));
+  const afterPinch = view;
+  ({ view, anchor } = pinchStep(anchor, view, { x: 320, y: 400 }, 1.5, 1)); // se levanta uno
+  ({ view, anchor } = pinchStep(anchor, view, { x: 300, y: 430 }, 1.5, 1)); // el otro se mueve
+  assert.ok(Math.abs(view.x - afterPinch.x + 20) < 1e-9 && Math.abs(view.y - afterPinch.y - 30) < 1e-9);
+  assert.equal(view.z, afterPinch.z);
+});
+
+test("pellizco: si el segundo dedo vuelve, sigue desde donde está, sin saltos", () => {
+  let anchor = { view: { x: 10, y: 20, z: 1 }, focal: { x: 100, y: 100 }, scale: 1, pointers: 2 };
+  let view = anchor.view;
+  ({ view, anchor } = pinchStep(anchor, view, { x: 100, y: 100 }, 1.2, 2));
+  ({ view, anchor } = pinchStep(anchor, view, { x: 160, y: 100 }, 1.2, 1));
+  const one = view;
+  ({ view, anchor } = pinchStep(anchor, view, { x: 130, y: 110 }, 1.2, 2)); // vuelve el dedo
+  assert.ok(Math.abs(view.x - one.x) < 1e-9 && Math.abs(view.y - one.y) < 1e-9 && view.z === one.z);
+  ({ view, anchor } = pinchStep(anchor, view, { x: 130, y: 110 }, 1.5, 2)); // y sigue pellizcando: la escala cuenta desde ahí
+  assert.ok(Math.abs(view.z - one.z * 1.25) < 1e-9, `z=${view.z}`);
 });

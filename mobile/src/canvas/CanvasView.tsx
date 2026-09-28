@@ -24,7 +24,7 @@ import {
   edgeScreenPaths,
   fitView,
   grabRadius,
-  pinchView,
+  pinchStep,
   toWorld,
   type CardBox,
   type EdgePath,
@@ -322,6 +322,9 @@ export function CanvasView({
   const py0 = useSharedValue(0);
   const fx0 = useSharedValue(0);
   const fy0 = useSharedValue(0);
+  const ps0 = useSharedValue(1);
+  const pn0 = useSharedValue(2);
+  const tapTouches = useSharedValue(0);
 
   /* eslint-disable react-hooks/refs -- The callbacks below are worklets the
      gesture system runs on the UI thread, never during render; `dispatch`
@@ -404,18 +407,48 @@ export function CanvasView({
         py0.set(vy.get());
         fx0.set(e.focalX);
         fy0.set(e.focalY);
+        ps0.set(e.scale);
+        pn0.set(e.numberOfPointers);
       })
       .onUpdate((e) => {
-        const v = pinchView({ x: px0.get(), y: py0.get(), z: pz0.get() }, { x: fx0.get(), y: fy0.get() }, { x: e.focalX, y: e.focalY }, e.scale);
+        // Re-anchors whenever a finger lifts or lands (see pinchStep): the
+        // last update of a pinch comes with one finger and its focal point.
+        const step = pinchStep(
+          { view: { x: px0.get(), y: py0.get(), z: pz0.get() }, focal: { x: fx0.get(), y: fy0.get() }, scale: ps0.get(), pointers: pn0.get() },
+          { x: vx.get(), y: vy.get(), z: vz.get() },
+          { x: e.focalX, y: e.focalY },
+          e.scale,
+          e.numberOfPointers
+        );
+        if (step.anchor.pointers !== pn0.get()) {
+          px0.set(step.anchor.view.x);
+          py0.set(step.anchor.view.y);
+          pz0.set(step.anchor.view.z);
+          fx0.set(step.anchor.focal.x);
+          fy0.set(step.anchor.focal.y);
+          ps0.set(step.anchor.scale);
+          pn0.set(step.anchor.pointers);
+        }
+        const v = step.view;
         vx.set(v.x);
         vy.set(v.y);
         vz.set(v.z);
       });
 
+    // A one-finger tap only. Two fingers lifted together end on a one-finger
+    // event, so the finger count at the end cannot tell: the most seen during
+    // the tap does — otherwise a two-finger double tap (fit) was also a
+    // one-finger double tap on empty canvas (a new idea).
     const tap = Gesture.Tap()
       .maxDistance(8)
+      .onTouchesDown((e) => {
+        tapTouches.set(Math.max(tapTouches.get(), e.numberOfTouches));
+      })
       .onEnd((e, success) => {
-        if (success && e.numberOfPointers === 1) runOnJS(dispatch)("tap", e.x, e.y, 0);
+        if (success && tapTouches.get() === 1) runOnJS(dispatch)("tap", e.x, e.y, 0);
+      })
+      .onFinalize(() => {
+        tapTouches.set(0);
       });
 
     const fitTap = Gesture.Tap()
@@ -451,6 +484,9 @@ export function CanvasView({
     py0,
     fx0,
     fy0,
+    ps0,
+    pn0,
+    tapTouches,
   ]);
   /* eslint-enable react-hooks/refs */
 
