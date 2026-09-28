@@ -39,7 +39,7 @@
     "android:release": "./scripts/android-release.sh",
     "typecheck": "pnpm editor:build && tsc --noEmit",
     "lint": "pnpm editor:build && expo lint",
-    "test": "node --test --experimental-strip-types 'src/**/*.test.ts'",
+    "test": "node --import ./scripts/test-resolve.mjs --test --experimental-strip-types 'src/**/*.test.ts'",
     "editor:build": "node scripts/build-editor.mjs"
   },
   "private": true
