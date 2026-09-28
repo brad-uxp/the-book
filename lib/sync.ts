@@ -336,16 +336,20 @@ export type IssuePlan =
  * What an issue upsert does, given the row as the server has it now (null if
  * there is none).
  *
- * Changing what a note is made of (text ↔ canvas) is refused from the phone
- * for now: turning a note into a canvas moves its text into the first idea,
- * and the phone has no canvas to show it in until the canvas arrives there.
+ * What a note is made of follows lib/notes.ts, as on the web: a text note may
+ * become a canvas, a canvas never goes back. The phone converts a note by
+ * sending `note_format: "canvas"` with `description: ""`, then the note's
+ * text as the canvas's first idea (an idea create, right after, with its own
+ * id) — so the server must not seed one: updateIssue seeds from the
+ * description only when the change does not bring one.
+ *
+ * If the server's text changed while the phone converted, the server keeps
+ * its text by converting without the phone's description: it seeds its own
+ * first idea from it, and the phone's idea arrives as another. Both stay on
+ * the canvas; no "(conflict)" note for a text that now lives there.
  */
 export function planIssueUpsert(current: IssueNow | null, change: Change<IssuePatch>): IssuePlan {
   const f = change.fields;
-  const formatNow = current?.note_format ?? "text";
-  if (f.note_format !== undefined && f.note_format !== formatNow) {
-    return { action: "reject", reason: "note_format_unsupported" };
-  }
 
   if (!current) {
     if (change.base_updated_at) {
@@ -374,6 +378,7 @@ export function planIssueUpsert(current: IssueNow | null, change: Change<IssuePa
     textChangedElsewhere(current.description, f.description, change.base_hash)
   ) {
     const { description, ...rest } = f;
+    if (shape.seedFromDescription) return { action: "update", data: rest };
     return { action: "update", data: rest, conflictText: description };
   }
   return { action: "update", data: f };

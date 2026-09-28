@@ -255,14 +255,39 @@ describe("planIssueUpsert", () => {
     expect(planIssueUpsert(note, { base_updated_at: "x", fields: { category: "task" } }).action).toBe("update");
   });
 
-  it("cambiar el formato de la nota desde el teléfono se rechaza en esta fase", () => {
-    expect(planIssueUpsert(note, { base_updated_at: "x", fields: { note_format: "canvas" } })).toEqual({
-      action: "reject",
-      reason: "note_format_unsupported",
-    });
+  it("convertir una nota de texto en canvas: el texto viaja como primera idea, el servidor no siembra otra", () => {
+    expect(
+      planIssueUpsert(note, {
+        base_updated_at: "x",
+        base_hash: textHash("<p>a</p>"),
+        fields: { note_format: "canvas", description: "" },
+      })
+    ).toEqual({ action: "update", data: { note_format: "canvas", description: "" } });
+  });
+
+  it("convertir cuando el texto cambió en el servidor: convierte sin el texto del teléfono (el servidor siembra el suyo) y sin copia", () => {
+    expect(
+      planIssueUpsert(
+        { ...note, description: "<p>web</p>" },
+        { base_updated_at: "x", base_hash: textHash("<p>a</p>"), fields: { note_format: "canvas", description: "" } }
+      )
+    ).toEqual({ action: "update", data: { note_format: "canvas" } });
+  });
+
+  it("crear un canvas desde el teléfono", () => {
     expect(planIssueUpsert(null, { fields: { title: "c", category: "note", note_format: "canvas" } })).toEqual({
+      action: "create",
+      data: { title: "c", category: "note", note_format: "canvas" },
+    });
+  });
+
+  it("un canvas no vuelve a texto ni una task es canvas (las reglas de lib/notes.ts)", () => {
+    expect(
+      planIssueUpsert({ ...note, note_format: "canvas" }, { base_updated_at: "x", fields: { note_format: "text" } })
+    ).toEqual({ action: "reject", reason: "shape" });
+    expect(planIssueUpsert(null, { fields: { title: "c", category: "task", note_format: "canvas" } })).toEqual({
       action: "reject",
-      reason: "note_format_unsupported",
+      reason: "shape",
     });
   });
 

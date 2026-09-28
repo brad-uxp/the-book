@@ -222,9 +222,15 @@ where `fields` holds only what changed.
   a sibling idea 24 px down and right. The rest of the change is applied.
 - A delete of a row that is already gone succeeds. A delete whose `base_hash`
   no longer matches non-empty text is refused (`changed_on_server`) with the row.
-- Changing `note_format` is refused for now (`note_format_unsupported`), as is
-  any shape change `PATCH` would refuse (`shape`). A client that no longer
-  exists is dropped from the change (`client_missing`) rather than losing it.
+- Shapes follow `PATCH` (`lib/notes.ts`): a text note may become a canvas and a
+  canvas note may be created; anything `PATCH` refuses is `shape`. To convert,
+  send `note_format: "canvas"` with `description: ""` (and the `base_hash` of
+  the text), then the text as an idea create: the server seeds a first idea
+  only when the change brings no description. If the server's text changed
+  meanwhile, it converts without the client's description and seeds its own
+  text as an idea — the client's idea arrives as another, and no conflict copy
+  is made. A client that no longer exists is dropped from the change
+  (`client_missing`) rather than losing it.
 
 Each answer is `{ mutation_id, status, reason?, row?, conflict_copy_id? }`, with
 `status` one of `applied`, `conflict_copy`, `deleted`, `rejected`; `row` is the
