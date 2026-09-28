@@ -383,7 +383,7 @@ export function RichTextEditor({
       {showBar ? (
         <EditorToolbar
           active={active}
-          onFormat={(action) => post({ type: "format", action })}
+          onFormat={(action, at) => post({ type: "format", action, at })}
           onMention={(kind) => post({ type: "trigger", kind })}
           onHideKeyboard={() => {
             post({ type: "blur" });

@@ -51,7 +51,12 @@ export type ToPage =
   | { type: "placeholder"; placeholder: string }
   | { type: "theme"; dark: boolean }
   | { type: "mentionLabels"; people: MentionLabels; invoices: MentionLabels }
-  | { type: "format"; action: ToolbarAction }
+  /**
+   * `at`: when the button was pressed (Date.now() on the phone). The next
+   * letters may reach the page before this message does; the page gives
+   * the ones typed after the press the new format too. See src/editor/typing.ts.
+   */
+  | { type: "format"; action: ToolbarAction; at?: number }
   | { type: "trigger"; kind: MentionKind }
   | { type: "pick"; kind: MentionKind; id: string; label: string }
   | { type: "focus" }
@@ -80,6 +85,7 @@ function parseObject(raw: unknown): Obj | null {
 
 const isString = (v: unknown): v is string => typeof v === "string";
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
+const isTime = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 const isKind = (v: unknown): v is MentionKind => v === "person" || v === "invoice";
 const isAction = (v: unknown): v is ToolbarAction =>
   (TOOLBAR_ACTIONS as readonly unknown[]).includes(v);
@@ -122,7 +128,7 @@ export function parseToPage(raw: unknown): ToPage | null {
     case "mentionLabels":
       return isLabels(m.people) && isLabels(m.invoices) ? (m as ToPage) : null;
     case "format":
-      return isAction(m.action) ? (m as ToPage) : null;
+      return isAction(m.action) && (m.at === undefined || isTime(m.at)) ? (m as ToPage) : null;
     case "trigger":
       return isKind(m.kind) ? (m as ToPage) : null;
     case "pick":

@@ -52,6 +52,9 @@ test("hacia la página: acepta los comandos y rechaza acciones o tipos desconoci
   assert.equal(parseToPage(JSON.stringify({ ...init, people: null })), null);
   assert.ok(parseToPage(JSON.stringify({ type: "format", action: "h3" })));
   assert.equal(parseToPage(JSON.stringify({ type: "format", action: "h1" })), null);
+  assert.ok(parseToPage(JSON.stringify({ type: "format", action: "bold", at: 1790000000000 })));
+  assert.equal(parseToPage(JSON.stringify({ type: "format", action: "bold", at: "now" })), null);
+  assert.equal(parseToPage(JSON.stringify({ type: "format", action: "bold", at: -1 })), null);
   assert.ok(parseToPage(JSON.stringify({ type: "pick", kind: "invoice", id: "i", label: "Inv 1" })));
   assert.equal(parseToPage(JSON.stringify({ type: "pick", kind: "invoice", id: "i" })), null);
   assert.equal(parseToPage(JSON.stringify({ type: "navigate", url: "https://x" })), null);

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import {
   AtSign,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react-native";
 import { usePalette } from "@/lib/theme";
 import type { ActiveFormats, MentionKind, ToolbarAction } from "./protocol";
+import { pressedAtEpoch } from "./typing";
 
 /** The web's toolbar, in the web's order. */
 const FORMATS: { action: ToolbarAction; icon: LucideIcon; label: string }[] = [
@@ -48,11 +50,14 @@ export function EditorToolbar({
   onHideKeyboard,
 }: {
   active: ActiveFormats;
-  onFormat: (action: ToolbarAction) => void;
+  /** `pressedAt`: when the button was touched — see pressedAtEpoch. */
+  onFormat: (action: ToolbarAction, pressedAt: number) => void;
   onMention: (kind: MentionKind) => void;
   onHideKeyboard: () => void;
 }) {
   const c = usePalette();
+  /** When the button being pressed was touched: the next letters may reach the page first. */
+  const pressedAt = useRef<number | null>(null);
   return (
     <View style={[styles.bar, { backgroundColor: c.bg, borderTopColor: c.line }]}>
       <ScrollView
@@ -67,7 +72,10 @@ export function EditorToolbar({
             accessibilityRole="button"
             accessibilityLabel={label}
             accessibilityState={{ selected: active[action] }}
-            onPress={() => onFormat(action)}
+            onPressIn={(e) => {
+              pressedAt.current = pressedAtEpoch(e.nativeEvent.timestamp, performance.now(), Date.now());
+            }}
+            onPress={() => onFormat(action, pressedAt.current ?? Date.now())}
             style={({ pressed }) => [
               styles.button,
               (active[action] || pressed) && { backgroundColor: c.surface },
