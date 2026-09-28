@@ -125,6 +125,9 @@ note can be a canvas — `{"category": "task", "note_format": "canvas"}` is a
 "Linked issues" (`?personId=` / `?invoiceId=`) and `linked-counts` find
 mentions in descriptions **and** in canvas ideas, counted once per issue.
 
+`POST` accepts an optional `id`: a UUID chosen by the client (the phone creates
+notes offline). A taken id is a `409`, never an overwrite.
+
 ### Canvas notes
 | Method | Path |
 |---|---|
@@ -158,6 +161,61 @@ not exist, `404`.
 - Deleting a node deletes its edges. Deleting a node that held text is
   audited with its content and edges, so it can be recovered from the audit
   log; nothing else on a canvas is audited.
+
+### Sync (the phone's offline notes)
+| Method | Path |
+|---|---|
+| GET | `/api/sync/notes?since=<cursor>` → one page of what changed |
+| POST | `/api/sync/notes` `{ mutations: [...] }` → `{ results: [...] }` |
+| GET | `/api/sync/refs` → `{ clients, people, invoices }` |
+
+Built for the mobile app, open to any credential the API accepts. Types in
+`lib/sync-protocol.ts`, rules in `lib/sync.ts`. Every write goes through the
+same services as the routes above, so it is validated and audited the same way.
+
+**Pull.** Without `since`, everything. The answer is
+`{ cursor, reset, has_more, issues, canvas_nodes, canvas_edges, tombstones }`;
+call again with `cursor` while `has_more`, storing it after each page. Rows are
+whole (issues include `description`, ideas their `content`); `tombstones` are
+`{ entity: "issue" | "canvas_node" | "canvas_edge", entity_id, issue_id, deleted_at }`
+for rows deleted in any way (a cascade too — the database records them with
+triggers). Each pull re-reads two minutes behind the cursor, so a row may come
+twice: apply by id. `reset: true` means the cursor was older than 60 days (the
+tombstone retention) or unreadable: this is a full sync, so drop every row you
+hold that has no unsent change, then apply the pages.
+
+**Push.** Up to 200 changes, body up to 5 MB, applied in order, each in its own
+transaction. A change is
+`{ mutation_id, entity, op: "upsert" | "delete", id, base_updated_at?, base_hash?, title_hint?, fields? }`
+where `fields` holds only what changed.
+
+- `mutation_id` (UUID) makes it idempotent: sending it again returns the first
+  answer and changes nothing.
+- An upsert of a row that does not exist and has no `base_updated_at` creates it
+  with `id` (a UUID). With `base_updated_at`, the row was deleted on the server:
+  if the change carried text (a description or an idea's content) the text is
+  saved as a new note, `"<title_hint> (conflict)"`; otherwise the answer is
+  `deleted`.
+- Fields are last-write-wins, except text: send `base_hash`, the sha256 (hex,
+  UTF-8) of the text the edit started from. If the server's text no longer
+  hashes to it, the server keeps its text and saves the client's as a copy — a
+  note `"<title> (conflict)"` with the same category and client, or for an idea
+  a sibling idea 24 px down and right. The rest of the change is applied.
+- A delete of a row that is already gone succeeds. A delete whose `base_hash`
+  no longer matches non-empty text is refused (`changed_on_server`) with the row.
+- Changing `note_format` is refused for now (`note_format_unsupported`), as is
+  any shape change `PATCH` would refuse (`shape`). A client that no longer
+  exists is dropped from the change (`client_missing`) rather than losing it.
+
+Each answer is `{ mutation_id, status, reason?, row?, conflict_copy_id? }`, with
+`status` one of `applied`, `conflict_copy`, `deleted`, `rejected`; `row` is the
+row as the server now has it, when it exists. The answers come in order and may
+stop early on an unexpected server error — send the unanswered ones again.
+
+**Refs.** `clients` `{ id, name, color_hex }`, `people`
+`{ id, name, role, status }`, `invoices`
+`{ id, invoice_number, client_name, status, amount_cents, net_cents }` — enough
+to label notes and offer @ and # mentions offline.
 
 ### People and salaries
 | Method | Path |

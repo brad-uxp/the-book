@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { CanvasLayoutSchema } from "@/lib/validations";
 import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
+import { updateLayout } from "@/lib/canvas-service";
 
 /**
  * Where the ideas on one canvas sit, and how big they are.
@@ -25,25 +25,8 @@ export async function PATCH(
   const parsed = CanvasLayoutSchema.safeParse(await readJson(req));
   if (!parsed.success) return invalid(parsed.error);
 
-  // Last write wins for a repeated id, so the batch holds one update each.
-  const nodes = new Map(parsed.data.nodes.map((n) => [n.id, n]));
-
   try {
-    const results = await prisma.$transaction(
-      [...nodes.values()].map((n) =>
-        prisma.canvasNode.updateMany({
-          where: { id: n.id, issue_id: id },
-          data: {
-            x: n.x,
-            y: n.y,
-            ...(n.width !== undefined ? { width: n.width } : {}),
-            ...(n.height !== undefined ? { height: n.height } : {}),
-          },
-        })
-      )
-    );
-
-    const updated = results.reduce((sum, r) => sum + r.count, 0);
+    const updated = await updateLayout(id, parsed.data.nodes);
     return NextResponse.json({ updated });
   } catch (err) {
     return toApiResponse(err);

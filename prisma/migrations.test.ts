@@ -227,3 +227,63 @@ describe("las relaciones que cargan historia contable no cascadean", () => {
     expect(statements[statements.length - 1][1].toUpperCase()).toBe("RESTRICT");
   });
 });
+
+/**
+ * The triggers that record deletions for the phone's sync (SyncTombstone).
+ *
+ * Prisma does not model triggers at all, so it never generates a DROP for
+ * them — but it also cannot notice one going missing. Without them nothing
+ * fails: deletions simply stop reaching the phone, which keeps showing notes
+ * that no longer exist and pushes edits to them forever. The build is the only
+ * place that can catch it.
+ */
+const PROTECTED_TRIGGERS = [
+  { trigger: "Task_sync_tombstone", table: "Task", fn: "sync_tombstone_issue" },
+  { trigger: "CanvasNode_sync_tombstone", table: "CanvasNode", fn: "sync_tombstone_canvas" },
+  { trigger: "CanvasEdge_sync_tombstone", table: "CanvasEdge", fn: "sync_tombstone_canvas" },
+];
+
+describe("triggers de borrado que alimentan la sync del teléfono", () => {
+  const migrations = migrationSql();
+
+  for (const t of PROTECTED_TRIGGERS) {
+    it(`${t.trigger} se crea AFTER DELETE sobre "${t.table}" y llama a ${t.fn}`, () => {
+      const created = migrations.some((m) =>
+        new RegExp(
+          `CREATE\\s+TRIGGER\\s+"${t.trigger}"\\s+AFTER\\s+DELETE\\s+ON\\s+"${t.table}"\\s+FOR\\s+EACH\\s+ROW\\s+EXECUTE\\s+FUNCTION\\s+"${t.fn}"`,
+          "i"
+        ).test(m.sql)
+      );
+      expect(created, "falta el CREATE TRIGGER — los borrados no llegarían al teléfono").toBe(true);
+    });
+
+    it(`ninguna migración dropea ni desactiva ${t.trigger}`, () => {
+      const touched = migrations.filter(
+        (m) =>
+          new RegExp(`DROP\\s+TRIGGER\\s+(IF\\s+EXISTS\\s+)?"?${t.trigger}"?`, "i").test(m.sql) ||
+          new RegExp(`DISABLE\\s+TRIGGER\\s+("?${t.trigger}"?|ALL|USER)`, "i").test(m.sql)
+      );
+      expect(
+        touched.map((d) => d.file),
+        "una migración dropea o desactiva un trigger de la sync: los borrados dejarían de llegar al teléfono"
+      ).toEqual([]);
+    });
+  }
+
+  for (const fn of [...new Set(PROTECTED_TRIGGERS.map((t) => t.fn))]) {
+    it(`la función ${fn} se crea y ninguna migración la dropea`, () => {
+      expect(
+        migrations.some((m) => new RegExp(`CREATE\\s+FUNCTION\\s+"${fn}"\\s*\\(`, "i").test(m.sql))
+      ).toBe(true);
+      const dropped = migrations.filter((m) =>
+        new RegExp(`DROP\\s+FUNCTION\\s+(IF\\s+EXISTS\\s+)?"?${fn}"?`, "i").test(m.sql)
+      );
+      expect(dropped.map((d) => d.file)).toEqual([]);
+    });
+  }
+
+  it("detecta un DROP TRIGGER real (el guard no es ciego)", () => {
+    const sql = stripSqlComments(`DROP TRIGGER IF EXISTS "Task_sync_tombstone" ON "Task";`);
+    expect(/DROP\s+TRIGGER\s+(IF\s+EXISTS\s+)?"?Task_sync_tombstone"?/i.test(sql)).toBe(true);
+  });
+});

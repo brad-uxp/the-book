@@ -3,6 +3,7 @@ import { isInvoiceKey } from "./r2";
 import { CANVAS_BOUND } from "./canvas-geometry";
 import { CANVAS_COLOR_KEYS } from "./canvas-palette";
 import { NOTE_FORMATS } from "./notes";
+import { SYNC_PUSH_MAX } from "./sync-protocol";
 import {
   LAYOUT_BATCH_MAX,
   NODE_CONTENT_MAX,
@@ -211,6 +212,14 @@ export const IssueSchema = z.object({
 export type IssueInput = z.infer<typeof IssueSchema>;
 
 /**
+ * A new issue. The id may come from the client: the phone creates notes
+ * offline and has to know their id before the server does. A UUID, so a
+ * client cannot pick one that collides by accident — a duplicate is a 409,
+ * never an overwrite.
+ */
+export const IssueCreateSchema = IssueSchema.extend({ id: z.uuid().optional() });
+
+/**
  * Ids to remove from the archive. Bounded because this is the one route that
  * deletes many rows at once; an unbounded list is a request that can time out
  * halfway through.
@@ -309,6 +318,64 @@ export const CanvasEdgeSchema = z
 export type CanvasNodeInput = z.infer<typeof CanvasNodeSchema>;
 export type CanvasLayoutInput = z.infer<typeof CanvasLayoutSchema>;
 export type CanvasEdgeInput = z.infer<typeof CanvasEdgeSchema>;
+
+// ─── Phone sync ──────────────────────────────────────────────────────────────
+
+/**
+ * A push, checked only as deep as it must be to answer per change: each
+ * mutation is validated on its own (SyncMutationSchema), so one malformed
+ * change is rejected by itself instead of blocking every change queued behind
+ * it on the phone.
+ */
+export const SyncPushSchema = z.object({
+  mutations: z
+    .array(z.looseObject({ mutation_id: z.uuid() }))
+    .min(1, "Nothing to push")
+    .max(SYNC_PUSH_MAX),
+});
+
+export const SyncMutationSchema = z.object({
+  mutation_id: z.uuid(),
+  entity: z.enum(["issue", "canvas_node", "canvas_edge"]),
+  op: z.enum(["upsert", "delete"]),
+  id: z.string().min(1).max(64),
+  base_updated_at: z.string().max(40).nullable().optional(),
+  base_hash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, "Must be a sha256 in hex")
+    .nullable()
+    .optional(),
+  title_hint: z.string().max(500).optional(),
+  fields: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** An issue's changed fields. Unknown keys are refused: they would be a phone bug, silently dropped. */
+export const SyncIssueFieldsSchema = IssueSchema.partial().strict();
+
+export const SyncNodeFieldsSchema = z
+  .object({
+    issue_id: z.string().min(1).max(64),
+    content: NodeContent,
+    color: CanvasColorKey.nullable(),
+    x: CanvasCoord,
+    y: CanvasCoord,
+    width: NodeWidth,
+    height: NodeHeight,
+  })
+  .partial()
+  .strict();
+
+export const SyncEdgeFieldsSchema = z
+  .object({
+    issue_id: z.string().min(1).max(64),
+    source_id: z.string().min(1).max(64),
+    target_id: z.string().min(1).max(64),
+  })
+  .strict()
+  .refine((d) => d.source_id !== d.target_id, {
+    message: "An idea cannot connect to itself",
+    path: ["target_id"],
+  });
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 

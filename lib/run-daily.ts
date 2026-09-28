@@ -5,6 +5,7 @@ import {
   buildSubscriptionNotification,
   advanceNotice,
 } from "@/lib/cron-helpers";
+import { syncPurgeCutoffs } from "@/lib/sync";
 import type { NotificationType } from "@/app/generated/prisma/client";
 
 /**
@@ -44,6 +45,19 @@ export async function runDailyJob(): Promise<string[]> {
     where: { created_at: { lt: twelveMonthsAgo } },
   });
   log.push(`  [cleanup] Deleted ${purgedLogs.count} audit logs older than 12 months`);
+
+  // The phone's sync bookkeeping: deletions older than any cursor the pull
+  // still accepts, and the answers kept for retried pushes (lib/sync.ts).
+  const { tombstonesBefore, mutationsBefore } = syncPurgeCutoffs(new Date());
+  const purgedTombstones = await prisma.syncTombstone.deleteMany({
+    where: { deleted_at: { lt: tombstonesBefore } },
+  });
+  const purgedMutations = await prisma.syncMutation.deleteMany({
+    where: { created_at: { lt: mutationsBefore } },
+  });
+  log.push(
+    `  [cleanup] Deleted ${purgedTombstones.count} sync tombstones (60 days) and ${purgedMutations.count} sync answers (30 days)`
+  );
 
   await runSubscriptions(today, daysSub, log);
   await runSalaries(today, daysSalary, log);

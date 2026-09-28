@@ -2,7 +2,7 @@
 
 Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book](https://github.com/brad-uxp/the-book). Desplegado en **Railway** (`book.bolstro.com`). La app vive en este directorio (`TheBook/`); el directorio padre `theBookApp/` es solo un contenedor (facturas, planes sueltos). **Lanza Claude Code desde aquí (`TheBook/`)** para que se carguen las skills y agentes del framework.
 
-**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 46 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
+**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 51 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
 
 ## Stack (resumen operativo)
 
@@ -23,6 +23,8 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Soft-delete** vía `deleted_at` en pagos de suscripción (permite undo).
 - **Settings singleton** (una fila global). **Auth single-user**: `ALLOWED_EMAILS` en `auth.ts`.
 - **Copy de la UI en inglés**, en la web y en la app mobile (decidido el 2026-09-27; antes era español).
+- **Escrituras de issues e ideas** solo por `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST y la sync del teléfono (`/api/sync/*`) comparten reglas y auditoría. No escribas `prisma.issue.create/update/delete` en una ruta nueva.
+- **Borrados que el teléfono tiene que ver**: triggers `AFTER DELETE` en `Task`, `CanvasNode` y `CanvasEdge` llenan `SyncTombstone`. Invisibles para Prisma y guardados por `prisma/migrations.test.ts`: nunca los dropees ni los desactives.
 - **Números del dashboard** solo en `lib/metrics.ts` (puro, testeado contra la implementación anterior). El dashboard y `GET /api/metrics` (la app mobile) lo usan; nunca dupliques una fórmula. Las consultas viven en `lib/metrics-server.ts`.
 - **Prisma client** singleton en `lib/db.ts`.
 
@@ -44,7 +46,7 @@ pnpm typecheck      # tsc --noEmit
 ## Estado del proyecto / tracking
 
 - Docs de estado: [`TRACKER.md`](./TRACKER.md), [`TASKS_SERVICE.md`](./TASKS_SERVICE.md), [`PLAN-NOTIFICATIONS.md`](./PLAN-NOTIFICATIONS.md).
-- **Tests**: vitest cableado (`vitest.config.ts`, entorno node, alias `@/`). Cubre la lógica pura: `lib/currency.ts`, `lib/dates.ts`, las reglas de notificación del job diario (`lib/cron-helpers.ts`) y un guard sobre las migraciones (`prisma/migrations.test.ts`). **Falta**: rutas API, capa de I/O del scheduler, componentes. Al tocar un área, deja su test (la skill `tdd` guía).
+- **Tests**: vitest cableado (`vitest.config.ts`, entorno node, alias `@/`). Cubre la lógica pura: `lib/currency.ts`, `lib/dates.ts`, las reglas de notificación del job diario (`lib/cron-helpers.ts`) las reglas de la sync del teléfono (`lib/sync.ts`) y un guard sobre las migraciones (`prisma/migrations.test.ts`); algunas rutas (mobile, sync) tienen tests con Prisma simulado. **Falta**: la mayoría de las rutas API, capa de I/O del scheduler, componentes. Al tocar un área, deja su test (la skill `tdd` guía).
 - ⚠️ **`pnpm start` corre `prisma migrate deploy`**: cada arranque aplica migraciones a producción sin intervención humana. Y varios objetos críticos (el unique parcial de `SubscriptionPayment`, el unique funcional de `invoice_number`, los CHECK del singleton, de `CanvasEdge` y el que limita el canvas a las notas) no se pueden expresar en `schema.prisma`, así que `prisma migrate dev` genera su `DROP`. `prisma/migrations.test.ts` falla el build si eso se commitea, y además rechaza cualquier migración con `DROP TABLE` / `DROP COLUMN` / `TRUNCATE` / `DELETE FROM` salvo que el SQL lleve el comentario `ACEPTO PERDER ESTOS DATOS` con el motivo — pero revisá el SQL generado antes.
 - **Gate `pre-commit` fail-closed instalado** (`.git/hooks/pre-commit`): typecheck + `vitest run` antes de cada commit; aborta si falla. Es la propiedad mecánica #3 del framework. Bypass consciente: `git commit --no-verify`. (No se versiona — reinstalar por máquina.)
 

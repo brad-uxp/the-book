@@ -40,7 +40,9 @@
         }
       ],
       "./plugins/with-release-signing",
-      "./plugins/with-gradle-project-name"
+      "./plugins/with-gradle-project-name",
+      "expo-sqlite",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CanvasNodeSchema } from "@/lib/validations";
 import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
-import { NODE_SELECT, findCanvasNote } from "@/lib/note-canvas-server";
+import { findCanvasNote } from "@/lib/note-canvas-server";
+import { createNode } from "@/lib/canvas-service";
 
 /**
  * A new idea on a canvas note.
@@ -29,19 +30,7 @@ export async function POST(
   if (note instanceof NextResponse) return note;
 
   try {
-    const node = await prisma.canvasNode.create({
-      data: {
-        ...(parsed.data.id ? { id: parsed.data.id } : {}),
-        issue_id: id,
-        x: parsed.data.x,
-        y: parsed.data.y,
-        ...(parsed.data.width !== undefined ? { width: parsed.data.width } : {}),
-        ...(parsed.data.height !== undefined ? { height: parsed.data.height } : {}),
-        content: parsed.data.content,
-        color: parsed.data.color ?? null,
-      },
-      select: NODE_SELECT,
-    });
+    const node = await createNode(prisma, { ...parsed.data, issue_id: id });
     return NextResponse.json(node, { status: 201 });
   } catch (err) {
     return toApiResponse(err);

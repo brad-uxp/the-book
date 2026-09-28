@@ -4,14 +4,18 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
+    "@react-native-community/datetimepicker": "9.1.0",
+    "@react-native-community/netinfo": "12.0.1",
     "expo": "~57.0.25",
     "expo-constants": "~57.0.19",
+    "expo-crypto": "~57.0.3",
     "expo-device": "~57.0.2",
     "expo-font": "~57.0.4",
     "expo-linking": "~57.0.11",
     "expo-router": "~57.0.23",
     "expo-secure-store": "~57.0.4",
     "expo-splash-screen": "~57.0.9",
+    "expo-sqlite": "~57.0.3",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "lucide-react-native": "^1.48.0",
@@ -33,7 +37,7 @@
     "android:release": "./scripts/android-release.sh",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "test": "node --test --experimental-strip-types src/lib/*.test.ts"
+    "test": "node --test --experimental-strip-types 'src/**/*.test.ts'"
   },
   "private": true
 }

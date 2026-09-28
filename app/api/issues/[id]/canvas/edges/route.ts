@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CanvasEdgeSchema } from "@/lib/validations";
 import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
-import { EDGE_SELECT, findCanvasNote } from "@/lib/note-canvas-server";
+import { findCanvasNote } from "@/lib/note-canvas-server";
+import { createEdge } from "@/lib/canvas-service";
 
 /**
  * A connection between two ideas of the same canvas.
@@ -31,15 +32,7 @@ export async function POST(
   if (note instanceof NextResponse) return note;
 
   try {
-    const edge = await prisma.canvasEdge.create({
-      data: {
-        ...(parsed.data.id ? { id: parsed.data.id } : {}),
-        issue_id: id,
-        source_id: parsed.data.source_id,
-        target_id: parsed.data.target_id,
-      },
-      select: EDGE_SELECT,
-    });
+    const edge = await createEdge(prisma, { ...parsed.data, issue_id: id });
     return NextResponse.json(edge, { status: 201 });
   } catch (err) {
     return toApiResponse(err);
