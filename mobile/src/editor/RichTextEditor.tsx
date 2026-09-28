@@ -269,12 +269,16 @@ export function RichTextEditor({
     const hidden = Keyboard.addListener("keyboardDidHide", () => {
       setKeyboardUp(false);
       setKeyboardInset(0);
+      // Closing the keyboard — the system back does — ends editing. A page
+      // left focused keeps the WebView holding on to the back key, and the
+      // next back would not leave the screen.
+      if (focusedRef.current) post({ type: "blur" });
     });
     return () => {
       shown.remove();
       hidden.remove();
     };
-  }, []);
+  }, [post]);
 
   // The app may be killed in the background: save what is pending first.
   useEffect(() => {
