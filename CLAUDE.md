@@ -2,7 +2,7 @@
 
 Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book](https://github.com/brad-uxp/the-book). Desplegado en **Railway** (`book.bolstro.com`). La app vive en este directorio (`TheBook/`); el directorio padre `theBookApp/` es solo un contenedor (facturas, planes sueltos). **Lanza Claude Code desde aquí (`TheBook/`)** para que se carguen las skills y agentes del framework.
 
-**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 51 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
+**El mapa completo del producto está en [`PROJECT.md`](./PROJECT.md)** — stack, esquema de datos, 54 rutas API, funcionalidades, job diario. Léelo antes de tocar un área que no conozcas; no lo dupliques aquí.
 
 ## Stack (resumen operativo)
 
@@ -25,6 +25,7 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Copy de la UI en inglés**, en la web y en la app mobile (decidido el 2026-09-27; antes era español).
 - **Escrituras de issues e ideas** solo por `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST y la sync del teléfono (`/api/sync/*`) comparten reglas y auditoría. No escribas `prisma.issue.create/update/delete` en una ruta nueva.
 - **Límites de texto** en `lib/text-limits.ts` (título 500, texto 200 000 caracteres de HTML), sin imports: los lee la web, la API y el teléfono (`@shared/text-limits`). No pongas otro número en otro lado.
+- **Tipos de token** (`ApiToken.kind`): `mobile` (lo emite el login de la app), `automation` (Settings) y `release` (Settings; lo usa `mobile/scripts/publish-release.sh` desde el Llavero). `requireSession()` rechaza `release` en toda la API; solo `requireReleaseToken()` lo acepta (`POST /api/mobile/releases*`). Las rutas que existen para la app usan `requireAppSession()` (navegador o `mobile`).
 - **La sync del teléfono** usa `requireSyncSession()` (sesión del navegador o token `mobile`, nunca uno `automation`), se cobra por cambio (`checkRateLimit` con costo) y corre de a un push por llamante (`lib/keyed-lock.ts`). Rate limit y lock viven en memoria: asumen **una sola réplica**.
 - **Borrados que el teléfono tiene que ver**: triggers `AFTER DELETE` en `Task`, `CanvasNode` y `CanvasEdge` llenan `SyncTombstone`. Invisibles para Prisma y guardados por `prisma/migrations.test.ts`: nunca los dropees ni los desactives.
 - **Push al teléfono** solo por `lib/push.ts` → `lib/fcm.ts` (FCM HTTP v1): mensajes **solo de datos** (`{ kind, id }`, sin bloque `notification`, sin contenido) y el teléfono pide el texto a la API. **Nunca el servicio de push de Expo.** Credencial: `FCM_SERVICE_ACCOUNT_JSON` (cuenta de servicio que solo manda FCM; nunca en el repo ni en logs). Los dispositivos (`MobileDevice`) son del token `mobile`; revocar o cerrar sesión los borra. `PushSubscription` salió del schema (fase 1): el deploy siguiente la dropea con `ACEPTO PERDER ESTOS DATOS`.

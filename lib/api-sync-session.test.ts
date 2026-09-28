@@ -25,13 +25,13 @@ vi.mock("@/auth", () => ({
   isAllowedSession: (s: unknown) => !!s,
 }));
 
-import { requireSyncSession } from "./api";
+import { requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
 import { resetRateLimits } from "./rate-limit";
 
-function withToken(kind: "mobile" | "automation") {
+function withToken(kind: "mobile" | "automation" | "release") {
   const { token, prefix, hash } = generateToken();
   state.authorization = `Bearer ${token}`;
-  state.record = { id: `tok-${kind}`, name: kind === "mobile" ? "mobile · Pixel" : "script", kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
+  state.record = { id: `tok-${kind}`, name: kind === "mobile" ? "mobile · Pixel" : kind === "release" ? "book-release" : "script", kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
 }
 
 beforeEach(() => {
@@ -62,3 +62,36 @@ describe("requireSyncSession", () => {
     expect((await requireSyncSession())?.status).toBe(401);
   });
 });
+
+// Quién llega a qué: el token de release solo publica versiones de la app.
+describe("matriz de acceso por tipo de credencial", () => {
+  const cases = [
+    ["release", "requireSession (toda la API)", requireSession, 403],
+    ["release", "requireSyncSession", requireSyncSession, 403],
+    ["release", "requireAppSession (buscar actualización)", requireAppSession, 403],
+    ["release", "requireUserSession (Settings)", requireUserSession, 403],
+    ["release", "requireReleaseToken (publicar)", requireReleaseToken, null],
+    ["mobile", "requireAppSession", requireAppSession, null],
+    ["mobile", "requireReleaseToken", requireReleaseToken, 403],
+    ["automation", "requireSession", requireSession, null],
+    ["automation", "requireAppSession", requireAppSession, 403],
+    ["automation", "requireReleaseToken", requireReleaseToken, 403],
+  ] as const;
+
+  it.each(cases)("token %s → %s → %s", async (kind, _label, guard, expected) => {
+    withToken(kind);
+    const res = await guard();
+    expect(res === null ? null : res.status).toBe(expected);
+  });
+
+  it("la sesión del navegador busca actualizaciones pero no publica", async () => {
+    state.session = { user: { email: "owner@example.com" } };
+    expect(await requireAppSession()).toBeNull();
+    expect((await requireReleaseToken())?.status).toBe(403);
+  });
+
+  it("sin credencial, publicar → 401", async () => {
+    expect((await requireReleaseToken())?.status).toBe(401);
+  });
+});
+

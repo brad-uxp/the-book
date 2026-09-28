@@ -89,6 +89,22 @@ out. Their cost per request is bounded instead.
   (duplicate invoice number, or a delete blocked because history depends on it)
   · `429` rate limited · `500` unexpected.
 
+### The mobile app's updates
+
+The release script publishes signed builds and the app offers them as in-app
+updates (docs/product/mobile-app.md → Actualizaciones sin cable).
+
+| Method | Path | |
+|---|---|---|
+| POST | `/api/mobile/releases` | Release token only. `{ version, version_code, sha256, size_bytes, notes? }` → `201 { version, version_code, upload_url, upload_expires_in }` (200 when re-registering an unpublished build). 409 unless `version_code` is above every published build. |
+| POST | `/api/mobile/releases/:code/publish` | Release token only. Publishes once R2 holds exactly `size_bytes`; 409 before the upload or on a size mismatch, 404 if unknown. |
+| GET | `/api/mobile/releases/latest` | Browser session or the phone's token. → `{ release: { version, version_code, sha256, size_bytes, notes, published_at, download_url, download_expires_in } \| null }`. |
+
+A **release token** (`ApiToken.kind = release`, minted in Settings → API
+tokens) is accepted by the two publishing routes and refused (403) by every
+other route, so a leaked one cannot read or change data. The upload URL signs
+the content type and length (15 minutes); the download URL lasts 15 minutes.
+
 ### Deletes that are refused on purpose
 
 Deleting a `Person` or a `Subscription` that has payments returns `409`. Those

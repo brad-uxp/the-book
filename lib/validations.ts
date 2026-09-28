@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RELEASE_MAX_BYTES, isReleaseVersion, isSha256Hex } from "./mobile-releases";
 import { isInvoiceKey } from "./r2";
 import { CANVAS_BOUND, SIDES } from "./canvas-geometry";
 import { CANVAS_COLOR_KEYS } from "./canvas-palette";
@@ -516,3 +517,20 @@ export const MobileDeviceSchema = z
 export const MobileDeviceTestSchema = z
   .object({ delay_seconds: z.number().int().min(0).max(60).optional() })
   .strict();
+
+/**
+ * A build the release script registers (POST /api/mobile/releases). Strict:
+ * the R2 key and the dates are the server's, never the caller's.
+ */
+export const MobileReleaseCreateSchema = z
+  .object({
+    version: z.string().refine(isReleaseVersion, "version must look like 1.2.3"),
+    version_code: z.number().int().min(1).max(999_999_999),
+    sha256: z.string().refine(isSha256Hex, "sha256 must be 64 lowercase hex characters"),
+    size_bytes: z.number().int().min(1).max(RELEASE_MAX_BYTES),
+    notes: z.string().trim().max(500).default(""),
+  })
+  .strict();
+
+export type MobileReleaseCreateInput = z.infer<typeof MobileReleaseCreateSchema>;
+

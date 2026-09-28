@@ -550,6 +550,7 @@ model AuditLog {
 enum ApiTokenKind {
   mobile
   automation
+  release // publishes app builds (POST /api/mobile/releases); nothing else
 }
 
 model ApiToken {
@@ -585,4 +586,21 @@ model MobileDevice {
   last_seen_at DateTime @default(now())
 
   api_token ApiToken @relation(fields: [api_token_id], references: [id], onDelete: Cascade)
+}
+
+/// A build of the Android app, uploaded by the release script and offered to
+/// the phone as an in-app update. The APK itself lives in R2 under `r2_key`;
+/// the row is published (`published_at`) only after the upload is confirmed.
+model MobileRelease {
+  id           String    @id @default(uuid())
+  version      String // "0.4.3", shown to the owner
+  version_code Int       @unique // Android's versionCode; strictly increasing
+  sha256       String // hex, of the signed APK; the phone checks its download
+  size_bytes   Int
+  r2_key       String // mobile/releases/book-<version>-<code>.apk
+  notes        String    @default("")
+  created_at   DateTime  @default(now())
+  published_at DateTime?
+
+  @@index([published_at, version_code])
 }

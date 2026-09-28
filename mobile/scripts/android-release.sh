@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds a signed release APK of book. — locally, with Android Studio's SDK and
-# a JDK 21. No EAS, nothing uploaded.
+# a JDK 21. No EAS. The finished APK is then published to book.'s own API and
+# R2 as an in-app update (scripts/publish-release.sh) unless --no-publish.
 #
 # Gradle builds the APK UNSIGNED and never sees the key. apksigner signs it
 # afterwards, reading the keystore password on stdin straight from the macOS
@@ -9,6 +10,20 @@
 # never a command line (where `ps` would show it).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# After building, the APK is published as an in-app update
+# (scripts/publish-release.sh) unless --no-publish; --notes "…" is shown to
+# the owner in the app's update prompt.
+PUBLISH=1
+NOTES=""
+while (( $# )); do
+  case "$1" in
+    --no-publish) PUBLISH=0 ;;
+    --notes) NOTES="${2:?--notes needs a text}"; shift ;;
+    *) echo "Unknown option: $1 (use --no-publish, --notes \"…\")" >&2; exit 1 ;;
+  esac
+  shift
+done
 
 # Not Android Studio's bundled JDK (25): it prints a native-access warning that
 # the Android Gradle Plugin of React Native 0.86 takes for a prefab error.
@@ -43,8 +58,12 @@ pnpm expo prebuild --platform android --clean --no-install
 # once expo-sharing and expo-file-system joined (OutOfMemoryError in
 # mergeDexRelease, 0.3.0). prebuild --clean rewrites gradle.properties, so the
 # cap is raised here, for this build only.
+# arm64-v8a only: the owner's phone (and every Android phone sold in years)
+# is 64-bit ARM. Native code for four ABIs made the APK 118.6 MB; one makes it
+# 52 MB — what the phone now downloads for each in-app update.
 (cd android && ./gradlew --no-daemon --quiet \
   "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+  -PreactNativeArchitectures=arm64-v8a \
   assembleRelease)
 
 UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
@@ -75,3 +94,15 @@ OUT="$HOME/Downloads/book-$VERSION-$CODE.apk"
 cp "$APK" "$OUT"
 echo "Signed with the release key (SHA-1 $SHA1)"
 echo "APK: $OUT"
+
+if (( PUBLISH )); then
+  rc=0
+  scripts/publish-release.sh "$OUT" "$NOTES" || rc=$?
+  if (( rc == 2 )); then
+    echo "Built but not published; install it over USB, or set up the token and run:"
+    echo "  scripts/publish-release.sh \"$OUT\""
+  elif (( rc != 0 )); then
+    echo "Built, but publishing failed (exit $rc). Retry with: scripts/publish-release.sh \"$OUT\"" >&2
+    exit "$rc"
+  fi
+fi
