@@ -135,6 +135,16 @@ Tarjetas, conexiones, hoja de edición, gestos, sin conexión.
   idea nueva conectada y abre su editor.
 - **Tocar una conexión** la selecciona: × la quita, ↺ (si tiene lados fijados) la devuelve a
   automático. Borrar ideas y conexiones deja 6 s de Undo.
+- **Duplicate** (en la barra de la tarjeta seleccionada) hace lo que ⌘D en la web
+  (`copyIdeas` de `lib/note-canvas`): las mismas palabras, color y ancho, un paso de 24 abajo
+  a la derecha en la grilla, sin conexiones; la copia queda seleccionada. Funciona sin señal.
+- **Ancho**: la tarjeta seleccionada tiene dos manijas en las esquinas de abajo, sobre los
+  lados izquierdo y derecho — hacia abajo del lado, como en la web, lejos del punto de
+  conexión del medio. Arrastrarlas cambia el ancho (en la grilla, entre 160 y 4000); la
+  izquierda mueve x y deja quieto el borde derecho; el alto sigue al contenido. Una sola
+  escritura al soltar (ancho y x, nunca alto, como la web). Si la tarjeta mide menos de 40 dp
+  de alto en pantalla, las manijas no se muestran: se acerca el zoom. Un toque cerca de una
+  manija y de un punto toma el más cercano.
 - **Editar** es una hoja inferior con el editor de las notas (formato, resaltado, @ y #);
   guarda mientras se escribe y una idea que queda vacía se descarta al cerrar, como en la web.
 
@@ -155,8 +165,8 @@ Cómo está hecho:
 - **Gestos**: Gesture Handler + Reanimated. El viewport son tres valores compartidos que
   mueven una sola transformación en el hilo de UI; dónde empieza un toque (un punto, la
   tarjeta seleccionada, el vacío) se decide ahí mismo con pruebas que son *worklets*. Mover
-  una tarjeta y seguir una línea pasan por React a ritmo de cuadro: la tarjeta y sus líneas
-  se mueven juntas.
+  una tarjeta, cambiarle el ancho y seguir una línea pasan por React a ritmo de cuadro: la
+  tarjeta, su texto re-medido y sus líneas se mueven juntos.
 - **Datos**: ideas y conexiones se escriben en SQLite y se encolan, igual que las notas
   (`mobile/src/canvas/store.ts`). Una idea confirmada manda solo lo que cambió contra el
   `updated_at` del servidor en que se basó (migración local 4: `server_updated_at` en las
@@ -171,8 +181,7 @@ Cómo está hecho:
 - **Palabras que el servidor rechaza** en una idea: se guardan antes en una nota local
   «<canvas> · idea (not synced)», marcada, como las de una nota.
 
-**Límites conocidos:** no se cambia el ancho de una tarjeta desde el teléfono (se respeta el
-de la web); un solo dedo mueve una sola tarjeta (sin selección múltiple); una idea de más de
+**Límites conocidos:** un solo dedo mueve (o duplica) una sola tarjeta (sin selección múltiple); una idea de más de
 200 000 caracteres no se guarda (avisa); tocar una mención dentro de una tarjeta no abre nada
 (sí dentro del editor).
 
