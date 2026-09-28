@@ -28,6 +28,7 @@ import {
 } from "lucide-react-native";
 import { formatCents } from "@shared/currency";
 import { formatInvoiceLabel } from "@shared/mentions";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "@shared/text-limits";
 import { ProgressSlider } from "@/components/ProgressSlider";
 import { Sheet, SheetOption } from "@/components/Sheet";
 import { StateView } from "@/components/StateView";
@@ -37,6 +38,7 @@ import { dueLabel, relativeTime } from "@/lib/format";
 import { font, statusColor, statusLabel, usePalette } from "@/lib/theme";
 import { useClients, useInvoices, useIssue, usePeople, type InvoiceRef, type PersonRef } from "@/notes/hooks";
 import { deleteIssue, discardIfBlank, editIssue, undoDelete, type IssueEdit } from "@/notes/store";
+import { TEXT_TOO_LONG } from "@/sync/merge";
 
 /** Typing is saved this long after the last keystroke — and at once on leaving. */
 const SAVE_DELAY_MS = 300;
@@ -251,6 +253,7 @@ export default function NoteScreen() {
           }}
           placeholder="Title"
           placeholderTextColor={c.faint}
+          maxLength={ISSUE_TITLE_MAX}
           multiline
           autoFocus={isNew}
           style={[styles.title, { color: c.ink }]}
@@ -270,7 +273,9 @@ export default function NoteScreen() {
           <View style={[styles.warning, { borderColor: c.danger }]}>
             <CloudOff size={16} color={c.danger} />
             <Text style={[styles.warningText, { color: c.danger }]}>
-              {`The server didn't take the last change (${issue.sync_error}). It's kept on this phone.`}
+              {issue.sync_error === TEXT_TOO_LONG
+                ? `Too long to sync: shorten this note below ${RICH_TEXT_MAX.toLocaleString("en-US")} characters. It's kept on this phone.`
+                : `The server didn't take the last change (${issue.sync_error}). It's kept on this phone.`}
             </Text>
           </View>
         ) : null}

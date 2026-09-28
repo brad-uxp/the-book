@@ -82,6 +82,7 @@ describe("checkToken — reglas de validez", () => {
     return {
       id: "tok-1",
       name: "claude-work",
+      kind: "automation",
       token_hash: hashToken(token),
       expires_at: null,
       revoked_at: null,
@@ -94,7 +95,13 @@ describe("checkToken — reglas de validez", () => {
     expect(checkToken(recordFor(token), token, now)).toEqual({
       id: "tok-1",
       name: "claude-work",
+      kind: "automation",
     });
+  });
+
+  it("dice para qué es el token: la sync del teléfono decide con eso", () => {
+    const { token } = generateToken();
+    expect(checkToken(recordFor(token, { kind: "mobile" }), token, now)?.kind).toBe("mobile");
   });
 
   it("rechaza cuando no existe el registro", () => {

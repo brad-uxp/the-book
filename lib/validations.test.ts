@@ -8,7 +8,10 @@ import {
   IssueSchema,
   MetricsQuerySchema,
   SettingsPatchSchema,
+  SyncIssueFieldsSchema,
+  SyncMutationSchema,
 } from "./validations";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import { CANVAS_BOUND } from "./canvas-geometry";
 import {
   LAYOUT_BATCH_MAX,
@@ -63,6 +66,60 @@ describe("IssueSchema — note_format", () => {
     expect(
       IssueSchema.safeParse({ title: "x", note_format: "whiteboard" }).success
     ).toBe(false);
+  });
+});
+
+describe("límites de texto (los mismos en REST y en la sync)", () => {
+  it("título: hasta 500 caracteres", () => {
+    expect(IssueSchema.safeParse({ title: "x".repeat(ISSUE_TITLE_MAX) }).success).toBe(true);
+    expect(IssueSchema.safeParse({ title: "x".repeat(ISSUE_TITLE_MAX + 1) }).success).toBe(false);
+  });
+
+  it("descripción: hasta 200 000 caracteres, lo mismo que una idea", () => {
+    expect(RICH_TEXT_MAX).toBe(NODE_CONTENT_MAX);
+    expect(IssueSchema.safeParse({ title: "x", description: "a".repeat(RICH_TEXT_MAX) }).success).toBe(true);
+    expect(IssueSchema.safeParse({ title: "x", description: "a".repeat(RICH_TEXT_MAX + 1) }).success).toBe(false);
+  });
+
+  it("el PATCH de REST y los campos de la sync heredan el mismo límite", () => {
+    const huge = "a".repeat(RICH_TEXT_MAX + 1);
+    expect(IssueSchema.partial().safeParse({ description: huge }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ description: huge }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ title: "x".repeat(ISSUE_TITLE_MAX + 1) }).success).toBe(false);
+  });
+
+  it("el nombre de reserva de una copia de conflicto tampoco pasa del título", () => {
+    const m = { mutation_id: "00000000-0000-4000-8000-000000000001", entity: "issue", op: "upsert", id: "x" };
+    expect(SyncMutationSchema.safeParse({ ...m, title_hint: "x".repeat(ISSUE_TITLE_MAX) }).success).toBe(true);
+    expect(SyncMutationSchema.safeParse({ ...m, title_hint: "x".repeat(ISSUE_TITLE_MAX + 1) }).success).toBe(false);
+  });
+});
+
+describe("lo que Postgres no guarda se rechaza acá, no en la base", () => {
+  const NUL = "a\u0000b";
+  const m = { mutation_id: "00000000-0000-4000-8000-000000000001", entity: "issue", op: "upsert", id: "x" };
+
+  it("un NUL en cualquier texto de una issue o de la sync", () => {
+    expect(IssueSchema.safeParse({ title: NUL }).success).toBe(false);
+    expect(IssueSchema.safeParse({ title: "x", description: `<p>${NUL}</p>` }).success).toBe(false);
+    expect(IssueSchema.safeParse({ title: "x", client_id: NUL }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ description: NUL }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, id: NUL }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, title_hint: NUL }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, base_updated_at: NUL }).success).toBe(false);
+    expect(CanvasNodePatchSchema.safeParse({ content: NUL }).success).toBe(false);
+    expect(CanvasEdgeSchema.safeParse({ source_id: NUL, target_id: "b" }).success).toBe(false);
+  });
+
+  it("sort_order cabe en un integer de Postgres", () => {
+    expect(IssueSchema.safeParse({ title: "x", sort_order: 2_147_483_647 }).success).toBe(true);
+    expect(IssueSchema.safeParse({ title: "x", sort_order: 2_147_483_648 }).success).toBe(false);
+    expect(IssueSchema.safeParse({ title: "x", sort_order: -2_147_483_649 }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ sort_order: 2 ** 40 }).success).toBe(false);
+  });
+
+  it("el texto común (acentos, emojis, saltos) sigue pasando", () => {
+    expect(IssueSchema.safeParse({ title: "Pérez ✓ 🚀", description: "<p>línea\nsiguiente</p>" }).success).toBe(true);
   });
 });
 

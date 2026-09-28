@@ -103,8 +103,8 @@ export async function replaceRefs(db: SQLiteDatabase, refs: SyncRefs): Promise<v
   }
   for (const i of refs.invoices) {
     await db.runAsync(
-      "INSERT INTO invoices (id, invoice_number, client_name, status, amount_cents, net_cents) VALUES (?, ?, ?, ?, ?, ?)",
-      [i.id, i.invoice_number, i.client_name, i.status, i.amount_cents, i.net_cents]
+      "INSERT INTO invoices (id, invoice_number, client_name, status, amount_cents) VALUES (?, ?, ?, ?, ?)",
+      [i.id, i.invoice_number, i.client_name, i.status, i.amount_cents]
     );
   }
 }

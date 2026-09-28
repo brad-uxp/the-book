@@ -63,10 +63,14 @@ export function prefixOf(raw: string): string | null {
   return prefix.length === PREFIX_LENGTH ? prefix : null;
 }
 
+/** What a token is for (the ApiTokenKind enum): the phone's sign-in, or a script. */
+export type TokenKind = "mobile" | "automation";
+
 /** The stored columns this module needs to judge a token. */
 export interface TokenRecord {
   id: string;
   name: string;
+  kind: TokenKind;
   token_hash: string;
   expires_at: Date | null;
   revoked_at: Date | null;
@@ -75,6 +79,7 @@ export interface TokenRecord {
 export interface VerifiedToken {
   id: string;
   name: string;
+  kind: TokenKind;
 }
 
 /**
@@ -91,7 +96,7 @@ export function checkToken(
   if (!hashesMatch(record.token_hash, hashToken(raw))) return null;
   if (record.revoked_at !== null) return null;
   if (record.expires_at !== null && record.expires_at <= now) return null;
-  return { id: record.id, name: record.name };
+  return { id: record.id, name: record.name, kind: record.kind };
 }
 
 /** How an API token appears in the audit log, distinct from a human actor. */

@@ -11,6 +11,7 @@ import {
   planDelete,
   planIssueUpsert,
   planNodeUpsert,
+  mutationPayloadHash,
   planPull,
   syncPurgeCutoffs,
   textChangedElsewhere,
@@ -69,6 +70,21 @@ describe("planPull", () => {
     expect(planPull(encodeCursor({ t }), NOW)).toMatchObject({ from: null, reset: true });
     const fresh = NOW - SYNC_TOMBSTONE_RETENTION_MS + SYNC_OVERLAP_MS + 1000;
     expect(planPull(encodeCursor({ t: fresh }), NOW).reset).toBe(false);
+  });
+
+  it.each([
+    ["t fuera del rango de Date", { t: 1e300 }],
+    ["t en el futuro", { t: NOW + 60 * 60 * 1000 }],
+    ["t negativo", { t: -1 }],
+    ["t con decimales", { t: NOW - 1000.5 }],
+    ["at fuera de rango", { t: NOW - DAY, at: 8.64e15 + 1 }],
+    ["posición fuera de rango", { t: NOW - DAY, at: NOW - 1000, k: { issues: [1e300, "i9"] as [number, string] } }],
+  ])("un cursor con tiempos que este servidor no emitió (%s): reset, nunca un error", (_label, data) => {
+    expect(planPull(encodeCursor(data), NOW)).toMatchObject({ from: null, reset: true, at: NOW });
+  });
+
+  it("un cursor con la hora un poco adelantada (reloj de la base) se acepta", () => {
+    expect(planPull(encodeCursor({ t: NOW + 60_000 }), NOW).reset).toBe(false);
   });
 
   it("a mitad de una ronda paginada sigue desde donde quedó, con el mismo inicio", () => {
@@ -280,6 +296,30 @@ describe("planDelete", () => {
   });
   it("si el servidor ya lo vació, no hay palabras que perder", () => {
     expect(planDelete("<p></p>", textHash("<p>a</p>"))).toEqual({ action: "delete" });
+  });
+});
+
+describe("mutationPayloadHash", () => {
+  const change = { mutation_id: "m1", entity: "issue", op: "upsert", id: "i1", fields: { title: "a", description: "<p>b</p>" } };
+
+  it("no depende del orden de las claves, a ninguna profundidad", () => {
+    const reordered = { fields: { description: "<p>b</p>", title: "a" }, id: "i1", op: "upsert", entity: "issue", mutation_id: "m1" };
+    expect(mutationPayloadHash(reordered)).toBe(mutationPayloadHash(change));
+  });
+
+  it("no incluye el id del cambio, sí todo lo que lleva", () => {
+    expect(mutationPayloadHash({ ...change, mutation_id: "otro" })).toBe(mutationPayloadHash(change));
+    expect(mutationPayloadHash({ ...change, fields: { title: "a", description: "<p>c</p>" } })).not.toBe(mutationPayloadHash(change));
+    expect(mutationPayloadHash({ ...change, id: "i2" })).not.toBe(mutationPayloadHash(change));
+    expect(mutationPayloadHash({ ...change, op: "delete" })).not.toBe(mutationPayloadHash(change));
+  });
+});
+
+describe("conflictTitle — límite", () => {
+  it("un título ya en el límite se corta para que la copia no lo pase", () => {
+    const t = conflictTitle("x".repeat(500));
+    expect(t.length).toBeLessThanOrEqual(500);
+    expect(t.endsWith(" (conflict)")).toBe(true);
   });
 });
 

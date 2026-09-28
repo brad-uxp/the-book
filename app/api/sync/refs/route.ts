@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/api";
+import { requireSyncSession } from "@/lib/api";
 import { loadRefs } from "@/lib/sync-server";
 
 /**
@@ -8,7 +8,7 @@ import { loadRefs } from "@/lib/sync-server";
  * connection. Replaced whole on each fetch — a few hundred rows at most.
  */
 export async function GET() {
-  const denied = await requireSession();
+  const denied = await requireSyncSession();
   if (denied) return denied;
 
   return NextResponse.json(await loadRefs(), { headers: { "Cache-Control": "no-store" } });

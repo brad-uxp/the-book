@@ -186,7 +186,7 @@ guardan como **UTC midnight**.
 | `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
 | `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
 | `SyncTombstone`| Un borrado de issue, idea o conexión, para que el teléfono se entere. Lo escriben **solo triggers** `AFTER DELETE` (cubren cascadas y cualquier otra vía); se purga a los 60 días |
-| `SyncMutation` | La respuesta a cada cambio que empujó el teléfono, por `mutation_id`: un reintento devuelve la misma y no aplica dos veces. Se purga a los 30 días |
+| `SyncMutation` | La respuesta a cada cambio que empujó el teléfono, por `mutation_id`: solo el veredicto (nunca la fila, que un reintento vuelve a leer) y el hash de lo que traía. Un reintento del mismo cambio devuelve la misma y no aplica dos veces; el mismo id con otro contenido se rechaza. Se purga a los 30 días |
 
 ### Sistema
 
@@ -194,6 +194,7 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync) o `automation` (hecho en Settings) |
 
 ### Invariantes que la base enforza
 
@@ -233,7 +234,9 @@ Se aceptan **dos credenciales**: la cookie de NextAuth (navegador) y
 `Authorization: Bearer tb_…` (máquinas). La referencia para clientes externos
 está en [`API.md`](./API.md). La gestión de tokens (`/api/settings/tokens`) es
 la excepción: exige sesión interactiva, porque un token que puede emitir tokens
-no se puede revocar.
+no se puede revocar. Y la sync del teléfono (`/api/sync/*`) acepta la sesión del
+navegador o un token `mobile` (los que emite el login de la app), no los tokens
+`automation` hechos a mano en Settings (`requireSyncSession`).
 
 | Recurso           | Métodos         | Ruta                                 |
 | ----------------- | --------------- | ------------------------------------ |

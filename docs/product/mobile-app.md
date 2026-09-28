@@ -1,8 +1,9 @@
 # App mobile de book
 
 > Estado: **fase 1 en producción** (2026-09-27). **Fase 2** (sync, datos y editor)
-> integrada en `feat/phase2` (2026-09-28); falta la revisión de seguridad de `/api/sync/*`
-> antes de producción.
+> integrada en `feat/phase2` (2026-09-28), con los hallazgos de la revisión de seguridad de
+> `/api/sync/*` corregidos (ver [Sincronización](#sincronización)); falta verificar los
+> arreglos y subir a producción.
 >
 > - Prototipo de estructura aprobado: https://claude.ai/artifact/SB2xQjdXzmKYnW2xgZQ7C6
 > - Estudio de logo (elegida la **F · Full stop**, `book.` con punto violeta): https://claude.ai/artifact/ExsVzSCnKmK5DGUYeS97pD
@@ -171,6 +172,24 @@ Servidor: `GET/POST /api/sync/notes` y `GET /api/sync/refs` (detalle en `API.md`
   que un cambio en cola todavía va a escribir. Un cambio que no se envió absorbe los
   siguientes de la misma fila; uno que ya viajó no se toca (su reintento devolvería la
   respuesta guardada).
+- **Límites y costo** (revisión de seguridad del 2026-09-28): título ≤ 500 caracteres, texto
+  ≤ 200 000 de HTML (`lib/text-limits.ts`, el mismo límite en la web, la API y el teléfono),
+  sin NUL, `sort_order` de 32 bits. Un push se cobra por cambio (1000 por minuto y por
+  llamante, 429 pasado eso), corre de a uno por llamante, y se corta con `more` si la
+  respuesta pasa ~4 MB o tarda ~10 s: el teléfono manda el resto enseguida. De cada respuesta
+  se guarda solo el veredicto (la fila se relee en un reintento) y el hash de lo que traía el
+  cambio. Cada cambio bloquea (`FOR UPDATE`) la fila que juzga antes de leer su texto, así un
+  autoguardado de la web no se pisa sin copia de conflicto. Solo la sesión del navegador y
+  los tokens `mobile` pueden sincronizar; los `automation` reciben 403.
+- **Palabras que el servidor rechaza**: un cambio que falla por sí mismo se responde
+  `rejected: server_error` y el push sigue (antes frenaba la cola para siempre). Si traía
+  texto que la fila del servidor no tiene, el teléfono lo guarda antes en una nota local
+  "<título> (not synced)", marcada y visible en la lista; no se envía hasta que se edite. Un
+  texto que pasa el límite no se encola: queda en el teléfono marcado "too long" (protegido de
+  las filas del servidor y de un `reset`) hasta que se acorte.
+- **Para probar con el emulador** el login de desarrollo (token pegado a mano) necesita un
+  token `mobile`: uno creado en Settings es `automation` y la sync lo rechaza. Se crea con
+  `UPDATE "ApiToken" SET kind = 'mobile' WHERE id = …` en la base local.
 
 ## Login
 

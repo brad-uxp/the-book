@@ -11,6 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { checkShapeChange, isBlankHtml, type IssueShape } from "./notes";
+import { ISSUE_TITLE_MAX } from "./text-limits";
 
 // ─── Retention ───────────────────────────────────────────────────────────────
 
@@ -130,6 +131,26 @@ export interface PullPlan {
 }
 
 /**
+ * How far ahead of the server's clock a cursor's time may be. Every time in a
+ * cursor was read from this server or its database, so only their clocks'
+ * drift can put one in the future.
+ */
+const CURSOR_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Whether every time a cursor carries is one this server could have issued: a
+ * whole number of ms, from 1970 up to (about) now. Anything else was not made
+ * here — and a time Date cannot hold would reach the database as an Invalid
+ * Date and fail the whole pull.
+ */
+function cursorTimesValid(cursor: CursorData, now: number): boolean {
+  const ok = (ms: number) => Number.isSafeInteger(ms) && ms >= 0 && ms <= now + CURSOR_CLOCK_SKEW_MS;
+  if (cursor.t !== null && !ok(cursor.t)) return false;
+  if (cursor.at !== undefined && !ok(cursor.at)) return false;
+  return Object.values(cursor.k ?? {}).every((pos) => ok(pos[0]));
+}
+
+/**
  * Where a pull reads from. `now` must be taken before any query runs, so that
  * nothing written during the pull is dated before the cursor it hands back.
  */
@@ -138,7 +159,7 @@ export function planPull(raw: string | null, now: number): PullPlan {
   if (raw === null || raw === "") return full(false);
 
   const cursor = decodeCursor(raw);
-  if (!cursor) return full(true);
+  if (!cursor || !cursorTimesValid(cursor, now)) return full(true);
 
   if (cursor.t !== null && cursor.t - SYNC_OVERLAP_MS < now - SYNC_TOMBSTONE_RETENTION_MS) {
     // Deletions older than this may already be purged; the phone could keep
@@ -162,18 +183,62 @@ export function nextCursor(plan: PullPlan, positions: Positions, hasMore: boolea
 
 // ─── Push ────────────────────────────────────────────────────────────────────
 
+/**
+ * When a push stops early and answers what it has done so far (`more`): the
+ * phone sends the rest at once. Each change is answered with its row, and a
+ * row can hold a long note, so the answer is cut near a few megabytes rather
+ * than grown to hundreds; the time limit keeps one push from holding a
+ * database connection for long.
+ */
+export const SYNC_PUSH_BUDGET = { bytes: 4 * 1024 * 1024, ms: 10_000 } as const;
+
+/**
+ * How many changes one caller may push per minute. A push costs one unit per
+ * change it carries — each is a transaction of several queries, so a request
+ * count would let one 200-change push weigh the same as a one-change one.
+ * A phone catching up after days offline sends a few hundred at most; past
+ * the budget it gets a 429 with Retry-After and sends the rest then.
+ */
+export const SYNC_MUTATIONS_PER_MINUTE = 1000;
+
 /** sha256 of a text, hex — what `base_hash` is compared against. UTF-8, like the phone's. */
 export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/** JSON with object keys sorted, at every depth: one string per value, whatever the key order. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * What a pushed change carried, as a hash: everything but its id, as it was
+ * sent (before validation, which may drop keys). A retry of the same change
+ * hashes the same — the phone never alters a change once sent — so a
+ * different hash under a known id is a reused id, not a retry.
+ */
+export function mutationPayloadHash(item: { mutation_id: string } & Record<string, unknown>): string {
+  const { mutation_id: _id, ...payload } = item;
+  return textHash(canonicalJson(payload));
+}
+
 /**
  * The title of a note holding the phone's side of a conflict. The mark goes at
- * the end so the list still sorts and reads by the original title.
+ * the end so the list still sorts and reads by the original title; a title
+ * already at the limit is cut to make room for it, so the copy is a note the
+ * phone can edit and send back.
  */
 export function conflictTitle(title: string | null | undefined, fallback = "Recovered note"): string {
-  const base = (title ?? "").trim() || fallback;
-  return `${base} (conflict)`;
+  const mark = " (conflict)";
+  const base = ((title ?? "").trim() || fallback).slice(0, ISSUE_TITLE_MAX - mark.length).trimEnd();
+  return `${base}${mark}`;
 }
 
 /** An issue's fields a push may set. Only the keys present were changed. */

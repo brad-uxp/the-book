@@ -7,7 +7,9 @@ import {
 } from "@/lib/validations";
 import {
   SYNC_PAGE_LIMITS,
+  SYNC_PUSH_BUDGET,
   conflictTitle,
+  mutationPayloadHash,
   nextCursor,
   planDelete,
   planIssueUpsert,
@@ -264,7 +266,12 @@ async function stillExisting(
 
 // ─── Refs ────────────────────────────────────────────────────────────────────
 
-/** Clients, people and invoices — labels and @/# mentions, offline. */
+/**
+ * Clients, people and invoices — labels and @/# mentions, offline. Only what
+ * a label shows: an invoice's total, as the web's mention shows it, never
+ * what it nets after the fee. The phone keeps this in plain SQLite, which
+ * revoking its token does not erase.
+ */
 export async function loadRefs(): Promise<SyncRefs> {
   const [clients, people, invoices] = await Promise.all([
     prisma.client.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color_hex: true } }),
@@ -279,7 +286,6 @@ export async function loadRefs(): Promise<SyncRefs> {
         invoice_number: true,
         status: true,
         amount_cents: true,
-        fee_cents: true,
         client: { select: { name: true } },
       },
     }),
@@ -293,7 +299,6 @@ export async function loadRefs(): Promise<SyncRefs> {
       client_name: i.client.name,
       status: i.status,
       amount_cents: i.amount_cents,
-      net_cents: i.amount_cents - i.fee_cents,
     })),
   };
 }
@@ -318,9 +323,59 @@ function hitSyncMutationKey(err: unknown): boolean {
   );
 }
 
-async function storedResult(mutationId: string): Promise<SyncResult | null> {
+/**
+ * What is kept of an answer: the verdict, never the row. A row can hold a long
+ * note, and answers are kept for a month — storing rows would keep deleted
+ * notes' text around and multiply one note by every change sent about it. A
+ * replay reads the row again instead: the server's current one, which is also
+ * the one the phone should have.
+ */
+type Verdict = Pick<SyncResult, "status" | "reason" | "conflict_copy_id">;
+
+function verdictOf(result: SyncResult): Verdict {
+  return {
+    status: result.status,
+    ...(result.reason !== undefined ? { reason: result.reason } : {}),
+    ...(result.conflict_copy_id !== undefined ? { conflict_copy_id: result.conflict_copy_id } : {}),
+  };
+}
+
+type PushedItem = { mutation_id: string } & Record<string, unknown>;
+
+interface Stored {
+  verdict: Verdict;
+  /** Null for answers stored before changes were bound to their contents. */
+  payloadHash: string | null;
+}
+
+async function storedAnswer(mutationId: string): Promise<Stored | null> {
   const row = await prisma.syncMutation.findUnique({ where: { mutation_id: mutationId } });
-  return row ? (row.result as unknown as SyncResult) : null;
+  const verdict = row?.result as Verdict | undefined;
+  return verdict?.status ? { verdict, payloadHash: row?.payload_hash ?? null } : null;
+}
+
+/**
+ * The answer to a change whose id was seen before: the first answer when it
+ * is the same change retried, a refusal when the id comes with other
+ * contents — replaying the first answer would tell the phone a change was
+ * applied that never was.
+ */
+async function answerAgain(item: PushedItem, stored: Stored): Promise<SyncResult> {
+  if (stored.payloadHash !== null && stored.payloadHash !== mutationPayloadHash(item)) {
+    return { mutation_id: item.mutation_id, status: "rejected", reason: "mutation_id_reused" };
+  }
+  return replay(item, stored.verdict);
+}
+
+/** A stored answer, as sent the first time: the verdict, and the row as it is now. */
+async function replay(item: PushedItem, verdict: Verdict): Promise<SyncResult> {
+  // Only the verdict's fields: an answer stored before verdicts were trimmed
+  // may still hold a row, and it would be stale.
+  const result: SyncResult = { mutation_id: item.mutation_id, ...verdictOf(verdict as SyncResult) };
+  if (verdict.status === "deleted") return result;
+  const parsed = SyncMutationSchema.safeParse(item);
+  if (!parsed.success) return result;
+  return { ...result, row: await currentRow(parsed.data as SyncMutation) };
 }
 
 /**
@@ -328,43 +383,150 @@ async function storedResult(mutationId: string): Promise<SyncResult | null> {
  * the database refused, whose transaction is already rolled back. A retry
  * racing it finds the first answer.
  */
-async function recordResult(result: SyncResult): Promise<SyncResult> {
+async function recordResult(item: PushedItem, result: SyncResult): Promise<SyncResult> {
   try {
     await prisma.syncMutation.create({
-      data: { mutation_id: result.mutation_id, result: result as object },
+      data: {
+        mutation_id: result.mutation_id,
+        payload_hash: mutationPayloadHash(item),
+        result: verdictOf(result) as object,
+      },
     });
     return result;
   } catch (err) {
-    if (prismaCode(err) === "P2002") return (await storedResult(result.mutation_id)) ?? result;
+    if (prismaCode(err) === "P2002") {
+      const first = await storedAnswer(result.mutation_id);
+      if (first) return answerAgain(item, first);
+    }
     throw err;
   }
 }
 
+// ─── Failures ────────────────────────────────────────────────────────────────
+
+/** Prisma's codes for a database that is unreachable, overloaded or busy — not for a bad change. */
+const TRANSIENT_PRISMA_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024", "P2028", "P2034", "P2037"]);
+
+/** The pg driver adapter's names for the same (lib @prisma/adapter-pg). */
+const TRANSIENT_ADAPTER_KINDS = new Set([
+  "DatabaseNotReachable",
+  "ConnectionClosed",
+  "SocketTimeout",
+  "TooManyConnections",
+  "TransactionWriteConflict",
+  "TlsConnectionError",
+]);
+
+/** Postgres SQLSTATEs: connection problems, serialization and deadlock, shutdown, out of resources. */
+const TRANSIENT_SQLSTATE = /^(08|40001$|40P01$|57P0|53)/;
+
+const TRANSIENT_MESSAGE =
+  /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|connection (terminated|closed|lost|refused|reset)|Connection terminated|timeout exceeded when trying to connect|Can't reach database|too many (clients|connections)/i;
+
 /**
- * Applies a push, in order, each change in its own transaction together with
- * the record of its answer. Stops at the first unexpected failure: the phone
- * sends everything without an answer again, in order, on its next push.
+ * Whether a failure is the database's — worth retrying the same change later —
+ * rather than the change's own. Prisma wraps the driver's error at varying
+ * depths, so every layer is looked at.
  */
-export async function pushNotes(raw: { mutation_id: string }[], actor: string | null): Promise<SyncResult[]> {
-  const results: SyncResult[] = [];
-  for (const item of raw) {
-    try {
-      results.push(await pushOne(item, actor));
-    } catch (err) {
-      console.error("[sync] push stopped at", item.mutation_id, err);
-      break;
-    }
+export function isTransientDbError(err: unknown): boolean {
+  const layers: unknown[] = [];
+  let e: unknown = err;
+  for (let i = 0; e && i < 5; i++) {
+    layers.push(e);
+    const meta = (e as { meta?: { driverAdapterError?: unknown } }).meta;
+    if (meta?.driverAdapterError) layers.push(meta.driverAdapterError);
+    e = (e as { cause?: unknown }).cause;
   }
-  return results;
+  return layers.some((layer) => {
+    const l = layer as { code?: unknown; kind?: unknown; message?: unknown; cause?: { kind?: unknown; code?: unknown } };
+    const code = typeof l.code === "string" ? l.code : undefined;
+    const kind = typeof l.kind === "string" ? l.kind : typeof l.cause?.kind === "string" ? l.cause.kind : undefined;
+    const sqlstate = kind === "postgres" ? (l.code ?? l.cause?.code) : undefined;
+    return (
+      (code !== undefined && TRANSIENT_PRISMA_CODES.has(code)) ||
+      (kind !== undefined && TRANSIENT_ADAPTER_KINDS.has(kind)) ||
+      (typeof sqlstate === "string" && TRANSIENT_SQLSTATE.test(sqlstate)) ||
+      (typeof l.message === "string" && TRANSIENT_MESSAGE.test(l.message))
+    );
+  });
 }
 
-async function pushOne(item: { mutation_id: string }, actor: string | null): Promise<SyncResult> {
-  const stored = await storedResult(item.mutation_id);
-  if (stored) return stored;
+/**
+ * The answer to a change that failed on its own — a bug, or data the checks
+ * let through that the database refused. Answered and recorded like any
+ * refusal, so the phone takes it off its queue instead of sending it first,
+ * forever, on every push. With the server's row when it can be read, so the
+ * phone can keep its words aside (as a copy) and show the server's version.
+ */
+async function answerFailure(item: PushedItem): Promise<SyncResult> {
+  const result: SyncResult = { mutation_id: item.mutation_id, status: "rejected", reason: "server_error" };
+  const parsed = SyncMutationSchema.safeParse(item);
+  if (parsed.success) {
+    result.row = await currentRow(parsed.data as SyncMutation).catch(() => undefined);
+    if (result.row === undefined) delete result.row;
+  }
+  return recordResult(item, result);
+}
+
+/** The size of an answer as it goes out, in bytes of JSON. */
+function answerBytes(result: SyncResult): number {
+  return Buffer.byteLength(JSON.stringify(result), "utf8");
+}
+
+/**
+ * Applies a push, in order, each change in its own transaction together with
+ * the record of its answer. A change that fails on its own is answered
+ * `rejected: server_error` and the push goes on.
+ *
+ * Stops early, answering what it has done (`more`), once the answers pass a
+ * few megabytes or the push has run for ~10 s (SYNC_PUSH_BUDGET): the phone
+ * sends the rest right away. Also stops at the first failure of the database
+ * itself (unreachable, overloaded); then the phone retries later. Either way
+ * the changes without an answer are sent again, in order.
+ */
+export async function pushNotes(
+  raw: PushedItem[],
+  actor: string | null,
+  now: () => number = Date.now
+): Promise<{ results: SyncResult[]; more: boolean }> {
+  const results: SyncResult[] = [];
+  const started = now();
+  let bytes = 0;
+  for (const [i, item] of raw.entries()) {
+    let result: SyncResult;
+    try {
+      result = await pushOne(item, actor);
+    } catch (err) {
+      if (isTransientDbError(err)) {
+        console.error("[sync] push stopped at", item.mutation_id, err);
+        return { results, more: false };
+      }
+      console.error("[sync] change failed, answered server_error:", item.mutation_id, err);
+      try {
+        result = await answerFailure(item);
+      } catch (again) {
+        // Not even the answer could be written: the database is the problem.
+        console.error("[sync] push stopped at", item.mutation_id, again);
+        return { results, more: false };
+      }
+    }
+    results.push(result);
+    bytes += answerBytes(result);
+    const last = i === raw.length - 1;
+    if (!last && (bytes >= SYNC_PUSH_BUDGET.bytes || now() - started >= SYNC_PUSH_BUDGET.ms)) {
+      return { results, more: true };
+    }
+  }
+  return { results, more: false };
+}
+
+async function pushOne(item: PushedItem, actor: string | null): Promise<SyncResult> {
+  const stored = await storedAnswer(item.mutation_id);
+  if (stored) return answerAgain(item, stored);
 
   const parsed = SyncMutationSchema.safeParse(item);
   if (!parsed.success) {
-    return recordResult({ mutation_id: item.mutation_id, status: "rejected", reason: "invalid" });
+    return recordResult(item, { mutation_id: item.mutation_id, status: "rejected", reason: "invalid" });
   }
   const m = parsed.data as SyncMutation;
 
@@ -372,25 +534,27 @@ async function pushOne(item: { mutation_id: string }, actor: string | null): Pro
     return await inTransaction(actor, async (tx, ctx) => {
       // Claimed first: a concurrent retry of the same change waits on this
       // key and then finds the answer, instead of applying it a second time.
-      await tx.syncMutation.create({ data: { mutation_id: m.mutation_id, result: {} } });
+      await tx.syncMutation.create({
+        data: { mutation_id: m.mutation_id, payload_hash: mutationPayloadHash(item), result: {} },
+      });
       const result = await apply(tx, m, ctx);
       await tx.syncMutation.update({
         where: { mutation_id: m.mutation_id },
-        data: { result: result as object },
+        data: { result: verdictOf(result) as object },
       });
       return result;
     });
   } catch (err) {
     const code = prismaCode(err);
     if (code === "P2002" && hitSyncMutationKey(err)) {
-      const first = await storedResult(m.mutation_id);
-      if (first) return first;
+      const first = await storedAnswer(m.mutation_id);
+      if (first) return answerAgain(item, first);
     }
     // What the database itself refused (a taken id, a missing reference, a
     // row gone mid-change) is this change's answer, not a server failure.
     if (code === "P2002" || code === "P2003" || code === "P2025") {
       const reason = code === "P2002" ? "duplicate" : code === "P2003" ? "reference_missing" : "not_found";
-      return recordResult({ mutation_id: m.mutation_id, status: "rejected", reason, row: await currentRow(m) });
+      return recordResult(item, { mutation_id: m.mutation_id, status: "rejected", reason, row: await currentRow(m) });
     }
     throw err;
   }
@@ -410,6 +574,20 @@ async function currentRow(m: SyncMutation, db: Db = prisma): Promise<SyncResult[
   return r ? toEdgeRow(r) : null;
 }
 
+/**
+ * Locks the row a change is about to judge, until the change's transaction
+ * ends. Taken before the row is read: a conflict is decided by comparing the
+ * server's text with the one the phone started from, and without the lock a
+ * web autosave landing between that read and the write would be overwritten
+ * with no conflict copy. With it, a concurrent write either committed before
+ * the lock — and the read sees it — or waits until this change is done.
+ * Nothing to lock is fine: the row does not exist (yet).
+ */
+async function lockRow(tx: Db, table: "Task" | "CanvasNode", id: string): Promise<void> {
+  if (table === "Task") await tx.$queryRaw`SELECT 1 FROM "Task" WHERE id = ${id} FOR UPDATE`;
+  else await tx.$queryRaw`SELECT 1 FROM "CanvasNode" WHERE id = ${id} FOR UPDATE`;
+}
+
 function apply(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
   if (m.entity === "issue") return m.op === "delete" ? deleteIssueChange(tx, m, ctx) : upsertIssue(tx, m, ctx);
   if (m.entity === "canvas_node") return m.op === "delete" ? deleteNodeChange(tx, m, ctx) : upsertNode(tx, m, ctx);
@@ -426,6 +604,7 @@ async function upsertIssue(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<
   if (!parsed.success) return answer(m, { status: "rejected", reason: "invalid", row: await currentRow(m, tx) });
   const patch = pickSent(m.fields, parsed.data) as IssuePatch;
 
+  await lockRow(tx, "Task", m.id);
   const current = await tx.issue.findUnique({ where: { id: m.id } });
 
   // A client deleted on the web while the phone was offline: keep the note,
@@ -498,6 +677,7 @@ async function upsertIssue(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<
 }
 
 async function deleteIssueChange(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
+  await lockRow(tx, "Task", m.id);
   const current = await tx.issue.findUnique({ where: { id: m.id } });
   const plan = planDelete(current ? current.description : null, m.base_hash);
   if (plan.action === "noop") return answer(m, { status: "applied", reason: "already_deleted", row: null });
@@ -511,6 +691,7 @@ async function upsertNode(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<S
   if (!parsed.success) return answer(m, { status: "rejected", reason: "invalid", row: await currentRow(m, tx) });
   const patch = pickSent(m.fields, parsed.data) as NodePatch;
 
+  await lockRow(tx, "CanvasNode", m.id);
   const current = await tx.canvasNode.findUnique({ where: { id: m.id }, select: NODE_SELECT });
   const issueId = current?.issue_id ?? patch.issue_id;
   const canvas = issueId ? await canvasOf(tx, issueId) : null;
@@ -555,6 +736,7 @@ async function upsertNode(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<S
 }
 
 async function deleteNodeChange(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
+  await lockRow(tx, "CanvasNode", m.id);
   const current = await tx.canvasNode.findUnique({ where: { id: m.id }, select: NODE_SELECT });
   const plan = planDelete(current ? current.content : null, m.base_hash);
   if (plan.action === "noop") return answer(m, { status: "applied", reason: "already_deleted", row: null });

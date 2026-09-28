@@ -24,6 +24,8 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Settings singleton** (una fila global). **Auth single-user**: `ALLOWED_EMAILS` en `auth.ts`.
 - **Copy de la UI en inglés**, en la web y en la app mobile (decidido el 2026-09-27; antes era español).
 - **Escrituras de issues e ideas** solo por `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST y la sync del teléfono (`/api/sync/*`) comparten reglas y auditoría. No escribas `prisma.issue.create/update/delete` en una ruta nueva.
+- **Límites de texto** en `lib/text-limits.ts` (título 500, texto 200 000 caracteres de HTML), sin imports: los lee la web, la API y el teléfono (`@shared/text-limits`). No pongas otro número en otro lado.
+- **La sync del teléfono** usa `requireSyncSession()` (sesión del navegador o token `mobile`, nunca uno `automation`), se cobra por cambio (`checkRateLimit` con costo) y corre de a un push por llamante (`lib/keyed-lock.ts`). Rate limit y lock viven en memoria: asumen **una sola réplica**.
 - **Borrados que el teléfono tiene que ver**: triggers `AFTER DELETE` en `Task`, `CanvasNode` y `CanvasEdge` llenan `SyncTombstone`. Invisibles para Prisma y guardados por `prisma/migrations.test.ts`: nunca los dropees ni los desactives.
 - **Números del dashboard** solo en `lib/metrics.ts` (puro, testeado contra la implementación anterior). El dashboard y `GET /api/metrics` (la app mobile) lo usan; nunca dupliques una fórmula. Las consultas viven en `lib/metrics-server.ts`.
 - **Prisma client** singleton en `lib/db.ts`.

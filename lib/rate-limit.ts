@@ -4,7 +4,11 @@
  * In memory is the right size here: the service runs a single replica, so one
  * process sees every request. If a second replica is ever added this becomes
  * per-replica and the effective limit multiplies — move it to the database or
- * Redis at that point.
+ * Redis at that point. The same holds for the per-caller lock on sync pushes
+ * (lib/keyed-lock.ts): one process, one queue per caller.
+ *
+ * A request may cost more than one unit (`cost`): a sync push is charged per
+ * change it carries, since that — not the request — is the work.
  */
 
 const WINDOW_MS = 60_000;
@@ -34,28 +38,31 @@ export function checkRateLimit(
   key: string,
   now: number = Date.now(),
   max: number = MAX_REQUESTS,
-  windowMs: number = WINDOW_MS
+  windowMs: number = WINDOW_MS,
+  cost: number = 1
 ): RateVerdict {
   if (windows.size > PRUNE_ABOVE) pruneRateLimits(now);
-  const existing = windows.get(key);
+  let window = windows.get(key);
 
-  if (!existing || now >= existing.resetAt) {
-    windows.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, remaining: max - 1, retryAfterSeconds: 0 };
+  if (!window || now >= window.resetAt) {
+    window = { count: 0, resetAt: now + windowMs };
+    windows.set(key, window);
   }
 
-  existing.count += 1;
-  if (existing.count > max) {
+  // Refused requests are not charged: a caller over its budget waits out the
+  // window, not a window that its own retries keep extending.
+  if (window.count + cost > max) {
     return {
       allowed: false,
-      remaining: 0,
-      retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+      remaining: Math.max(0, max - window.count),
+      retryAfterSeconds: Math.max(1, Math.ceil((window.resetAt - now) / 1000)),
     };
   }
 
+  window.count += cost;
   return {
     allowed: true,
-    remaining: max - existing.count,
+    remaining: max - window.count,
     retryAfterSeconds: 0,
   };
 }

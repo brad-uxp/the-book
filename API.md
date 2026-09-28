@@ -27,6 +27,9 @@ Two things it deliberately cannot do:
 - **Manage tokens.** `/api/settings/tokens` returns 403 for a token. A
   credential that can mint credentials cannot be revoked, so that stays
   interactive-only.
+- **Use the phone's sync** (`/api/sync/*`): 403. A token made in Settings is
+  an `automation` token; only the `mobile` tokens the app's sign-in mints may
+  sync. The issue routes give a script the same notes.
 - **Exceed 300 requests/minute.** Over that, `429` with a `Retry-After`
   header. Back off and retry; do not spin.
 
@@ -51,9 +54,9 @@ Sign-in accepts the ID token only if its signature checks against Google's keys,
 release Android client (any other client of the same Google Cloud project is
 refused), it has not expired, the email is verified and allowed, and its
 `nonce` claim is one issued above and not used before. Only the owner's personal
-Google account may sign in from the app (a subset of the web's allowlist). The token it mints is named `mobile · <device_name>`, lasts
-90 days, shows up in **Settings → API tokens** and is revoked from there like any
-other.
+Google account may sign in from the app (a subset of the web's allowlist). The token it mints is a `mobile` token named `mobile · <device_name>`, lasts
+90 days, shows up in **Settings → API tokens** (labelled "Phone") and is revoked
+from there like any other.
 
 Errors: `400` malformed body · `401` anything about the token or the nonce
 (deliberately not more specific) · `403` a Google account that is not allowed ·
@@ -169,9 +172,14 @@ not exist, `404`.
 | POST | `/api/sync/notes` `{ mutations: [...] }` → `{ results: [...] }` |
 | GET | `/api/sync/refs` → `{ clients, people, invoices }` |
 
-Built for the mobile app, open to any credential the API accepts. Types in
+Built for the mobile app: open to the browser's session and to `mobile`
+tokens (the app's sign-in); an `automation` token gets `403`. Types in
 `lib/sync-protocol.ts`, rules in `lib/sync.ts`. Every write goes through the
 same services as the routes above, so it is validated and audited the same way.
+
+Limits, shared with the REST routes (`lib/text-limits.ts`): a title up to 500
+characters, a description or an idea's content up to 200 000 characters of
+HTML; no text may contain a NUL character; `sort_order` fits a 32-bit integer.
 
 **Pull.** Without `since`, everything. The answer is
 `{ cursor, reset, has_more, issues, canvas_nodes, canvas_edges, tombstones }`;
@@ -185,12 +193,16 @@ tombstone retention) or unreadable: this is a full sync, so drop every row you
 hold that has no unsent change, then apply the pages.
 
 **Push.** Up to 200 changes, body up to 5 MB, applied in order, each in its own
-transaction. A change is
+transaction. Charged per change against a per-caller budget of 1000 a minute
+(`429` with `Retry-After` past it); one caller's pushes run one at a time. A
+change is
 `{ mutation_id, entity, op: "upsert" | "delete", id, base_updated_at?, base_hash?, title_hint?, fields? }`
 where `fields` holds only what changed.
 
-- `mutation_id` (UUID) makes it idempotent: sending it again returns the first
-  answer and changes nothing.
+- `mutation_id` (UUID) makes it idempotent: sending the same change again
+  returns the first answer (with the row as it is now) and changes nothing.
+  The id is bound to what the change carries: the same id with other contents
+  is `rejected` with `mutation_id_reused`.
 - An upsert of a row that does not exist and has no `base_updated_at` creates it
   with `id` (a UUID). With `base_updated_at`, the row was deleted on the server:
   if the change carried text (a description or an idea's content) the text is
@@ -209,13 +221,21 @@ where `fields` holds only what changed.
 
 Each answer is `{ mutation_id, status, reason?, row?, conflict_copy_id? }`, with
 `status` one of `applied`, `conflict_copy`, `deleted`, `rejected`; `row` is the
-row as the server now has it, when it exists. The answers come in order and may
-stop early on an unexpected server error — send the unanswered ones again.
+row as the server now has it, when it exists. A change that fails on its own
+(a server bug, data the database refuses) is `rejected` with `server_error`
+and the push goes on. The response is `{ results, more? }`, answers in order,
+and may cover only the first changes:
+
+- with `more: true` the server stopped on purpose — its answers passed ~4 MB
+  or the push ran ~10 s. Send the unanswered changes right away.
+- without it, the database itself failed (unreachable, overloaded). Send the
+  unanswered changes again later.
 
 **Refs.** `clients` `{ id, name, color_hex }`, `people`
 `{ id, name, role, status }`, `invoices`
-`{ id, invoice_number, client_name, status, amount_cents, net_cents }` — enough
-to label notes and offer @ and # mentions offline.
+`{ id, invoice_number, client_name, status, amount_cents }` (the total, as a
+mention shows it; never the net) — enough to label notes and offer @ and #
+mentions offline.
 
 ### People and salaries
 | Method | Path |

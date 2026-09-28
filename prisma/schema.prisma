@@ -510,9 +510,12 @@ model SyncTombstone {
  * twice. Purged by the daily job after 30 days.
  */
 model SyncMutation {
-  mutation_id String   @id
-  result      Json
-  created_at  DateTime @default(now())
+  mutation_id  String   @id
+  /// sha256 of the change as first sent (lib/sync.ts mutationPayloadHash):
+  /// the same id with other contents is refused, not answered as the first.
+  payload_hash String?
+  result       Json
+  created_at   DateTime @default(now())
 
   @@index([created_at])
 }
@@ -551,10 +554,19 @@ model AuditLog {
  * a password KDF would buy nothing against a brute force that is already
  * infeasible.
  */
+/// What a token is for. `mobile`: minted by the app's Google sign-in — the
+/// only kind the phone's sync accepts. `automation`: made by hand in
+/// Settings, for scripts and agents.
+enum ApiTokenKind {
+  mobile
+  automation
+}
+
 model ApiToken {
-  id           String    @id @default(uuid())
+  id           String       @id @default(uuid())
   name         String // human label, e.g. "claude-work-session"
-  token_prefix String    @unique // first chars of the token; shown in the UI
+  kind         ApiTokenKind @default(automation)
+  token_prefix String       @unique // first chars of the token; shown in the UI
   token_hash   String // sha256 of the full token
   created_at   DateTime  @default(now())
   last_used_at DateTime?

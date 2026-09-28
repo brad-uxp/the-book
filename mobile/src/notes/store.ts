@@ -2,9 +2,9 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { write, type Table } from "@/db/database";
 import * as repo from "@/db/repo";
 import { newId, textHash } from "@/lib/hash";
-import type { LocalIssue } from "@/sync/merge";
+import { TEXT_TOO_LONG, type LocalIssue } from "@/sync/merge";
 import { changedFields, coalesce, hasPendingDelete } from "@/sync/outbox";
-import { effectiveTitle, isBlankNote, searchText } from "./text";
+import { effectiveTitle, isBlankNote, searchText, textTooLong } from "./text";
 
 /**
  * Everything the phone does to a note, offline first: the local row changes
@@ -99,17 +99,37 @@ export async function editIssue(
     const next: LocalIssue = { ...row, ...diff, updated_at: new Date().toISOString() };
     next.search = searchText(next.title, next.description);
 
+    // A text past the server's limit stays here, flagged, and is not queued:
+    // the server would refuse it. Once shortened it goes out like any edit —
+    // judged against the text the edit started from, so if the server's text
+    // is not that one, the server keeps its own and the phone's becomes a
+    // "(conflict)" copy: words are never lost either way.
+    const tooLong = textTooLong(next.description);
+    if (tooLong) next.sync_error = TEXT_TOO_LONG;
+    else if (row.sync_error === TEXT_TOO_LONG) next.sync_error = null;
+
     if (!row.announced) {
-      // A new note becomes real with its first words; until then it stays here.
+      // A new note becomes real with its first words; until then it stays
+      // here. One too long to send shows in the list all the same; its create
+      // goes out with the first edit that brings it under the limit.
       if (!isBlankNote(next.title, next.description)) {
         next.announced = 1;
-        await repo.enqueue(db, create(next));
+        if (!tooLong) await repo.enqueue(db, create(next));
       }
       await repo.putIssue(db, next);
       return true;
     }
 
     await repo.putIssue(db, next);
+    if (tooLong) {
+      // A note the server has never confirmed is held back whole: its create
+      // must carry its text. One it has keeps sending everything but the text.
+      if (!row.server_updated_at) return true;
+      const { description: _held, ...rest } = diff;
+      if (Object.keys(rest).length === 0) return true;
+      await queueEdit(db, row, next, rest, opts.previousDescription);
+      return true;
+    }
     await queueEdit(db, row, next, diff, opts.previousDescription);
     return true;
   });

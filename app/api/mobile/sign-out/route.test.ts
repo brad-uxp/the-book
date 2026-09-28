@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe("POST /api/mobile/sign-out", () => {
   it("un token se revoca a sí mismo, y solo a sí mismo", async () => {
-    vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-1", label: "token:mobile · Pixel 8" });
+    vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-1", label: "token:mobile · Pixel 8", tokenKind: "mobile" });
     const res = await POST();
     expect(res.status).toBe(200);
     expect(updateMany).toHaveBeenCalledTimes(1);
@@ -49,7 +49,7 @@ describe("POST /api/mobile/sign-out", () => {
   });
 
   it("revocar dos veces es idempotente y no audita de nuevo", async () => {
-    vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-1", label: "token:mobile · Pixel 8" });
+    vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-1", label: "token:mobile · Pixel 8", tokenKind: "mobile" });
     updateMany.mockResolvedValue({ count: 0 } as never);
     expect((await POST()).status).toBe(200);
     expect(auditLog).not.toHaveBeenCalled();
