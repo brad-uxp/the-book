@@ -10,6 +10,7 @@ import {
   dotAt,
   dotPoints,
   edgePath,
+  edgeScreenPaths,
   fitView,
   grabRadius,
   pinchView,
@@ -129,4 +130,31 @@ test("zoom lejano: el centro de una tarjeta chica la agarra a ella, no a un punt
 test("zoom cercano: dentro de una tarjeta grande el radio completo vale", () => {
   const b = box("a", 0, 0, 280, 160);
   assert.equal(grabRadius(b, { x: 0, y: 0, z: 1.5 }, 140, 150, 26), 26);
+});
+
+test("una conexión en pantalla, con la vista identidad, es la misma que en el mundo", () => {
+  const e = edgePath({ x: 0, y: 0, width: 200, height: 80 }, { x: 400, y: 200, width: 200, height: 80 }, "bottom", "left");
+  const s = edgeScreenPaths(e.points, { x: 0, y: 0, z: 1 });
+  assert.equal(s.d, e.d);
+  assert.equal(s.arrow, e.arrow);
+});
+
+test("una conexión en pantalla sigue a la vista: cada punto es toScreen del punto del mundo", () => {
+  const e = edgePath({ x: 0, y: 0, width: 200, height: 80 }, { x: 900, y: 600, width: 200, height: 80 });
+  const v = { x: 30, y: -12, z: 0.5 };
+  const s = edgeScreenPaths(e.points, v);
+  const a = toScreen(v, e.start.x, e.start.y);
+  const b = toScreen(v, e.end.x, e.end.y);
+  assert.ok(s.d.startsWith(`M${a.x},${a.y} C`), s.d);
+  assert.ok(s.d.endsWith(` ${b.x},${b.y}`), s.d);
+  assert.ok(s.arrow.startsWith(`M${b.x},${b.y} L`), s.arrow);
+});
+
+test("la flecha escala con el zoom, como cuando la dibujaba el mundo", () => {
+  const e = edgePath({ x: 0, y: 0, width: 200, height: 80 }, { x: 600, y: 0, width: 200, height: 80 });
+  const corners = (arrow: string) => arrow.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => p.split(",").map(Number));
+  const [tip1, c1] = corners(edgeScreenPaths(e.points, { x: 0, y: 0, z: 1 }).arrow);
+  const [tip2, c2] = corners(edgeScreenPaths(e.points, { x: 0, y: 0, z: 2 }).arrow);
+  const len = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  assert.ok(Math.abs(len(tip2, c2) - 2 * len(tip1, c1)) < 0.05);
 });

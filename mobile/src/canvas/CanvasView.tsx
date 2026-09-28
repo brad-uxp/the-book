@@ -9,7 +9,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
-import Svg, { G, Path } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import { Ban, Check, Palette as PaletteIcon, PencilLine, RotateCcw, Trash2, X } from "lucide-react-native";
 import { CANVAS_COLORS, CANVAS_COLOR_KEYS, canvasColor } from "@shared/canvas-palette";
 import { snapToGrid } from "@shared/canvas-geometry";
@@ -21,12 +21,14 @@ import {
   dotAt,
   dotPoints,
   edgePath,
+  edgeScreenPaths,
   fitView,
   grabRadius,
   pinchView,
   toWorld,
   type CardBox,
   type EdgePath,
+  type EdgePoints,
   type Side,
   type View as Viewport,
 } from "./geometry";
@@ -40,8 +42,6 @@ const DOT_RADIUS = 26;
 const EDGE_TAP_PX = 16;
 /** Two taps this close in time, on the same thing, are a double tap. */
 const DOUBLE_TAP_MS = 320;
-/** Room around the cards for the curves, which bow out past them. */
-const EDGE_PAD = 240;
 
 export interface CanvasHandle {
   /** The world point at the middle of what the screen shows — where the + puts a new idea. */
@@ -473,48 +473,15 @@ export function CanvasView({
     setHeights((prev) => (Math.abs((prev[id] ?? -1) - h) < 0.5 ? prev : { ...prev, [id]: h }));
   }, []);
 
-  const edgeBounds = useMemo(() => {
-    if (boxes.length === 0) return null;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const b of boxes) {
-      minX = Math.min(minX, b.x);
-      minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x + b.w);
-      maxY = Math.max(maxY, b.y + b.h);
-    }
-    return { x: minX - EDGE_PAD, y: minY - EDGE_PAD, w: maxX - minX + EDGE_PAD * 2, h: maxY - minY + EDGE_PAD * 2 };
-  }, [boxes]);
-
   const hover = hoverId ? (boxById.get(hoverId) ?? null) : null;
 
   return (
     <View style={styles.root}>
       <GestureDetector gesture={gesture}>
         <View style={[styles.area, { backgroundColor: c.bg }]} onLayout={onLayout} collapsable={false} testID="canvas-area">
+          {/* Under the cards, in screen space — see EdgeLayer. */}
+          <EdgeLayer paths={paths} selectedId={selectedEdge?.id ?? null} c={c} vx={vx} vy={vy} vz={vz} />
           <Animated.View style={[styles.world, { width: size.w, height: size.h }, worldStyle]} pointerEvents="none">
-            {edgeBounds ? (
-              <Svg
-                style={{ position: "absolute", left: edgeBounds.x, top: edgeBounds.y }}
-                width={edgeBounds.w}
-                height={edgeBounds.h}
-              >
-                <G transform={`translate(${-edgeBounds.x}, ${-edgeBounds.y})`}>
-                  {paths.map(({ id, path }) => {
-                    const on = selectedEdge?.id === id;
-                    const stroke = on ? c.accent : c.faint;
-                    return (
-                      <G key={id}>
-                        <Path d={path.d} stroke={stroke} strokeWidth={on ? 2.6 : 1.8} fill="none" />
-                        <Path d={path.arrow} fill={stroke} />
-                      </G>
-                    );
-                  })}
-                </G>
-              </Svg>
-            ) : null}
             {ideas.map((idea) => {
               const b = boxById.get(idea.id)!;
               return (
@@ -586,6 +553,85 @@ export function CanvasView({
 }
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+// ── Connections ──────────────────────────────────────────────────────────────
+
+/**
+ * Every connection, in ONE Svg the size of the canvas on screen. Each line
+ * follows the view on the UI thread (`edgeScreenPaths`), so panning and
+ * zooming stay at frame rate.
+ *
+ * Never draw these in the zoomed world, in an Svg sized to the cards:
+ * react-native-svg paints an Svg into a bitmap of its layout size, and a
+ * spread-out canvas asked Android for more than it will draw (243 MB on the
+ * owner's phone — the app crashed opening it). svg-layers.test.ts keeps every
+ * Svg in this folder screen-sized.
+ */
+function EdgeLayer({
+  paths,
+  selectedId,
+  c,
+  vx,
+  vy,
+  vz,
+}: {
+  paths: { id: string; path: EdgePath }[];
+  selectedId: string | null;
+  c: Palette;
+  vx: SharedValue<number>;
+  vy: SharedValue<number>;
+  vz: SharedValue<number>;
+}) {
+  return (
+    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+      {paths.map(({ id, path }) => {
+        const on = selectedId === id;
+        return (
+          <EdgeLine
+            key={id}
+            points={path.points}
+            stroke={on ? c.accent : c.faint}
+            width={on ? 2.6 : 1.8}
+            vx={vx}
+            vy={vy}
+            vz={vz}
+          />
+        );
+      })}
+    </Svg>
+  );
+}
+
+function EdgeLine({
+  points,
+  stroke,
+  width,
+  vx,
+  vy,
+  vz,
+}: {
+  points: EdgePoints;
+  stroke: string;
+  /** In world units, as before: it thickens and thins with the zoom. */
+  width: number;
+  vx: SharedValue<number>;
+  vy: SharedValue<number>;
+  vz: SharedValue<number>;
+}) {
+  const lineProps = useAnimatedProps(() => {
+    const view = { x: vx.get(), y: vy.get(), z: vz.get() };
+    return { d: edgeScreenPaths(points, view).d, strokeWidth: width * view.z };
+  });
+  const arrowProps = useAnimatedProps(() => ({
+    d: edgeScreenPaths(points, { x: vx.get(), y: vy.get(), z: vz.get() }).arrow,
+  }));
+  return (
+    <>
+      <AnimatedPath animatedProps={lineProps} stroke={stroke} fill="none" />
+      <AnimatedPath animatedProps={arrowProps} fill={stroke} />
+    </>
+  );
+}
 
 // ── Cards ────────────────────────────────────────────────────────────────────
 

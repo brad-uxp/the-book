@@ -143,7 +143,16 @@ export interface EdgePath {
   mid: Point;
   /** The arrowhead at `end`, as a closed SVG path. */
   arrow: string;
+  /** The curve and arrowhead as plain numbers, for `edgeScreenPaths`. */
+  points: EdgePoints;
 }
+
+/**
+ * A connection in world units, flattened so a worklet can carry it to the UI
+ * thread: `[start, c1, c2, end, arrow corner, arrow corner]`, x then y each.
+ * The arrowhead's tip is `end`.
+ */
+export type EdgePoints = readonly number[];
 
 /** React Flow's `calculateControlOffset`, curvature 0.25. */
 function controlOffset(distance: number): number {
@@ -166,8 +175,8 @@ function control(a: EdgeAnchor, other: Point): Point {
 const ARROW_LENGTH = 10;
 const ARROW_HALF_WIDTH = 5;
 
-/** A closed arrowhead with its tip at `tip`, pointing away from `from`. */
-export function arrowHead(tip: Point, from: Point): string {
+/** The two base corners of an arrowhead with its tip at `tip`, pointing away from `from`. */
+function arrowCorners(tip: Point, from: Point): [Point, Point] {
   let dx = tip.x - from.x;
   let dy = tip.y - from.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -177,8 +186,17 @@ export function arrowHead(tip: Point, from: Point): string {
   const by = tip.y - dy * ARROW_LENGTH;
   const px = -dy * ARROW_HALF_WIDTH;
   const py = dx * ARROW_HALF_WIDTH;
+  return [
+    { x: bx + px, y: by + py },
+    { x: bx - px, y: by - py },
+  ];
+}
+
+/** A closed arrowhead with its tip at `tip`, pointing away from `from`. */
+export function arrowHead(tip: Point, from: Point): string {
+  const [a, b] = arrowCorners(tip, from);
   const f = (n: number) => Math.round(n * 100) / 100;
-  return `M${f(tip.x)},${f(tip.y)} L${f(bx + px)},${f(by + py)} L${f(bx - px)},${f(by - py)} Z`;
+  return `M${f(tip.x)},${f(tip.y)} L${f(a.x)},${f(a.y)} L${f(b.x)},${f(b.y)} Z`;
 }
 
 /** The inward normal of a side: which way a line pinned there points into the card. */
@@ -210,7 +228,34 @@ export function edgePath(from: Rect, to: Rect, sourceSide: Side | null = null, t
   // sits on the end itself, it points straight into the card.
   const n = inward(end.side);
   const tail = Math.hypot(c2.x - end.x, c2.y - end.y) > 0.5 ? c2 : { x: end.x - n.x, y: end.y - n.y };
-  return { d, start, end, c1, c2, mid, arrow: arrowHead(end, tail) };
+  const [a1, a2] = arrowCorners(end, tail);
+  const points = [start.x, start.y, c1.x, c1.y, c2.x, c2.y, end.x, end.y, a1.x, a1.y, a2.x, a2.y];
+  return { d, start, end, c1, c2, mid, arrow: arrowHead(end, tail), points };
+}
+
+/**
+ * A connection's curve and arrowhead as the screen draws them, through the
+ * current view.
+ *
+ * Connections are drawn in screen space, in one screen-sized <Svg>, not in
+ * the zoomed world: react-native-svg paints an Svg into a bitmap of its
+ * layout size, and an Svg the size of every card spread out asked Android for
+ * 243 MB on the owner's phone (Canvas: trying to draw too large bitmap — the
+ * limit is ~100 MB) and crashed the app. Screen-sized, it is a few MB at any
+ * canvas size, and lines stay sharp zoomed in. The line and arrow scale with
+ * the zoom as they did in the world.
+ *
+ * A worklet: the view changes every frame of a pan or pinch.
+ */
+export function edgeScreenPaths(p: EdgePoints, view: View): { d: string; arrow: string } {
+  "worklet";
+  const r = (n: number) => Math.round(n * 100) / 100;
+  const sx = (i: number) => r(p[i] * view.z + view.x);
+  const sy = (i: number) => r(p[i] * view.z + view.y);
+  return {
+    d: `M${sx(0)},${sy(1)} C${sx(2)},${sy(3)} ${sx(4)},${sy(5)} ${sx(6)},${sy(7)}`,
+    arrow: `M${sx(6)},${sy(7)} L${sx(8)},${sy(9)} L${sx(10)},${sy(11)} Z`,
+  };
 }
 
 function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
