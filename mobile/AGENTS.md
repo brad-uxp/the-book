@@ -26,8 +26,15 @@ Read the `expo` major in `package.json` (57 today) and use the versioned docs,
   Google) and release builds at `~/.android/book-release.jks`;
   `with-gradle-project-name.js` keeps Gradle from choking on the dot in "book.".
 - **Shared code**: `@shared/*` → `../lib/*`, only pure modules that import
-  nothing but each other (issues, notes, mentions, currency). Brand assets come
+  nothing but each other (issues, notes, mentions, currency, text-limits,
+  invoices, metrics-report). `lib/metrics` itself is NOT one (it imports
+  date-fns through `lib/dates`): the phone never recomputes a dashboard
+  number, it shows `GET /api/metrics`. Brand assets come
   from `../brand`.
+- **Business tabs** (Invoices, Salaries, Metrics — `src/business/`): each keeps
+  its last API answer in SQLite (`business_cache`) with its time and shows it
+  offline; actions go straight to the API and invalidate what they change.
+  The snapshots are wiped whenever the session ends.
 - **The note editor** (`src/editor/`) is TipTap on a page bundled into the app,
   in a WebView. The page is `editor-web/`, built with the web's TipTap and
   `../lib/rich-text` by `pnpm editor:build` into

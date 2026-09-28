@@ -29,7 +29,7 @@ demás.
 | **Canvas**: Gesture Handler + Reanimated, con los gestos del prototipo. Zoom solo por pinch; doble toque con dos dedos para encuadrar. Tarjetas con ancho elegido y alto según el contenido, sin scroll, igual que la web desde el 2026-09-27 (`height` en la base queda como dato, no como tamaño). | 60 fps en el hilo de UI; los gestos ya se probaron en el prototipo. |
 | **Login**: Google Sign-In nativo (Credential Manager de Android). El servidor verifica el ID token de Google contra `ALLOWED_EMAILS` y emite un `ApiToken`, revocable desde Settings. Detalle en [Login](#login). | Reusa los tokens que ya existen. ⚠️ Reabre el login mobile que se eliminó: **revisión de seguridad antes de producción**. |
 | **Copy de la UI en inglés**, web y app. | Una sola lengua en las dos plataformas. |
-| **Mismo repo, proyecto pnpm aparte**: la app va en `mobile/` con su propio lockfile (`mobile/pnpm-workspace.yaml` corta ahí); la web queda en la raíz. La raíz excluye `mobile/` de tsconfig, ESLint, Vitest y Tailwind. | Railway instala solo el lockfile de la raíz, sin ninguna dependencia de la app. La app reusa la lógica pura de `lib/` vía `@shared/*` (solo módulos sin imports: issues, notes, mentions, currency). |
+| **Mismo repo, proyecto pnpm aparte**: la app va en `mobile/` con su propio lockfile (`mobile/pnpm-workspace.yaml` corta ahí); la web queda en la raíz. La raíz excluye `mobile/` de tsconfig, ESLint, Vitest y Tailwind. | Railway instala solo el lockfile de la raíz, sin ninguna dependencia de la app. La app reusa la lógica pura de `lib/` vía `@shared/*` (solo módulos sin imports: issues, notes, mentions, currency, text-limits, invoices, metrics-report). |
 
 ## Fases
 
@@ -123,12 +123,55 @@ Tarjetas, conexiones, hoja de edición, gestos, sin conexión.
 
 ### 4 · Negocio
 
-- **Invoices:** lista con Awaiting / In prep / Paid, detalle, marcar como pagada, compartir
-  el PDF.
-- **Salaries:** quién no cobró este mes, registrar un pago, pagar a todos.
-- **Metrics:** lee `GET /api/metrics`.
+Construida en `feat/phase4-business` (2026-09-28). **Sin endpoints nuevos**: la app usa los
+que ya usa la web, con el token `mobile` (REST acepta cualquier credencial válida; la regla
+de `ApiToken.kind` solo restringe `/api/sync/*`).
 
-Estas tres tabs muestran lo último sincronizado cuando no hay señal.
+- **Invoices** (`GET /api/invoices`): abre en **Awaiting** (Sent) con el total "awaiting
+  payment" del dashboard arriba; **In prep** (Pending + Accounting), **Paid** y **All**.
+  Tarjeta: cliente con su color, neto (monto + comisión), número, vencimiento y **Past due**
+  cuando una Sent ya pasó su fin de mes. El total y la regla de vencida salen de
+  `lib/invoices.ts` — las funciones con que cuenta el dashboard —, compartido vía
+  `@shared/invoices`.
+  - **Detalle**: neto, desglose (monto, comisión del referidor, neto), notas, si tiene PDF y
+    las **notas vinculadas** (las que la mencionan con #, buscadas en la copia local: sirve sin
+    señal).
+  - **Mark as paid**: `PATCH /api/invoices/:id {status:"paid"}`, lo mismo que el selector de
+    estado de la web, con **Undo** (vuelve al estado anterior).
+  - **Share PDF**: `GET /api/invoices/:id/download-url` da un link de R2 firmado por 10
+    minutos; el PDF se baja a una carpeta del caché que se vacía antes de cada descarga (a lo
+    sumo una factura en el teléfono) y se abre el menú de compartir de Android. Si el archivo
+    es un link externo, se comparte el link. La clave del archivo nunca llega al teléfono.
+  - Tocar una mención **#** en una nota abre la factura.
+- **Salaries** (`GET /api/people`): un mes a la vez — el actual y, con las flechas, hasta 11
+  atrás (la API devuelve 12 pagos por persona). Avance ("7 of 11 paid · $x of $y"), **no
+  cobraron** (con días de atraso) y **cobraron** (día y ajuste). Un pago cuenta para el mes de
+  su `due_date`, como en la web; a diferencia de la web ("¿el último pago es de este mes?"),
+  un pago adelantado del mes que viene no tapa el de este. Se cuentan los activos que ya
+  estaban al terminar el mes, y quien cobró ese mes aunque hoy esté inactivo.
+  - **Register payment** (`POST /api/people/:id/payments`): el diálogo de la web — día, ajuste
+    (bono o descuento) y nota —, y dice en qué mes lo archiva el servidor.
+  - **Pay all**: el Bulk Pay de la web, con confirmación; una request por persona para
+    reportar cada falla por nombre. En un mes pasado cada pago se fecha en el día de pago de
+    esa persona en ese mes.
+- **Metrics** (`GET /api/metrics`): por cobrar (y cuántas vencidas), resultado neto del período
+  con su promedio mensual, rentabilidad corporativa sin los clientes excluidos en Settings y el
+  reparto A/B, y lo que vence en 5 días (pagos y facturas). Períodos de la web: este año,
+  12 meses o un mes. **Cada número es el de la API**; el teléfono no suma nada. El tipo de la
+  respuesta es `lib/metrics-report.ts` (sin imports), contra el que se chequea
+  `buildMetricsReport`.
+
+**Sin señal:** cada pantalla guarda su última respuesta entera en SQLite (tabla
+`business_cache`, migración local 4) y la muestra con la hora ("Offline · Updated 2h ago").
+Se refresca al entrar a la pantalla (si tiene más de 30 s), al volver la señal y al tirar para
+abajo; las acciones invalidan lo que dejan desactualizado. Las acciones necesitan conexión y
+lo dicen. Un período de Metrics nunca cargado lo dice en vez de mostrar ceros.
+
+**La caché se borra al terminar la sesión**, sea como sea (401 visto por la sync o por una
+pantalla, o salir): no hay nada escrito por la persona ahí, y un token revocado (teléfono
+perdido) no debe dejar sueldos atrás. Las notas se conservan, como antes. Limitación asumida:
+el teléfono guarda en claro (SQLite de la app) montos, netos y comisiones mientras la sesión
+dura — es lo que el dueño pidió ver sin señal.
 
 ### 5 · Push
 
@@ -241,6 +284,14 @@ plugin de Android de React Native 0.86 toma por error, y el build nativo falla.
 - `pnpm android`: debug en el emulador o el teléfono conectado. Con
   `EXPO_PUBLIC_API_URL=http://10.0.2.2:3001 pnpm start` habla con la web local (solo en
   debug, que además muestra un formulario "Use API token" para no depender de Google).
+- **Emulador, dos trampas conocidas:**
+  - Un build debug busca Metro en `10.0.2.2:8081` (no en `localhost`, así que `adb reverse`
+    no alcanza). Con Metro en otro puerto (varios trabajando a la vez), apuntar la app con
+    `adb -s emulator-5554 shell "run-as com.bolstro.book sh -c '… > shared_prefs/com.bolstro.book_preferences.xml'"`
+    con `<string name="debug_http_host">10.0.2.2:PUERTO</string>`.
+  - Con la GPU del Mac el emulador puede dejar de presentar cuadros bajo presión de memoria:
+    `screencap` devuelve una imagen vieja mientras la app sigue viva (`uiautomator dump` dice
+    la verdad). Arrancarlo con `-gpu swiftshader_indirect` lo evita, más lento.
 - `pnpm android:release`: APK firmado en `~/Downloads/book-<versión>-<code>.apk`. La clave
   es `~/.android/book-release.jks` (alias `book`); la contraseña sale del Llavero de macOS
   (`book. Android release keystore`) directo al entorno de Gradle. El script se niega a
