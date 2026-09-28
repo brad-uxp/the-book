@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { effectiveTitle, firstTextLine, fold, isBlankNote, searchText, textLines, textTooLong } from "./text.ts";
+import { effectiveTitle, firstTextLine, fold, isBlankNote, searchText, textTooLong } from "./text.ts";
 import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "../../../lib/text-limits.ts";
 
 test("sin título, la nota se llama por su primera línea con texto", () => {
@@ -28,10 +28,6 @@ test("la búsqueda ignora mayúsculas y acentos, e incluye las menciones", () =>
   const s = searchText("Reunión", '<p>Con <span data-mention-id="p1">@Ana Pérez</span> &amp; equipo</p>');
   assert.ok(s.includes("reunion"));
   assert.ok(s.includes("@ana perez & equipo"));
-});
-
-test("las líneas de una idea, para la lista del canvas", () => {
-  assert.deepEqual(textLines("<p>Uno</p><p></p><ul><li>dos</li></ul>"), ["Uno", "dos"]);
 });
 
 test("un título escrito nunca pasa del límite del servidor", () => {

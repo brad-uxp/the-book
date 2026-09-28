@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
   Pressable,
@@ -17,27 +17,24 @@ import {
   ChevronLeft,
   CloudOff,
   Ellipsis,
-  FileText,
   SquareCheck,
   StickyNote,
   Trash2,
-  User,
   Users,
   Waypoints,
   X,
 } from "lucide-react-native";
-import { formatCents } from "@shared/currency";
-import { formatInvoiceLabel } from "@shared/mentions";
 import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "@shared/text-limits";
 import { ProgressSlider } from "@/components/ProgressSlider";
 import { Sheet, SheetOption } from "@/components/Sheet";
 import { StateView } from "@/components/StateView";
 import { useToast } from "@/components/Toast";
-import { RichTextEditor, type MentionInvoice, type MentionPerson } from "@/editor/RichTextEditor";
+import { RichTextEditor } from "@/editor/RichTextEditor";
 import { dueLabel, relativeTime } from "@/lib/format";
 import { font, statusColor, statusLabel, usePalette } from "@/lib/theme";
-import { useClients, useInvoices, useIssue, usePeople, type InvoiceRef, type PersonRef } from "@/notes/hooks";
-import { deleteIssue, discardIfBlank, editIssue, undoDelete, type IssueEdit } from "@/notes/store";
+import { useClients, useIssue } from "@/notes/hooks";
+import { MentionSheet, useMentionRefs } from "@/components/MentionSheet";
+import { convertToCanvas, deleteIssue, discardIfBlank, editIssue, undoDelete, type IssueEdit } from "@/notes/store";
 import { TEXT_TOO_LONG } from "@/sync/merge";
 
 /** Typing is saved this long after the last keystroke — and at once on leaving. */
@@ -77,8 +74,7 @@ export default function NoteScreen() {
   const toast = useToast();
   const issue = useIssue(id);
   const clients = useClients();
-  const people = usePeople();
-  const invoices = useInvoices();
+  const { people, invoices, mentionPeople, mentionInvoices } = useMentionRefs();
 
   const [title, setTitle] = useState<string | null>(null);
   const [doc, setDoc] = useState<{ key: number; html: string } | null>(null);
@@ -169,20 +165,6 @@ export default function NoteScreen() {
     if (issue?.note_format === "canvas") router.replace({ pathname: "/canvas/[id]", params: { id } });
   }, [issue?.note_format, id, router]);
 
-  const mentionPeople = useMemo<MentionPerson[]>(
-    () => people.map((p) => ({ id: p.id, name: p.name, role: p.role, active: p.status === "active" })),
-    [people]
-  );
-  // The label the web writes into a #mention, from the same function.
-  const mentionInvoices = useMemo<MentionInvoice[]>(
-    () =>
-      invoices.map((i) => ({
-        id: i.id,
-        label: formatInvoiceLabel({ invoice_number: i.invoice_number, client: { name: i.client_name }, amount_cents: i.amount_cents }),
-        status: i.status,
-      })),
-    [invoices]
-  );
 
   if (issue === undefined || (issue && (doc === null || title === null))) {
     return <View style={[styles.screen, { backgroundColor: c.bg }]} />;
@@ -202,6 +184,13 @@ export default function NoteScreen() {
 
   const save = (edit: IssueEdit) => {
     void flush().then(() => editIssue(id, edit));
+  };
+
+  const toCanvas = async () => {
+    setSheet(null);
+    await flush();
+    // The screen follows the note: once it is a canvas, it opens as one.
+    await convertToCanvas(id);
   };
 
   const remove = async () => {
@@ -380,11 +369,16 @@ export default function NoteScreen() {
           }}
         />
         <SheetOption
-          icon={<Waypoints size={18} color={c.muted} />}
+          testID="type-canvas"
+          icon={<Waypoints size={18} color={isTask ? c.muted : c.accent} />}
           label="Canvas"
-          detail="Connected ideas around this one. Turning a note into a canvas on the phone arrives soon — do it on the web for now."
-          disabled
-          onPress={() => undefined}
+          detail={
+            isTask
+              ? "Only a note can become a canvas: make this a note first."
+              : "Connected ideas around this one. Your text becomes the first idea. Can't be turned back."
+          }
+          disabled={isTask}
+          onPress={toCanvas}
         />
         <SheetOption
           testID="type-task"
@@ -438,53 +432,6 @@ export default function NoteScreen() {
 
       <MentionSheet mention={mention} people={people} invoices={invoices} onClose={() => setMention(null)} />
     </View>
-  );
-}
-
-/**
- * What a tapped @ or # is. People and invoices have no screens on the phone
- * yet (invoices arrive in phase 4), so this says who or which it is, from
- * what the last sync brought.
- */
-function MentionSheet({
-  mention,
-  people,
-  invoices,
-  onClose,
-}: {
-  mention: { kind: "person" | "invoice"; id: string } | null;
-  people: PersonRef[];
-  invoices: InvoiceRef[];
-  onClose: () => void;
-}) {
-  const c = usePalette();
-  const person = mention?.kind === "person" ? people.find((p) => p.id === mention.id) : undefined;
-  const invoice = mention?.kind === "invoice" ? invoices.find((i) => i.id === mention.id) : undefined;
-  const title = person ? person.name : invoice ? `Invoice ${invoice.invoice_number ?? "without number"}` : mention?.kind === "invoice" ? "Invoice" : "Person";
-  return (
-    <Sheet visible={mention !== null} title={title} onClose={onClose}>
-      {person ? (
-        <SheetOption
-          testID="mention-person"
-          icon={<User size={18} color={c.ink} />}
-          label={person.role ?? "No role"}
-          detail={person.status === "active" ? "Active · salaries and people are on the web" : "No longer active"}
-          onPress={onClose}
-        />
-      ) : invoice ? (
-        <SheetOption
-          testID="mention-invoice"
-          icon={<FileText size={18} color={c.ink} />}
-          label={`${invoice.client_name} · ${formatCents(invoice.amount_cents)}`}
-          detail={`${invoice.status.charAt(0).toUpperCase()}${invoice.status.slice(1).replace("_", " ")} · invoices arrive on the phone in phase 4`}
-          onPress={onClose}
-        />
-      ) : (
-        <Text testID="mention-missing" style={[styles.meta, { color: c.muted, margin: 10 }]}>
-          Not on this phone. It may have been deleted — or it is new and the next sync brings it.
-        </Text>
-      )}
-    </Sheet>
   );
 }
 

@@ -6,15 +6,14 @@ import { font, usePalette } from "@/lib/theme";
 
 /**
  * The + of the notes list. A tap makes a text note straight away; holding it
- * (≈0.4 s, with a buzz) offers the other kinds. Canvas is shown but not yet
- * offered: drawing one on the phone arrives with the canvas itself.
+ * (≈0.4 s, with a buzz) offers the other kinds: Canvas, Task, Note.
  */
-export function Fab({ onCreate }: { onCreate: (kind: "note" | "task") => void }) {
+export function Fab({ onCreate }: { onCreate: (kind: "note" | "task" | "canvas") => void }) {
   const c = usePalette();
   const insets = useSafeAreaInsets();
   const [menu, setMenu] = useState(false);
 
-  const pick = (kind: "note" | "task") => {
+  const pick = (kind: "note" | "task" | "canvas") => {
     setMenu(false);
     onCreate(kind);
   };
@@ -40,11 +39,7 @@ export function Fab({ onCreate }: { onCreate: (kind: "note" | "task") => void })
       <Modal visible={menu} transparent animationType="fade" onRequestClose={() => setMenu(false)} statusBarTranslucent navigationBarTranslucent>
         <Pressable style={styles.scrim} onPress={() => setMenu(false)} accessibilityLabel="Close" />
         <View style={[styles.menu, { bottom: insets.bottom + 56 + 18 + 72 }]}>
-          <View style={[styles.item, { backgroundColor: c.surface, borderColor: c.line }]} accessibilityState={{ disabled: true }}>
-            <Waypoints size={18} color={c.faint} />
-            <Text style={[styles.itemText, { color: c.faint }]}>Canvas</Text>
-            <Text style={[styles.soon, { color: c.faint }]}>Arrives soon</Text>
-          </View>
+          <MenuItem label="Canvas" icon={<Waypoints size={18} color={c.accent} />} onPress={() => pick("canvas")} testID="fab-canvas" />
           <MenuItem label="Task" icon={<SquareCheck size={18} color={c.ink} />} onPress={() => pick("task")} testID="fab-task" />
           <MenuItem label="Note" icon={<StickyNote size={18} color={c.ink} />} onPress={() => pick("note")} testID="fab-note" />
         </View>
@@ -84,5 +79,4 @@ const styles = StyleSheet.create({
   menu: { position: "absolute", right: 18, gap: 8, alignItems: "flex-end" },
   item: { flexDirection: "row", alignItems: "center", gap: 10, height: 44, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, elevation: 4 },
   itemText: { fontFamily: font.semibold, fontSize: 15 },
-  soon: { fontFamily: font.medium, fontSize: 12 },
 });

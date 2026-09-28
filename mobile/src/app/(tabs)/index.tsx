@@ -50,9 +50,9 @@ export default function Notes() {
   );
 
   const create = useCallback(
-    async (kind: "note" | "task") => {
+    async (kind: "note" | "task" | "canvas") => {
       const id = await createNote(kind);
-      router.push({ pathname: "/note/[id]", params: { id, new: "1" } });
+      router.push({ pathname: kind === "canvas" ? "/canvas/[id]" : "/note/[id]", params: { id, new: "1" } });
     },
     [router]
   );

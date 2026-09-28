@@ -52,14 +52,6 @@ export function searchText(title: string, html: string): string {
   return fold(`${title} ${plainTextSnippet(html, 1_000_000)}`);
 }
 
-/** An idea's text as separate lines — how the read-only canvas list shows it. */
-export function textLines(html: string): string[] {
-  return html
-    .split(/<\/(?:p|h[1-6]|li|blockquote)>|<br\s*\/?>/i)
-    .map((block) => plainTextSnippet(block, 10_000))
-    .filter((line) => line !== "");
-}
-
 /**
  * Whether a note's text is past what the server accepts (lib/text-limits.ts).
  * Such a text stays on the phone, flagged, until it is shortened.
