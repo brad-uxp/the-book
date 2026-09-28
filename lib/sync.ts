@@ -183,6 +183,15 @@ export function nextCursor(plan: PullPlan, positions: Positions, hasMore: boolea
 
 // ─── Push ────────────────────────────────────────────────────────────────────
 
+/**
+ * When a push stops early and answers what it has done so far (`more`): the
+ * phone sends the rest at once. Each change is answered with its row, and a
+ * row can hold a long note, so the answer is cut near a few megabytes rather
+ * than grown to hundreds; the time limit keeps one push from holding a
+ * database connection for long.
+ */
+export const SYNC_PUSH_BUDGET = { bytes: 4 * 1024 * 1024, ms: 10_000 } as const;
+
 /** sha256 of a text, hex — what `base_hash` is compared against. UTF-8, like the phone's. */
 export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");

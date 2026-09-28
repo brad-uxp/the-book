@@ -127,12 +127,17 @@ export interface SyncResult {
 }
 
 /**
- * Results in the order the mutations were sent. A push can stop early on an
- * unexpected server error: mutations without a result were not processed and
- * must be sent again, in order.
+ * Results in the order the mutations were sent. Mutations without a result
+ * were not processed and must be sent again, in order:
+ *
+ *  - with `more`, the server stopped on purpose — the answer grew too big or
+ *    the push took too long. Send the rest right away.
+ *  - without it, it stopped on a failure (the database was unreachable).
+ *    Retry later.
  */
 export interface SyncPushResponse {
   results: SyncResult[];
+  more?: boolean;
 }
 
 /** What the phone needs offline to label clients and offer @ and # mentions. */

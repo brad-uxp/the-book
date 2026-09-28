@@ -7,6 +7,7 @@ import {
 } from "@/lib/validations";
 import {
   SYNC_PAGE_LIMITS,
+  SYNC_PUSH_BUDGET,
   conflictTitle,
   nextCursor,
   planDelete,
@@ -318,9 +319,38 @@ function hitSyncMutationKey(err: unknown): boolean {
   );
 }
 
-async function storedResult(mutationId: string): Promise<SyncResult | null> {
+/**
+ * What is kept of an answer: the verdict, never the row. A row can hold a long
+ * note, and answers are kept for a month — storing rows would keep deleted
+ * notes' text around and multiply one note by every change sent about it. A
+ * replay reads the row again instead: the server's current one, which is also
+ * the one the phone should have.
+ */
+type Verdict = Pick<SyncResult, "status" | "reason" | "conflict_copy_id">;
+
+function verdictOf(result: SyncResult): Verdict {
+  return {
+    status: result.status,
+    ...(result.reason !== undefined ? { reason: result.reason } : {}),
+    ...(result.conflict_copy_id !== undefined ? { conflict_copy_id: result.conflict_copy_id } : {}),
+  };
+}
+
+async function storedVerdict(mutationId: string): Promise<Verdict | null> {
   const row = await prisma.syncMutation.findUnique({ where: { mutation_id: mutationId } });
-  return row ? (row.result as unknown as SyncResult) : null;
+  const verdict = row?.result as Verdict | undefined;
+  return verdict?.status ? verdict : null;
+}
+
+/** A stored answer, as sent the first time: the verdict, and the row as it is now. */
+async function replay(item: { mutation_id: string }, verdict: Verdict): Promise<SyncResult> {
+  // Only the verdict's fields: an answer stored before verdicts were trimmed
+  // may still hold a row, and it would be stale.
+  const result: SyncResult = { mutation_id: item.mutation_id, ...verdictOf(verdict as SyncResult) };
+  if (verdict.status === "deleted") return result;
+  const parsed = SyncMutationSchema.safeParse(item);
+  if (!parsed.success) return result;
+  return { ...result, row: await currentRow(parsed.data as SyncMutation) };
 }
 
 /**
@@ -328,43 +358,68 @@ async function storedResult(mutationId: string): Promise<SyncResult | null> {
  * the database refused, whose transaction is already rolled back. A retry
  * racing it finds the first answer.
  */
-async function recordResult(result: SyncResult): Promise<SyncResult> {
+async function recordResult(item: { mutation_id: string }, result: SyncResult): Promise<SyncResult> {
   try {
     await prisma.syncMutation.create({
-      data: { mutation_id: result.mutation_id, result: result as object },
+      data: { mutation_id: result.mutation_id, result: verdictOf(result) as object },
     });
     return result;
   } catch (err) {
-    if (prismaCode(err) === "P2002") return (await storedResult(result.mutation_id)) ?? result;
+    if (prismaCode(err) === "P2002") {
+      const first = await storedVerdict(result.mutation_id);
+      if (first) return replay(item, first);
+    }
     throw err;
   }
 }
 
+/** The size of an answer as it goes out, in bytes of JSON. */
+function answerBytes(result: SyncResult): number {
+  return Buffer.byteLength(JSON.stringify(result), "utf8");
+}
+
 /**
  * Applies a push, in order, each change in its own transaction together with
- * the record of its answer. Stops at the first unexpected failure: the phone
- * sends everything without an answer again, in order, on its next push.
+ * the record of its answer.
+ *
+ * Stops early, answering what it has done (`more`), once the answers pass a
+ * few megabytes or the push has run for ~10 s (SYNC_PUSH_BUDGET): the phone
+ * sends the rest right away. Also stops at the first failure that is not the
+ * change's own (the database unreachable); then the phone retries later.
+ * Either way the changes without an answer are sent again, in order.
  */
-export async function pushNotes(raw: { mutation_id: string }[], actor: string | null): Promise<SyncResult[]> {
+export async function pushNotes(
+  raw: { mutation_id: string }[],
+  actor: string | null,
+  now: () => number = Date.now
+): Promise<{ results: SyncResult[]; more: boolean }> {
   const results: SyncResult[] = [];
-  for (const item of raw) {
+  const started = now();
+  let bytes = 0;
+  for (const [i, item] of raw.entries()) {
     try {
-      results.push(await pushOne(item, actor));
+      const result = await pushOne(item, actor);
+      results.push(result);
+      bytes += answerBytes(result);
     } catch (err) {
       console.error("[sync] push stopped at", item.mutation_id, err);
-      break;
+      return { results, more: false };
+    }
+    const last = i === raw.length - 1;
+    if (!last && (bytes >= SYNC_PUSH_BUDGET.bytes || now() - started >= SYNC_PUSH_BUDGET.ms)) {
+      return { results, more: true };
     }
   }
-  return results;
+  return { results, more: false };
 }
 
 async function pushOne(item: { mutation_id: string }, actor: string | null): Promise<SyncResult> {
-  const stored = await storedResult(item.mutation_id);
-  if (stored) return stored;
+  const stored = await storedVerdict(item.mutation_id);
+  if (stored) return replay(item, stored);
 
   const parsed = SyncMutationSchema.safeParse(item);
   if (!parsed.success) {
-    return recordResult({ mutation_id: item.mutation_id, status: "rejected", reason: "invalid" });
+    return recordResult(item, { mutation_id: item.mutation_id, status: "rejected", reason: "invalid" });
   }
   const m = parsed.data as SyncMutation;
 
@@ -376,21 +431,21 @@ async function pushOne(item: { mutation_id: string }, actor: string | null): Pro
       const result = await apply(tx, m, ctx);
       await tx.syncMutation.update({
         where: { mutation_id: m.mutation_id },
-        data: { result: result as object },
+        data: { result: verdictOf(result) as object },
       });
       return result;
     });
   } catch (err) {
     const code = prismaCode(err);
     if (code === "P2002" && hitSyncMutationKey(err)) {
-      const first = await storedResult(m.mutation_id);
-      if (first) return first;
+      const first = await storedVerdict(m.mutation_id);
+      if (first) return replay(item, first);
     }
     // What the database itself refused (a taken id, a missing reference, a
     // row gone mid-change) is this change's answer, not a server failure.
     if (code === "P2002" || code === "P2003" || code === "P2025") {
       const reason = code === "P2002" ? "duplicate" : code === "P2003" ? "reference_missing" : "not_found";
-      return recordResult({ mutation_id: m.mutation_id, status: "rejected", reason, row: await currentRow(m) });
+      return recordResult(item, { mutation_id: m.mutation_id, status: "rejected", reason, row: await currentRow(m) });
     }
     throw err;
   }

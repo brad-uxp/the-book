@@ -213,7 +213,12 @@ export class SyncEngine {
         body: { mutations: batch.map(wire) },
       });
       await this.applyResults(batch, res.results);
-      if (res.results.length < batch.length) throw new Error("The server stopped partway. Retrying soon.");
+      if (res.results.length < batch.length) {
+        // `more`: the server answered part of it on purpose (its answer grew
+        // too big, or the push too long). The rest is still queued: send it now.
+        if (res.more) continue;
+        throw new Error("The server stopped partway. Retrying soon.");
+      }
     }
   }
 

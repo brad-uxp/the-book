@@ -25,9 +25,10 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Applies up to 200 changes in order and answers each. The body is read with
- * a cap: a long note is tens of kilobytes, a push of them a few megabytes at
- * most.
+ * Applies up to 200 changes in order and answers each — or a prefix of them,
+ * with `more`, when the answer grows past its budget (lib/sync-server.ts).
+ * The body is read with a cap: a long note is tens of kilobytes, a push of
+ * them a few megabytes at most.
  */
 export async function POST(req: NextRequest) {
   const denied = await requireSession();
@@ -42,6 +43,6 @@ export async function POST(req: NextRequest) {
   const parsed = SyncPushSchema.safeParse(body.value);
   if (!parsed.success) return invalid(parsed.error);
 
-  const results = await pushNotes(parsed.data.mutations, await getActorEmail());
-  return NextResponse.json({ results });
+  const { results, more } = await pushNotes(parsed.data.mutations, await getActorEmail());
+  return NextResponse.json(more ? { results, more } : { results });
 }

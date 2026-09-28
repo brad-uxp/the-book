@@ -127,7 +127,34 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
       { mutation_id: MID(1), status: "rejected", reason: "invalid" },
       { mutation_id: MID(2), status: "applied", reason: "already_deleted", row: null },
     ]);
-    expect(record).toHaveBeenCalledWith({ data: { mutation_id: MID(1), result: results[0] } });
+    // Se guarda el veredicto, nunca la fila.
+    expect(record).toHaveBeenCalledWith({ data: { mutation_id: MID(1), result: { status: "rejected", reason: "invalid" } } });
+  });
+
+  it("lo guardado es solo el veredicto; un reintento reconstruye la fila desde la base", async () => {
+    const now = issueRow(ID, "2026-09-28T12:00:00Z");
+    // Una respuesta guardada antes de este cambio, con una fila vieja adentro: no se reenvía.
+    stored.mockResolvedValue({ result: { mutation_id: MID(1), status: "applied", row: { id: ID, title: "viejo" } } } as never);
+    vi.mocked(prisma.issue.findUnique).mockResolvedValueOnce(now as never);
+    const res = await push({ mutations: [{ mutation_id: MID(1), entity: "issue", op: "upsert", id: ID, fields: { title: "t" } }] });
+    const [result] = (await res.json()).results;
+    expect(result).toMatchObject({ mutation_id: MID(1), status: "applied", row: { id: ID, updated_at: "2026-09-28T12:00:00.000Z" } });
+    expect(result.row.title).toBe("t");
+    expect(tx).not.toHaveBeenCalled();
+  });
+
+  it("al aplicar, la respuesta lleva la fila pero la base guarda solo el veredicto", async () => {
+    const before = { ...issueRow(ID, "2026-09-28T10:00:00Z"), description: "<p>largo</p>" };
+    const update = vi.fn();
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({
+        syncMutation: { create: vi.fn(), update },
+        issue: { findUnique: vi.fn(async () => before) },
+      })) as never);
+    const res = await push({ mutations: [{ mutation_id: MID(1), entity: "issue", op: "upsert", id: ID, base_updated_at: "2026-09-28T10:00:00Z", fields: {} }] });
+    const [result] = (await res.json()).results;
+    expect(result.row.description).toBe("<p>largo</p>");
+    expect(update).toHaveBeenCalledWith({ where: { mutation_id: MID(1) }, data: { result: { status: "applied" } } });
   });
 
   it("lo que la base rechaza (P2003) es la respuesta de ese cambio, no un 500", async () => {
@@ -164,6 +191,54 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     await push({ mutations: [{ mutation_id: MID(1), entity: "issue", op: "delete", id: ID }] });
     expect(auditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/sync/notes — presupuesto de un push", () => {
+  const upserts = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      mutation_id: MID(i + 1),
+      entity: "issue",
+      op: "upsert",
+      id: ID,
+      base_updated_at: "2026-09-28T10:00:00Z",
+      fields: {},
+    }));
+
+  function rowsOf(description: string) {
+    const row = { ...issueRow(ID, "2026-09-28T10:00:00Z"), description };
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => row) } })) as never);
+  }
+
+  it("corta cuando la respuesta pasa de unos megas y avisa con more: el resto se manda enseguida", async () => {
+    rowsOf("x".repeat(1_500_000));
+    const body = await (await push({ mutations: upserts(5) })).json();
+    expect(body.more).toBe(true);
+    expect(body.results).toHaveLength(3); // 3 × 1,5 MB pasan los 4 MB
+    expect(tx).toHaveBeenCalledTimes(3);
+  });
+
+  it("corta por tiempo (~10 s) y avisa con more", async () => {
+    rowsOf("<p>corto</p>");
+    let clock = 0;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => (clock += 6000));
+    try {
+      const body = await (await push({ mutations: upserts(5) })).json();
+      expect(body.more).toBe(true);
+      expect(body.results).toHaveLength(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("un push que termina completo no lleva more; uno que se cortó por un fallo tampoco", async () => {
+    rowsOf("<p>corto</p>");
+    expect(await (await push({ mutations: upserts(3) })).json()).not.toHaveProperty("more");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    tx.mockRejectedValueOnce(Object.assign(new Error("Can't reach database server"), { code: "P1001" }));
+    const body = await (await push({ mutations: upserts(2) })).json();
+    expect(body).toEqual({ results: [] });
   });
 });
 
