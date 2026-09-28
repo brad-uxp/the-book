@@ -44,10 +44,19 @@ export function isReleaseKey(key: string): boolean {
   return KEY_RE.test(key);
 }
 
+/**
+ * How far above the latest published build a new versionCode may jump. Real
+ * releases go up by one; a stolen release token could otherwise publish
+ * 999999999 and park every later legitimate build behind it. Recovery, if it
+ * ever happens: revoke the token in Settings and delete the rogue
+ * MobileRelease row (and its R2 object).
+ */
+export const RELEASE_MAX_CODE_STEP = 100;
+
 export type CreateDecision =
   | { action: "create" }
   | { action: "retry"; id: string }
-  | { action: "reject"; status: 409; error: string };
+  | { action: "reject"; status: 400 | 409; error: string };
 
 /**
  * Whether a new build may be registered. versionCode must be strictly above
@@ -66,6 +75,13 @@ export function decideCreate(
       action: "reject",
       status: 409,
       error: `versionCode must be above the latest published build (${latestPublishedCode})`,
+    };
+  }
+  if (latestPublishedCode !== null && versionCode - latestPublishedCode > RELEASE_MAX_CODE_STEP) {
+    return {
+      action: "reject",
+      status: 400,
+      error: `versionCode may be at most ${RELEASE_MAX_CODE_STEP} above the latest published build (${latestPublishedCode})`,
     };
   }
   if (existing?.published) {

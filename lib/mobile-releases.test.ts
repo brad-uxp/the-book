@@ -48,6 +48,12 @@ describe("decideCreate", () => {
     expect(decideCreate(5, 6, null)).toMatchObject({ action: "reject", status: 409 });
   });
 
+  it("no puede saltar más de 100 por encima de la última publicada (un token robado no estaciona 999999999)", () => {
+    expect(decideCreate(106, 6, null)).toEqual({ action: "create" });
+    expect(decideCreate(107, 6, null)).toMatchObject({ action: "reject", status: 400 });
+    expect(decideCreate(999_999_999, 6, null)).toMatchObject({ action: "reject", status: 400 });
+  });
+
   it("reintenta una creada y no publicada (la subida falló)", () => {
     expect(decideCreate(7, 6, { id: "r7", published: false })).toEqual({ action: "retry", id: "r7" });
   });
