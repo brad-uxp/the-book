@@ -371,6 +371,9 @@ export const SyncPushSchema = z.object({
     .max(SYNC_PUSH_MAX),
 });
 
+/** More keys than any entity has fields: an issue has 9. */
+const SYNC_FIELDS_MAX = 16;
+
 export const SyncMutationSchema = z.object({
   mutation_id: z.uuid(),
   entity: z.enum(["issue", "canvas_node", "canvas_edge"]),
@@ -383,7 +386,14 @@ export const SyncMutationSchema = z.object({
     .nullable()
     .optional(),
   title_hint: Text().max(ISSUE_TITLE_MAX).optional(),
-  fields: z.record(z.string(), z.unknown()).optional(),
+  // Flat: every field a change can set is a string, number, boolean or null
+  // (the entity schemas below say which). Nothing nested gets past here, so
+  // no later step — hashing a change, applying it — walks a structure a
+  // client made arbitrarily deep.
+  fields: z
+    .record(z.string().max(64), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .refine((f) => Object.keys(f).length <= SYNC_FIELDS_MAX, "Too many fields")
+    .optional(),
 });
 
 /** An issue's changed fields. Unknown keys are refused: they would be a phone bug, silently dropped. */

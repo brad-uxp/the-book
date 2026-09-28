@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSyncSession, readJsonLimited, invalid, resolveActor, type Actor } from "@/lib/api";
 import { getActorEmail } from "@/lib/audit";
 import { withKeyLock } from "@/lib/keyed-lock";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, refundRateLimit } from "@/lib/rate-limit";
 import { SyncPushSchema } from "@/lib/validations";
 import { SYNC_PUSH_MAX_BYTES } from "@/lib/sync-protocol";
 import { SYNC_MUTATIONS_PER_MINUTE } from "@/lib/sync";
@@ -66,5 +66,8 @@ export async function POST(req: NextRequest) {
   // runs, and a burst from one token must not take the pool from the web.
   const actorEmail = await getActorEmail();
   const { results, more } = await withKeyLock(key, () => pushNotes(mutations, actorEmail));
+  // Changes left unanswered (the push stopped early) will be sent again:
+  // they are charged then, not now.
+  refundRateLimit(key, mutations.length - results.length);
   return NextResponse.json(more ? { results, more } : { results });
 }

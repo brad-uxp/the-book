@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { checkShapeChange, isBlankHtml, type IssueShape } from "./notes";
 import { ISSUE_TITLE_MAX } from "./text-limits";
+import type { SyncMutation } from "./sync-protocol";
 
 // ─── Retention ───────────────────────────────────────────────────────────────
 
@@ -54,6 +55,47 @@ export const SYNC_PAGE_LIMITS = {
 } as const;
 
 export type PullEntity = keyof typeof SYNC_PAGE_LIMITS;
+
+/**
+ * The most a pull page carries, in bytes of JSON. A page of full rows can be
+ * big — 200 notes and 500 ideas of up to 200 000 characters each is well over
+ * a hundred megabytes — so a page also ends once its rows reach this, with
+ * `has_more`. The same size as a push's answer budget.
+ */
+export const SYNC_PULL_BUDGET_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Decides, row by row in page order, which rows fit in a page of `maxBytes`.
+ *
+ * The first row always fits, however big — a page must make progress. Once a
+ * row does not fit, the page is full: nothing after it is taken, not even a
+ * row small enough, so every list ends at its last row taken and the cursor
+ * resumes each from there. `null` is a row read but not sent (a tombstone of
+ * a row that exists again): it costs nothing, and is passed only while the
+ * page has room.
+ */
+export function createPageBudget(maxBytes: number) {
+  let used = 0;
+  let taken = 0;
+  let full = false;
+  return {
+    fits(row: unknown): boolean {
+      if (full) return false;
+      if (row === null) return true;
+      const size = Buffer.byteLength(JSON.stringify(row), "utf8") + 1;
+      if (taken > 0 && used + size > maxBytes) {
+        full = true;
+        return false;
+      }
+      used += size;
+      taken += 1;
+      return true;
+    },
+    get full(): boolean {
+      return full;
+    },
+  };
+}
 
 /** Keyset position in one entity's (timestamp, id) order. Tombstone ids are bigints, as strings. */
 export type Position = [number, string];
@@ -137,16 +179,27 @@ export interface PullPlan {
  */
 const CURSOR_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
+/** The largest id a tombstone can have: Postgres's bigint. */
+const BIGINT_MAX = BigInt("9223372036854775807");
+
+/** A tombstone's id as a cursor carries it: a decimal Postgres bigint, no sign, no leading zeros. */
+export function isTombstoneId(id: string): boolean {
+  return /^(0|[1-9]\d{0,18})$/.test(id) && BigInt(id) <= BIGINT_MAX;
+}
+
 /**
- * Whether every time a cursor carries is one this server could have issued: a
- * whole number of ms, from 1970 up to (about) now. Anything else was not made
- * here — and a time Date cannot hold would reach the database as an Invalid
- * Date and fail the whole pull.
+ * Whether every value a cursor carries is one this server could have issued:
+ * times a whole number of ms, from 1970 up to (about) now; a tombstone
+ * position a bigint id. Anything else was not made here — and a time Date
+ * cannot hold, or an id past bigint, would reach the database as a value it
+ * refuses and fail the whole pull.
  */
-function cursorTimesValid(cursor: CursorData, now: number): boolean {
+function cursorValuesValid(cursor: CursorData, now: number): boolean {
   const ok = (ms: number) => Number.isSafeInteger(ms) && ms >= 0 && ms <= now + CURSOR_CLOCK_SKEW_MS;
   if (cursor.t !== null && !ok(cursor.t)) return false;
   if (cursor.at !== undefined && !ok(cursor.at)) return false;
+  const tomb = cursor.k?.tombstones;
+  if (tomb && !isTombstoneId(tomb[1])) return false;
   return Object.values(cursor.k ?? {}).every((pos) => ok(pos[0]));
 }
 
@@ -159,7 +212,7 @@ export function planPull(raw: string | null, now: number): PullPlan {
   if (raw === null || raw === "") return full(false);
 
   const cursor = decodeCursor(raw);
-  if (!cursor || !cursorTimesValid(cursor, now)) return full(true);
+  if (!cursor || !cursorValuesValid(cursor, now)) return full(true);
 
   if (cursor.t !== null && cursor.t - SYNC_OVERLAP_MS < now - SYNC_TOMBSTONE_RETENTION_MS) {
     // Deletions older than this may already be purged; the phone could keep
@@ -219,13 +272,15 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * What a pushed change carried, as a hash: everything but its id, as it was
- * sent (before validation, which may drop keys). A retry of the same change
- * hashes the same — the phone never alters a change once sent — so a
- * different hash under a known id is a reused id, not a retry.
+ * What a pushed change carries, as a hash: every field of the change as
+ * validated (SyncMutationSchema) but its id. Validation drops unknown keys
+ * and keeps `fields` flat, so this hashes a bounded, shallow value — never
+ * whatever else a client sent. A retry of the same change hashes the same
+ * (the phone never alters a change once sent), so a different hash under a
+ * known id is a reused id, not a retry.
  */
-export function mutationPayloadHash(item: { mutation_id: string } & Record<string, unknown>): string {
-  const { mutation_id: _id, ...payload } = item;
+export function mutationPayloadHash(m: SyncMutation): string {
+  const { mutation_id: _id, ...payload } = m;
   return textHash(canonicalJson(payload));
 }
 

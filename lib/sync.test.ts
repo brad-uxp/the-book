@@ -11,6 +11,8 @@ import {
   planDelete,
   planIssueUpsert,
   planNodeUpsert,
+  createPageBudget,
+  isTombstoneId,
   mutationPayloadHash,
   planPull,
   syncPurgeCutoffs,
@@ -19,6 +21,7 @@ import {
   type IssueNow,
   type NodeNow,
 } from "./sync";
+import type { SyncMutation } from "./sync-protocol";
 
 const NOW = Date.parse("2026-09-28T15:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
@@ -83,6 +86,24 @@ describe("planPull", () => {
     expect(planPull(encodeCursor(data), NOW)).toMatchObject({ from: null, reset: true, at: NOW });
   });
 
+  it.each([
+    ["por encima de bigint", "9223372036854775808"],
+    ["19 nueves", "9999999999999999999"],
+    ["negativo", "-1"],
+    ["con ceros adelante", "007"],
+    ["no numérico", "abc"],
+  ])("una posición de tombstone que no es un bigint (%s): reset", (_label, id) => {
+    const raw = encodeCursor({ t: NOW - DAY, at: NOW - 1000, k: { tombstones: [NOW - 5000, id] } });
+    expect(planPull(raw, NOW)).toMatchObject({ from: null, reset: true });
+  });
+
+  it("el bigint más grande sí es una posición válida", () => {
+    const raw = encodeCursor({ t: NOW - DAY, at: NOW - 1000, k: { tombstones: [NOW - 5000, "9223372036854775807"] } });
+    expect(planPull(raw, NOW).reset).toBe(false);
+    expect(isTombstoneId("0")).toBe(true);
+    expect(isTombstoneId("9223372036854775807")).toBe(true);
+  });
+
   it("un cursor con la hora un poco adelantada (reloj de la base) se acepta", () => {
     expect(planPull(encodeCursor({ t: NOW + 60_000 }), NOW).reset).toBe(false);
   });
@@ -107,6 +128,42 @@ describe("planPull", () => {
       at: NOW,
       k: { issues: [NOW - 1, "x"] },
     });
+  });
+});
+
+describe("createPageBudget", () => {
+  const row = (chars: number) => ({ d: "x".repeat(chars) });
+
+  it("toma filas mientras entran y corta en la primera que no", () => {
+    const b = createPageBudget(1000);
+    expect([row(320), row(320), row(320), row(10)].map((r) => b.fits(r))).toEqual([true, true, true, false]); // 3 × 329 bytes + 19 > 1000
+    expect(b.full).toBe(true);
+  });
+
+  it("una vez lleno no toma nada más, ni una fila chica: cada lista termina en su última fila tomada", () => {
+    const b = createPageBudget(1000);
+    b.fits(row(900));
+    expect(b.fits(row(900))).toBe(false);
+    expect(b.fits(row(1))).toBe(false);
+    expect(b.fits(null)).toBe(false);
+  });
+
+  it("la primera fila entra aunque sola pase el límite: la página siempre avanza", () => {
+    const b = createPageBudget(1000);
+    expect(b.fits(row(5000))).toBe(true);
+    expect(b.fits(row(1))).toBe(false);
+  });
+
+  it("una fila que no se manda (null) no ocupa lugar", () => {
+    const b = createPageBudget(1000);
+    expect(b.fits(null)).toBe(true);
+    expect(b.fits(row(900))).toBe(true);
+  });
+
+  it("cuenta bytes, no caracteres", () => {
+    const b = createPageBudget(1000);
+    expect(b.fits({ d: "é".repeat(300) })).toBe(true); // ~600 bytes
+    expect(b.fits({ d: "é".repeat(300) })).toBe(false);
   });
 });
 
@@ -300,10 +357,10 @@ describe("planDelete", () => {
 });
 
 describe("mutationPayloadHash", () => {
-  const change = { mutation_id: "m1", entity: "issue", op: "upsert", id: "i1", fields: { title: "a", description: "<p>b</p>" } };
+  const change: SyncMutation = { mutation_id: "m1", entity: "issue", op: "upsert", id: "i1", fields: { title: "a", description: "<p>b</p>" } };
 
   it("no depende del orden de las claves, a ninguna profundidad", () => {
-    const reordered = { fields: { description: "<p>b</p>", title: "a" }, id: "i1", op: "upsert", entity: "issue", mutation_id: "m1" };
+    const reordered: SyncMutation = { fields: { description: "<p>b</p>", title: "a" }, id: "i1", op: "upsert", entity: "issue", mutation_id: "m1" };
     expect(mutationPayloadHash(reordered)).toBe(mutationPayloadHash(change));
   });
 

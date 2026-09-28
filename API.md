@@ -188,7 +188,9 @@ HTML; no text may contain a NUL character; `sort_order` fits a 32-bit integer.
 
 **Pull.** Without `since`, everything. The answer is
 `{ cursor, reset, has_more, issues, canvas_nodes, canvas_edges, tombstones }`;
-call again with `cursor` while `has_more`, storing it after each page. Rows are
+call again with `cursor` while `has_more`, storing it after each page. A page
+ends at 200 issues / 500 ideas / 1000 connections / 1000 tombstones or at ~4 MB
+of rows, whichever comes first (always at least one row). Rows are
 whole (issues include `description`, ideas their `content`); `tombstones` are
 `{ entity: "issue" | "canvas_node" | "canvas_edge", entity_id, issue_id, deleted_at }`
 for rows deleted in any way (a cascade too — the database records them with
@@ -199,8 +201,8 @@ hold that has no unsent change, then apply the pages.
 
 **Push.** Up to 200 changes, body up to 5 MB, applied in order, each in its own
 transaction. Charged per change against a per-caller budget of 1000 a minute
-(`429` with `Retry-After` past it); one caller's pushes run one at a time. A
-change is
+(`429` with `Retry-After` past it) — only for the changes it answered, since
+the rest are sent again; one caller's pushes run one at a time. A change is
 `{ mutation_id, entity, op: "upsert" | "delete", id, base_updated_at?, base_hash?, title_hint?, fields? }`
 where `fields` holds only what changed.
 

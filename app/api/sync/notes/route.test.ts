@@ -27,6 +27,7 @@ import { auditLog } from "@/lib/audit";
 import { requireSyncSession } from "@/lib/api";
 import { SYNC_MUTATIONS_PER_MINUTE, SYNC_PAGE_LIMITS, encodeCursor, mutationPayloadHash } from "@/lib/sync";
 import { resetRateLimits } from "@/lib/rate-limit";
+import type { SyncMutation } from "@/lib/sync-protocol";
 
 const tx = vi.mocked(prisma.$transaction);
 const stored = vi.mocked(prisma.syncMutation.findUnique);
@@ -131,14 +132,38 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
       { mutation_id: MID(1), status: "rejected", reason: "invalid" },
       { mutation_id: MID(2), status: "applied", reason: "already_deleted", row: null },
     ]);
-    // Se guarda el veredicto, nunca la fila.
-    expect(record).toHaveBeenCalledWith({
-      data: { mutation_id: MID(1), payload_hash: expect.stringMatching(/^[0-9a-f]{64}$/), result: { status: "rejected", reason: "invalid" } },
-    });
+    // Un cambio inválido no se guarda: se rechaza igual cada vez.
+    expect(record).not.toHaveBeenCalled();
+    expect(stored).not.toHaveBeenCalledWith({ where: { mutation_id: MID(1) } });
+  });
+
+  it("basura anidada a cualquier profundidad en fields se rechaza sola, sin recorrerla; el push sigue", async () => {
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({
+        $queryRaw: vi.fn(async () => []),
+        syncMutation: { create: vi.fn(), update: vi.fn() },
+        issue: { findUnique: vi.fn(async () => null) },
+      })) as never);
+    const deep = "[".repeat(200_000) + "]".repeat(200_000);
+    const body = `{"mutations":[{"mutation_id":"${MID(1)}","entity":"issue","op":"upsert","id":"${ID}","fields":{"title":${deep}}},{"mutation_id":"${MID(2)}","entity":"issue","op":"delete","id":"${ID}"}]}`;
+    const res = await push(body);
+    expect(res.status).toBe(200);
+    const { results } = await res.json();
+    expect(results).toEqual([
+      { mutation_id: MID(1), status: "rejected", reason: "invalid" },
+      { mutation_id: MID(2), status: "applied", reason: "already_deleted", row: null },
+    ]);
+  });
+
+  it("las claves desconocidas no cuentan: el mismo cambio con otra basura al lado es un reintento, no un id reusado", async () => {
+    const change: SyncMutation = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
+    stored.mockResolvedValue({ result: { status: "applied" }, payload_hash: mutationPayloadHash(change) } as never);
+    const res = await push({ mutations: [{ ...change, junk: { a: [1, 2, { b: "x".repeat(1000) }] } }] });
+    expect((await res.json()).results[0]).toMatchObject({ mutation_id: MID(1), status: "applied" });
   });
 
   it("el mismo id con otro contenido se rechaza: no es un reintento, y no recibe la respuesta del primero", async () => {
-    const first = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
+    const first: SyncMutation = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
     stored.mockResolvedValue({ result: { status: "applied" }, payload_hash: mutationPayloadHash(first) } as never);
     const res = await push({ mutations: [{ ...first, op: "upsert", fields: { title: "otra cosa" } }] });
     expect((await res.json()).results).toEqual([{ mutation_id: MID(1), status: "rejected", reason: "mutation_id_reused" }]);
@@ -345,6 +370,25 @@ describe("POST /api/sync/notes — costo", () => {
     expect(tx).not.toHaveBeenCalled();
   });
 
+  it("un push que se corta con more solo paga lo que procesó: al reenviar el resto no hay 429", async () => {
+    // 200 cambios de a 1,5 MB de respuesta: se corta en 3 y devuelve lo demás.
+    const row = { ...issueRow(ID, "2026-09-28T10:00:00Z"), description: "x".repeat(1_500_000) };
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({ $queryRaw: vi.fn(async () => []), syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => row) } })) as never);
+    const upserts = (n: number, from: number) =>
+      Array.from({ length: n }, (_, i) => ({ mutation_id: MID(from + i), entity: "issue", op: "upsert", id: ID, base_updated_at: "2026-09-28T10:00:00Z", fields: {} }));
+    let answered = 0;
+    for (let round = 0; round < 6; round++) {
+      const res = await push({ mutations: upserts(200, 1 + round * 1000) });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.more).toBe(true);
+      answered += body.results.length;
+    }
+    // 6 pushes de 200 pasarían los 1000 si se cobraran enteros; se cobró lo procesado.
+    expect(answered).toBe(18);
+  });
+
   it("dos pushes del mismo token no corren a la vez", async () => {
     let running = 0;
     let most = 0;
@@ -401,6 +445,85 @@ describe("GET /api/sync/notes", () => {
     expect(cursor.k.issues).toEqual([Date.parse("2026-09-28T10:00:00Z"), "id-0199"]);
   });
 
+  describe("tope de bytes por página", () => {
+    // Un findMany que respeta el where de keyset, el orden y el take, para
+    // paginar de verdad.
+    type Row = Record<string, unknown> & { id: string };
+    const cmp = (a: unknown, b: unknown) => {
+      const x = a instanceof Date ? a.getTime() : a;
+      const y = b instanceof Date ? b.getTime() : b;
+      return x === y ? 0 : (x as number | string) < (y as number | string) ? -1 : 1;
+    };
+    function matches(row: Row, where: Record<string, unknown>): boolean {
+      if (Array.isArray(where.AND)) return (where.AND as Record<string, unknown>[]).every((c) => matches(row, c));
+      if (Array.isArray(where.OR)) return (where.OR as Record<string, unknown>[]).some((c) => matches(row, c));
+      return Object.entries(where).every(([k, cond]) => {
+        if (cond instanceof Date || typeof cond !== "object" || cond === null) return cmp(row[k], cond) === 0;
+        const c = cond as { gt?: unknown; gte?: unknown };
+        if ("gte" in c) return cmp(row[k], c.gte) >= 0;
+        if ("gt" in c) return cmp(row[k], c.gt) > 0;
+        return false;
+      });
+    }
+    function table(rows: Row[], stamp: string) {
+      return vi.fn(async (args: { where: Record<string, unknown>; take: number }) =>
+        rows
+          .filter((r) => matches(r, args.where))
+          .sort((a, b) => cmp(a[stamp], b[stamp]) || cmp(a.id, b.id))
+          .slice(0, args.take)
+      );
+    }
+
+    it("una página no pasa de ~4 MB; las páginas siguientes siguen justo donde quedó, sin saltear ni repetir", async () => {
+      // En el pasado: una posición del futuro sería un cursor que este servidor no emitió.
+      const at = new Date(Date.now() - 60 * 60 * 1000);
+      // Todas con la misma fecha: el orden depende del desempate por id.
+      const issues: Row[] = Array.from({ length: 45 }, (_, i) => ({
+        ...issueRow(`i-${String(i).padStart(3, "0")}`, at.toISOString()),
+        // Una fila de 4,5 MB sola en su página; el resto, de 190 000 caracteres.
+        description: i === 7 ? "d".repeat(4_500_000) : "d".repeat(190_000),
+      }));
+      const nodes: Row[] = Array.from({ length: 30 }, (_, i) => ({
+        id: `n-${String(i).padStart(3, "0")}`,
+        issue_id: "canvas",
+        content: "c".repeat(190_000),
+        color: null, x: 0, y: 0, width: 280, height: 160,
+        created_at: at,
+        updated_at: new Date(at.getTime() + i),
+      }));
+      tx.mockImplementation((async (fn: (x: unknown) => unknown) =>
+        fn({
+          issue: { findMany: table(issues, "updated_at") },
+          canvasNode: { findMany: table(nodes, "updated_at") },
+          canvasEdge: { findMany: vi.fn(async () => []) },
+          syncTombstone: { findMany: vi.fn(async () => []) },
+        })) as never);
+
+      const seenIssues: string[] = [];
+      const seenNodes: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      for (;;) {
+        const res = await pull(cursor);
+        const text = await res.text();
+        const body = JSON.parse(text);
+        pages += 1;
+        const bytes = Buffer.byteLength(text);
+        const onlyTheHugeRow = body.issues.length === 1 && body.issues[0].id === "i-007";
+        expect(onlyTheHugeRow || bytes <= 4 * 1024 * 1024 + 1024).toBe(true);
+        expect(body.issues.length + body.canvas_nodes.length).toBeGreaterThan(0);
+        seenIssues.push(...body.issues.map((r: Row) => r.id));
+        seenNodes.push(...body.canvas_nodes.map((r: Row) => r.id));
+        if (!body.has_more) break;
+        cursor = body.cursor;
+        expect(pages).toBeLessThan(30);
+      }
+      expect(seenIssues).toEqual(issues.map((r) => r.id));
+      expect(seenNodes).toEqual(nodes.map((r) => r.id));
+      expect(pages).toBeGreaterThan(3);
+    });
+  });
+
   it("un cursor manipulado (tiempos imposibles) es una sync completa con reset, no un 500", async () => {
     const t = fakeTx({ issues: [] });
     const res = await pull(encodeCursor({ t: 1e300, at: 1e300, k: { issues: [1e300, "x"] } }));
@@ -409,6 +532,15 @@ describe("GET /api/sync/notes", () => {
     // Ninguna consulta recibe una fecha: es la sync completa, sin límite inferior.
     const where = JSON.stringify(t.issue.findMany.mock.calls[0][0]);
     expect(where).not.toMatch(/Invalid Date|null/);
+    expect(t.syncTombstone.findMany).not.toHaveBeenCalled();
+  });
+
+  it("una posición de tombstone por encima de bigint es reset, no un 500", async () => {
+    const t = fakeTx({ issues: [] });
+    const now = Date.now();
+    const res = await pull(encodeCursor({ t: now - 60_000, at: now - 1000, k: { tombstones: [now - 5000, "9999999999999999999"] } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ reset: true });
     expect(t.syncTombstone.findMany).not.toHaveBeenCalled();
   });
 

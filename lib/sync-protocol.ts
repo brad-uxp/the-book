@@ -70,7 +70,9 @@ export interface SyncTombstoneRow {
 /**
  * One page of "what changed since". Keep calling with `cursor` while
  * `has_more`; store the cursor after applying each page, so an interrupted
- * pull resumes where it stopped.
+ * pull resumes where it stopped. A page holds up to a few hundred rows per
+ * list and about 4 MB in all; any list may be cut short, or empty, while
+ * `has_more` is true.
  *
  * `reset` means the cursor sent was too old (deletions from before it may
  * already be forgotten) or not understood: this page starts a FULL sync, and
