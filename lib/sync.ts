@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { checkShapeChange, isBlankHtml, type IssueShape } from "./notes";
 import { ISSUE_TITLE_MAX } from "./text-limits";
+import type { SyncMutation } from "./sync-protocol";
 
 // ─── Retention ───────────────────────────────────────────────────────────────
 
@@ -271,13 +272,15 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * What a pushed change carried, as a hash: everything but its id, as it was
- * sent (before validation, which may drop keys). A retry of the same change
- * hashes the same — the phone never alters a change once sent — so a
- * different hash under a known id is a reused id, not a retry.
+ * What a pushed change carries, as a hash: every field of the change as
+ * validated (SyncMutationSchema) but its id. Validation drops unknown keys
+ * and keeps `fields` flat, so this hashes a bounded, shallow value — never
+ * whatever else a client sent. A retry of the same change hashes the same
+ * (the phone never alters a change once sent), so a different hash under a
+ * known id is a reused id, not a retry.
  */
-export function mutationPayloadHash(item: { mutation_id: string } & Record<string, unknown>): string {
-  const { mutation_id: _id, ...payload } = item;
+export function mutationPayloadHash(m: SyncMutation): string {
+  const { mutation_id: _id, ...payload } = m;
   return textHash(canonicalJson(payload));
 }
 

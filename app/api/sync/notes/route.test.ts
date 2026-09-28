@@ -27,6 +27,7 @@ import { auditLog } from "@/lib/audit";
 import { requireSyncSession } from "@/lib/api";
 import { SYNC_MUTATIONS_PER_MINUTE, SYNC_PAGE_LIMITS, encodeCursor, mutationPayloadHash } from "@/lib/sync";
 import { resetRateLimits } from "@/lib/rate-limit";
+import type { SyncMutation } from "@/lib/sync-protocol";
 
 const tx = vi.mocked(prisma.$transaction);
 const stored = vi.mocked(prisma.syncMutation.findUnique);
@@ -131,14 +132,38 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
       { mutation_id: MID(1), status: "rejected", reason: "invalid" },
       { mutation_id: MID(2), status: "applied", reason: "already_deleted", row: null },
     ]);
-    // Se guarda el veredicto, nunca la fila.
-    expect(record).toHaveBeenCalledWith({
-      data: { mutation_id: MID(1), payload_hash: expect.stringMatching(/^[0-9a-f]{64}$/), result: { status: "rejected", reason: "invalid" } },
-    });
+    // Un cambio inválido no se guarda: se rechaza igual cada vez.
+    expect(record).not.toHaveBeenCalled();
+    expect(stored).not.toHaveBeenCalledWith({ where: { mutation_id: MID(1) } });
+  });
+
+  it("basura anidada a cualquier profundidad en fields se rechaza sola, sin recorrerla; el push sigue", async () => {
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({
+        $queryRaw: vi.fn(async () => []),
+        syncMutation: { create: vi.fn(), update: vi.fn() },
+        issue: { findUnique: vi.fn(async () => null) },
+      })) as never);
+    const deep = "[".repeat(200_000) + "]".repeat(200_000);
+    const body = `{"mutations":[{"mutation_id":"${MID(1)}","entity":"issue","op":"upsert","id":"${ID}","fields":{"title":${deep}}},{"mutation_id":"${MID(2)}","entity":"issue","op":"delete","id":"${ID}"}]}`;
+    const res = await push(body);
+    expect(res.status).toBe(200);
+    const { results } = await res.json();
+    expect(results).toEqual([
+      { mutation_id: MID(1), status: "rejected", reason: "invalid" },
+      { mutation_id: MID(2), status: "applied", reason: "already_deleted", row: null },
+    ]);
+  });
+
+  it("las claves desconocidas no cuentan: el mismo cambio con otra basura al lado es un reintento, no un id reusado", async () => {
+    const change: SyncMutation = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
+    stored.mockResolvedValue({ result: { status: "applied" }, payload_hash: mutationPayloadHash(change) } as never);
+    const res = await push({ mutations: [{ ...change, junk: { a: [1, 2, { b: "x".repeat(1000) }] } }] });
+    expect((await res.json()).results[0]).toMatchObject({ mutation_id: MID(1), status: "applied" });
   });
 
   it("el mismo id con otro contenido se rechaza: no es un reintento, y no recibe la respuesta del primero", async () => {
-    const first = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
+    const first: SyncMutation = { mutation_id: MID(1), entity: "issue", op: "delete", id: ID };
     stored.mockResolvedValue({ result: { status: "applied" }, payload_hash: mutationPayloadHash(first) } as never);
     const res = await push({ mutations: [{ ...first, op: "upsert", fields: { title: "otra cosa" } }] });
     expect((await res.json()).results).toEqual([{ mutation_id: MID(1), status: "rejected", reason: "mutation_id_reused" }]);

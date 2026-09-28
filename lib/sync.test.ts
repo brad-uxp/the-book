@@ -21,6 +21,7 @@ import {
   type IssueNow,
   type NodeNow,
 } from "./sync";
+import type { SyncMutation } from "./sync-protocol";
 
 const NOW = Date.parse("2026-09-28T15:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
@@ -356,10 +357,10 @@ describe("planDelete", () => {
 });
 
 describe("mutationPayloadHash", () => {
-  const change = { mutation_id: "m1", entity: "issue", op: "upsert", id: "i1", fields: { title: "a", description: "<p>b</p>" } };
+  const change: SyncMutation = { mutation_id: "m1", entity: "issue", op: "upsert", id: "i1", fields: { title: "a", description: "<p>b</p>" } };
 
   it("no depende del orden de las claves, a ninguna profundidad", () => {
-    const reordered = { fields: { description: "<p>b</p>", title: "a" }, id: "i1", op: "upsert", entity: "issue", mutation_id: "m1" };
+    const reordered: SyncMutation = { fields: { description: "<p>b</p>", title: "a" }, id: "i1", op: "upsert", entity: "issue", mutation_id: "m1" };
     expect(mutationPayloadHash(reordered)).toBe(mutationPayloadHash(change));
   });
 

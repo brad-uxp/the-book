@@ -111,6 +111,16 @@ describe("lo que Postgres no guarda se rechaza acá, no en la base", () => {
     expect(CanvasEdgeSchema.safeParse({ source_id: NUL, target_id: "b" }).success).toBe(false);
   });
 
+  it("fields es plano: nada anidado, un número acotado de claves; lo desconocido de afuera se descarta", () => {
+    expect(SyncMutationSchema.safeParse({ ...m, fields: { title: "x", progress: 3, due_date: null } }).success).toBe(true);
+    expect(SyncMutationSchema.safeParse({ ...m, fields: { title: { nested: true } } }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, fields: { title: ["x"] } }).success).toBe(false);
+    const many = Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`k${i}`, i]));
+    expect(SyncMutationSchema.safeParse({ ...m, fields: many }).success).toBe(false);
+    const parsed = SyncMutationSchema.parse({ ...m, junk: { deep: [1, 2, 3] } });
+    expect(parsed).not.toHaveProperty("junk");
+  });
+
   it("sort_order cabe en un integer de Postgres", () => {
     expect(IssueSchema.safeParse({ title: "x", sort_order: 2_147_483_647 }).success).toBe(true);
     expect(IssueSchema.safeParse({ title: "x", sort_order: 2_147_483_648 }).success).toBe(false);
