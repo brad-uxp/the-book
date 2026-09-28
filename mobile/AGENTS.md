@@ -34,6 +34,10 @@ Read the `expo` major in `package.json` (57 today) and use the versioned docs,
   `src/editor/editor-html.generated.ts` — not versioned; `start`, `android`,
   `typecheck`, `lint` and the release script build it first. It needs the repo
   root installed. `book://dev/editor` (development builds) shows it on its own.
+- **Tests** run on the TypeScript sources with Node (`node --test
+  --experimental-strip-types`). The shared `../lib` modules import each other
+  without extensions, as the web expects; `scripts/test-resolve.mjs` (loaded by
+  `pnpm test`) retries those imports as `.ts`.
 - **Google sign-in** is `modules/google-id` (a local Expo module on Android's
   Credential Manager). The app asks Google for a token for the WEB OAuth client;
   the server verifies it (`/api/mobile/sign-in`).

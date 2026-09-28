@@ -1,8 +1,8 @@
 # App mobile de book
 
-> Estado: **fase 1 en producción** (2026-09-27). **Fase 2**: sync y datos construidos en
-> `feat/phase2-sync` (2026-09-28); falta el editor de texto enriquecido y la revisión de
-> seguridad de `/api/sync/*` antes de producción.
+> Estado: **fase 1 en producción** (2026-09-27). **Fase 2** (sync, datos y editor)
+> integrada en `feat/phase2` (2026-09-28); falta la revisión de seguridad de `/api/sync/*`
+> antes de producción.
 >
 > - Prototipo de estructura aprobado: https://claude.ai/artifact/SB2xQjdXzmKYnW2xgZQ7C6
 > - Estudio de logo (elegida la **F · Full stop**, `book.` con punto violeta): https://claude.ai/artifact/ExsVzSCnKmK5DGUYeS97pD
@@ -87,10 +87,34 @@ la sync (offline / sincronizando / cambios pendientes) y en la cuenta "Synced 2 
 Salir a propósito borra las notas del teléfono (avisa si hay cambios sin subir); un token
 vencido no, para que lo pendiente suba al volver a entrar.
 
-**Pendiente:** el editor. `mobile/src/editor/RichTextEditor.tsx` es un **stub temporal**
-(TextInput de texto plano ↔ párrafos `<p>`; una nota con formato o menciones se abre de solo
-lectura para no aplanarla). Se reemplaza ese archivo, con la misma interfaz, por el editor
-TipTap en WebView; `mobile/src/editor/plain.ts` se va con él.
+**Hecho (editor en la nota):** la nota y la task se escriben con el editor de
+[Editor](#editor), con formato y menciones, también sin señal. El editor ocupa la parte de
+abajo de la pantalla y se mantiene sobre el teclado; los campos de una task (estado,
+vencimiento, progreso, cliente) se pliegan mientras se escribe su texto. Las menciones `#`
+llevan la etiqueta de `formatInvoiceLabel`, la misma función que usa la web. Tocar una
+mención abre una hoja que dice quién o cuál es (rol y estado de la persona; cliente, monto y
+estado de la factura), con lo que trajo la última sync: personas y facturas todavía no tienen
+pantalla en el teléfono.
+
+Dos reglas de la pantalla de nota que no son obvias:
+
+- **Nunca recarga el texto encima de lo que se escribe.** Recarga solo si lo guardado
+  cambió en otro lado: no mientras el texto tiene foco (el editor puede tener hasta ~600 ms de
+  tecleo sin entregar) y nunca por un texto que la propia pantalla cargó o guardó (una lectura
+  del store antes de que aterrice un guardado, o la respuesta del servidor a un push anterior,
+  no son cambios ajenos). Lo que choca con un cambio ajeno sube como copia «(conflict)».
+- **Cerrar el teclado termina la edición.** Con la página del editor enfocada, la WebView se
+  quedaba con la tecla atrás y no se podía salir de la nota; al esconderse el teclado el editor
+  suelta el foco (y entrega lo pendiente).
+
+Verificado en el emulador (2026-09-28): una nota creada por API con formato y las dos
+menciones se ve con sus chips; editada en el teléfono con negrita, H2, H4, lista, código, `@`
+y `#`, el HTML del servidor es el que la configuración de la web conserva al cargarlo; sin red
+y sin Metro (app ya abierta) se editaron dos notas y una task y se creó una nota; al volver la
+red subió todo y el choque con una edición web dejó la copia «(conflict)» en el servidor y en
+el teléfono. **No verificado:** un arranque en frío sin Metro — una build de desarrollo con el
+bundle embebido no arranca (las herramientas de Expo lo rechazan) y una release no puede
+entrar contra un servidor local; queda para el APK release en el teléfono.
 
 ### 3 · Canvas
 
@@ -229,6 +253,9 @@ empaquetada dentro de la app, en una WebView (`mobile/src/editor/RichTextEditor.
   `onChange` (300 ms, y al menos cada 2 s). Lo pendiente se entrega al perder el foco, al ir
   la app a segundo plano, al cambiar de documento (al `onChange` de ese documento) y al
   desmontar.
+- **Teclado**: el editor mide dónde está en la ventana y deja libre lo que tapa el teclado
+  (un `KeyboardAvoidingView` se mide contra su padre y, debajo del título de una nota, no veía
+  el solapamiento). `onFocusChange` avisa a la pantalla cuando el texto toma o suelta el foco.
 - **Límites**: los enlaces de una nota no se abren desde el teléfono; `#` no ofrece "crear
   factura" como en la web; una lista de personas o facturas vacía se toma como "todavía no
   cargó" y no marca nada como borrado.
