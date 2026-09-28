@@ -53,6 +53,19 @@ describe("pushToAll", () => {
     expect(db.mobileDevice.delete).toHaveBeenCalledWith({ where: { id: "d2" } });
   });
 
+  it("un error de red o de credencial corta la ronda: no espera 10 s por cada teléfono", async () => {
+    db.mobileDevice.findMany.mockResolvedValue([
+      { id: "d1", fcm_token: "t1" },
+      { id: "d2", fcm_token: "t2" },
+      { id: "d3", fcm_token: "t3" },
+    ]);
+    sends.results = ["throw"];
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await pushToAll({ kind: "test" })).toEqual({ sent: 0, removed: 0, failed: 3 });
+    expect(sends.calls).toHaveLength(1);
+    error.mockRestore();
+  });
+
   it("solo a teléfonos cuyo token sigue vivo: móvil, sin revocar, sin vencer", async () => {
     db.mobileDevice.findMany.mockResolvedValue([]);
     await pushToAll({ kind: "test" });

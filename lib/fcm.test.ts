@@ -70,9 +70,13 @@ describe("fcmMessage", () => {
 });
 
 describe("classifyFcmError", () => {
-  it("UNREGISTERED o 404: el dispositivo ya no existe", () => {
+  it("UNREGISTERED: el dispositivo ya no existe", () => {
     expect(classifyFcmError(404, { error: { status: "NOT_FOUND", details: [{ errorCode: "UNREGISTERED" }] } })).toBe("unregistered");
-    expect(classifyFcmError(404, null)).toBe("unregistered");
+  });
+
+  it("un 404 sin UNREGISTERED no borra nada (p. ej. un project id mal configurado)", () => {
+    expect(classifyFcmError(404, null)).toBe("failed");
+    expect(classifyFcmError(404, { error: { status: "NOT_FOUND" } })).toBe("failed");
   });
 
   it("INVALID_ARGUMENT sobre el token: el token no sirve", () => {
@@ -142,6 +146,8 @@ describe("createFcmClient", () => {
       currentDate: new Date(t),
     });
     expect(payload.scope).toBe(FCM_SCOPE);
+    // Emitido 30 s antes, por si el reloj del servidor adelanta.
+    expect(payload.iat).toBe(Math.floor(t / 1000) - 30);
 
     const send = calls[1];
     expect((send.init.headers as Record<string, string>).Authorization).toBe("Bearer at-1");

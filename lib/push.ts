@@ -72,14 +72,17 @@ async function deliver(devices: { id: string; fcm_token: string }[], data: PushD
   const c = fcm();
   if (!c) return { sent: 0, removed: 0, failed: 0, off: true };
   const outcome: PushOutcome = { sent: 0, removed: 0, failed: 0 };
-  for (const device of devices) {
+  for (const [i, device] of devices.entries()) {
     let result: SendResult;
     try {
       result = await c.send(device.fcm_token, data);
     } catch (err) {
-      // Network, timeout, the token exchange. Never the FCM token in the log.
+      // Network, timeout, the token exchange: not about this device, so the
+      // rest would fail the same way, 10 s each. Stop and count them failed.
+      // Never the FCM token in the log.
       console.error(`[push] device ${device.id}: ${err instanceof Error ? err.message : "send failed"}`);
-      result = "failed";
+      outcome.failed += devices.length - i;
+      break;
     }
     if (result === "sent") outcome.sent++;
     else if (result === "unregistered") {

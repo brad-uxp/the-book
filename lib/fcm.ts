@@ -110,7 +110,9 @@ export function classifyFcmError(status: number, body: unknown): SendResult {
   const err = (body as { error?: { status?: unknown; details?: unknown } } | null)?.error;
   const details = Array.isArray(err?.details) ? (err.details as Record<string, unknown>[]) : [];
   const codes = details.map((d) => d?.errorCode).filter((c): c is string => typeof c === "string");
-  if (status === 404 || codes.includes("UNREGISTERED")) return "unregistered";
+  // A bare 404 is not enough: a misconfigured project id also answers 404,
+  // and would delete every device on the first send.
+  if (codes.includes("UNREGISTERED")) return "unregistered";
   if (status === 400 && err?.status === "INVALID_ARGUMENT") {
     const aboutToken = details.some((d) =>
       Array.isArray(d?.fieldViolations)
@@ -152,7 +154,9 @@ export function createFcmClient({
 
   async function fetchAccessToken(): Promise<string> {
     const key = await importPKCS8(serviceAccount.private_key, "RS256");
-    const iat = Math.floor(now() / 1000);
+    // Backdated a little: Google refuses an assertion issued "in the future",
+    // which a server clock running slightly ahead would produce.
+    const iat = Math.floor(now() / 1000) - 30;
     const assertion = await new SignJWT({ scope: FCM_SCOPE })
       .setProtectedHeader({ alg: "RS256", typ: "JWT" })
       .setIssuer(serviceAccount.client_email)

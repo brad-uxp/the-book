@@ -95,6 +95,13 @@ async function pushCreated(created: string[], log: string[]) {
       sent += outcome.sent;
       removed += outcome.removed;
       failed += outcome.failed;
+      // Nothing got through: FCM or our credentials are down, and every
+      // remaining notification would wait out the same timeouts. Stop.
+      if (outcome.sent === 0 && outcome.failed > 0) {
+        const left = created.length - created.indexOf(id) - 1;
+        if (left > 0) log.push(`  [push] stopped after a failed round: ${left} notification(s) not pushed`);
+        break;
+      }
     } catch (err) {
       failed++;
       console.error("[cron/daily] push:", err instanceof Error ? err.message : err);
