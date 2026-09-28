@@ -171,7 +171,11 @@ export default function Salaries() {
           </Text>
           <Text style={[styles.sectionTotal, { color: c.ink }]}>{formatCents(report.unpaidCents)}</Text>
         </View>
-        {report.unpaid.length === 0 ? (
+        {report.people === 0 ? (
+          <Text style={[styles.none, { color: c.faint }]} testID="salaries-nobody">
+            No one was on the team in {monthTitle(month)}.
+          </Text>
+        ) : report.unpaid.length === 0 ? (
           <View style={[styles.allPaid, { backgroundColor: c.surface }]} testID="salaries-all-paid">
             <CircleCheck size={16} color="#10B981" />
             <Text style={[styles.allPaidText, { color: c.ink }]}>Everyone has been paid for {monthTitle(month)}.</Text>
@@ -235,7 +239,7 @@ function UnpaidRow({ line, disabled, onPay }: { line: UnpaidLine; disabled: bool
         <Text numberOfLines={1} style={[styles.name, { color: c.ink }]}>
           {person.name}
         </Text>
-        <Text numberOfLines={1} style={[styles.meta, { color: c.muted }]}>
+        <Text numberOfLines={2} style={[styles.meta, { color: c.muted }]}>
           {person.role ? `${person.role} · ` : ""}Paid on the {ordinal(person.payday_day)}
           {daysLate > 0 ? (
             <Text style={{ color: c.overdue, fontFamily: font.semibold }}>
