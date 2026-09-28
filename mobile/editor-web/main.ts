@@ -66,6 +66,7 @@ function suggestionUi(kind: MentionKind) {
 const RUN: Record<ToolbarAction, (e: Editor) => boolean> = {
   bold: (e) => e.chain().focus().toggleBold().run(),
   italic: (e) => e.chain().focus().toggleItalic().run(),
+  highlight: (e) => e.chain().focus().toggleHighlight().run(),
   paragraph: (e) => e.chain().focus().setParagraph().run(),
   h2: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(),
   h3: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(),
@@ -78,6 +79,7 @@ const RUN: Record<ToolbarAction, (e: Editor) => boolean> = {
 const IS_ACTIVE: Record<ToolbarAction, (e: Editor) => boolean> = {
   bold: (e) => e.isActive("bold"),
   italic: (e) => e.isActive("italic"),
+  highlight: (e) => e.isActive("highlight"),
   paragraph: (e) => e.isActive("paragraph") && !e.isActive("heading"),
   h2: (e) => e.isActive("heading", { level: 2 }),
   h3: (e) => e.isActive("heading", { level: 3 }),

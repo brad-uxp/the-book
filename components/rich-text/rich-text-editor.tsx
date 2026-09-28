@@ -24,6 +24,7 @@ import {
   Heading2,
   Heading3,
   Heading4,
+  Highlighter,
   Italic,
   List,
   ListOrdered,
@@ -61,6 +62,12 @@ function getToolbarItems(editor: Editor) {
       action: () => editor.chain().focus().toggleItalic().run(),
       active: editor.isActive("italic"),
       label: "Italic",
+    },
+    {
+      icon: Highlighter,
+      action: () => editor.chain().focus().toggleHighlight().run(),
+      active: editor.isActive("highlight"),
+      label: "Highlight",
     },
     {
       icon: Type,
@@ -119,6 +126,10 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
       {items.map((item, i) => (
         <button
           key={i}
+          type="button"
+          title={item.label}
+          aria-label={item.label}
+          aria-pressed={item.active}
           onClick={item.action}
           className={cn(
             "p-1.5 rounded hover:bg-accent transition-colors",
@@ -168,6 +179,10 @@ function SelectionBubbleMenu({
         {items.map((item, i) => (
           <button
             key={i}
+            type="button"
+            title={item.label}
+            aria-label={item.label}
+            aria-pressed={item.active}
             onClick={item.action}
             className={cn(
               "p-1.5 rounded hover:bg-accent transition-colors",

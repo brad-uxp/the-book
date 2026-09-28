@@ -7,6 +7,7 @@ import {
   Heading2,
   Heading3,
   Heading4,
+  Highlighter,
   Italic,
   KeyboardOff,
   List,
@@ -21,6 +22,7 @@ import type { ActiveFormats, MentionKind, ToolbarAction } from "./protocol";
 const FORMATS: { action: ToolbarAction; icon: LucideIcon; label: string }[] = [
   { action: "bold", icon: Bold, label: "Bold" },
   { action: "italic", icon: Italic, label: "Italic" },
+  { action: "highlight", icon: Highlighter, label: "Highlight" },
   { action: "paragraph", icon: Type, label: "Paragraph" },
   { action: "h2", icon: Heading2, label: "Heading 2" },
   { action: "h3", icon: Heading3, label: "Heading 3" },

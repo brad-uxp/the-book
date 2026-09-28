@@ -1,4 +1,5 @@
 import type { AnyExtension } from "@tiptap/core";
+import Highlight from "@tiptap/extension-highlight";
 import Mention from "@tiptap/extension-mention";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
@@ -71,6 +72,9 @@ export function richTextExtensions({
 }: RichTextExtensionOptions): AnyExtension[] {
   return [
     StarterKit,
+    // One fixed colour, so a highlight is a bare <mark> — the colour lives in
+    // each editor's CSS (a pastel amber), not in the stored HTML. ⌘⇧H.
+    Highlight.configure({ multicolor: false }),
     Placeholder.configure({
       placeholder: typeof placeholder === "function" ? () => placeholder() : placeholder,
     }),

@@ -40,6 +40,12 @@ const SAMPLES: Record<string, { html: string; saved: string }> = {
     html: '<p><span data-type="mention" class="mention" data-id="p-old" data-label="Old (eliminado)" data-mention-id="p-old" data-mention-label="Old (eliminado)" data-deleted="true">Old (eliminado)</span></p>',
     saved: `<p>${person("p-old", "Old (eliminado)", DELETED)}</p>`,
   },
+  highlight: {
+    // One colour: a bare <mark>. A colour attribute from elsewhere is
+    // dropped, not kept — the tone lives in each editor's CSS.
+    html: '<p>Keep <mark>this line</mark> in mind, and <mark data-color="#f00" style="background-color: #f00">this</mark>.</p><ul><li><p><strong><mark>both</mark></strong></p></li></ul>',
+    saved: '<p>Keep <mark>this line</mark> in mind, and <mark>this</mark>.</p><ul><li><p><strong><mark>both</mark></strong></p></li></ul>',
+  },
   empty: { html: "", saved: "<p></p>" },
   link: {
     html: '<p>See <a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">site</a></p>',
@@ -81,6 +87,23 @@ describe("the web and the phone write the same HTML", () => {
   it.each(Object.entries(SAMPLES))("%s", (_name, { html, saved }) => {
     expect(open(web(), html).getHTML()).toBe(saved);
     expect(open(phone(), html).getHTML()).toBe(saved);
+  });
+
+  it("toggle the highlight the same way, and ⌘⇧H is its shortcut", () => {
+    const results = [web, phone].map((make) => {
+      const editor = open(make(), "<p>one two three</p>");
+      editor.chain().focus().setTextSelection({ from: 5, to: 8 }).toggleHighlight().run();
+      expect(editor.isActive("highlight")).toBe(true);
+      const toggled = editor.getHTML();
+      // The shortcut takes it off again, then puts it back.
+      editor.commands.keyboardShortcut("Mod-Shift-h");
+      expect(editor.getHTML()).toBe("<p>one two three</p>");
+      editor.commands.keyboardShortcut("Mod-Shift-h");
+      expect(editor.getHTML()).toBe(toggled);
+      return toggled;
+    });
+    expect(results[0]).toBe("<p>one <mark>two</mark> three</p>");
+    expect(results[1]).toBe(results[0]);
   });
 
   it("have the same schema: nodes, marks and their attributes", () => {

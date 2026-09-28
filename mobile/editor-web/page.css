@@ -95,6 +95,9 @@ body {
   white-space: pre;
 }
 .tiptap pre code { background: none; padding: 0; }
+/* The one highlight colour, as on the web (app/globals.css): a pastel amber
+   with dark text in both themes, so it reads the same on a dark page. */
+.tiptap mark { background: #fde68a; color: #1c1917; border-radius: 0.2em; padding: 0 0.1em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .tiptap blockquote {
   border-left: 3px solid var(--line);
   padding-left: 1em;

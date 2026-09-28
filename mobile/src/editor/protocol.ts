@@ -13,6 +13,7 @@ export type MentionKind = "person" | "invoice";
 export const TOOLBAR_ACTIONS = [
   "bold",
   "italic",
+  "highlight",
   "paragraph",
   "h2",
   "h3",
