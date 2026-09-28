@@ -1,8 +1,8 @@
 # App mobile de book
 
-> Estado: **fases 1 y 2 en producción** (2026-09-27; app 0.2.0 en el teléfono). **Fase 3**
-> (canvas en el teléfono) en `feat/phase3-canvas` (2026-09-28): falta la revisión de
-> seguridad del cambio de servidor (convertir y crear canvas por sync) y subir.
+> Estado: **fases 1 a 4 en producción** (2026-09-28; app 0.4.x en el teléfono). **Fase 5**
+> (push nativo por FCM) construida en `feat/phase5-push` (2026-09-28): falta la revisión
+> de seguridad de las rutas nuevas, subir y probar la entrega real con el botón de prueba.
 >
 > - Prototipo de estructura aprobado: https://claude.ai/artifact/SB2xQjdXzmKYnW2xgZQ7C6
 > - Estudio de logo (elegida la **F · Full stop**, `book.` con punto violeta): https://claude.ai/artifact/ExsVzSCnKmK5DGUYeS97pD
@@ -230,14 +230,66 @@ dura — es lo que el dueño pidió ver sin señal.
 
 ### 5 · Push
 
-**Backend:**
+**Se ve:** los avisos del job diario (facturas, sueldos, aumentos, tareas, suscripciones)
+llegan al teléfono como notificaciones; tocarlas abre la factura, la tarea o nota, o
+Salaries. En el menú de la cuenta, **Test notification** (ahora o en 10 s).
 
-- Tabla de dispositivos (token FCM, plataforma, token de API asociado).
-- Envío *data-only* desde el job diario.
-- `PushSubscription` (de la push web, ya retirada) se borra en dos fases: primero sale del
-  schema de Prisma, en el deploy siguiente la migración.
+**Cómo viaja un aviso** (construido el 2026-09-28, rama `feat/phase5-push`):
 
-**Se ve:** avisos de vencimientos en el teléfono.
+1. El job diario crea la `Notification` (idempotente por `(type, entity_id, event_date)`).
+   Solo las que **crea** esa corrida se empujan: una segunda corrida el mismo día no manda
+   nada (`lib/run-daily.ts`, crear y tratar P2002 como "ya estaba").
+2. `lib/push.ts` manda a cada `MobileDevice` vivo (token `mobile`, sin revocar ni vencer)
+   un mensaje FCM HTTP v1 **solo de datos**: `{ kind: "notification", id }`, prioridad
+   `HIGH`, TTL 1 día, **sin bloque `notification`** y sin ningún contenido. Google no ve
+   títulos, montos ni nombres.
+3. En el teléfono, `mobile/src/push/task.ts` (registrada a nivel de módulo desde
+   `mobile/index.ts`, antes del router, porque con la app cerrada Android arranca el
+   bundle *headless* y solo corre lo del módulo) recibe el mensaje en cualquier estado —
+   primer plano, fondo o cerrada —, pide `GET /api/notifications/:id` con el token del
+   teléfono y muestra una notificación local en el canal "Reminders". En primer plano el
+   mensaje vacío también llega al handler de expo-notifications: solo se muestran las que
+   tienen título, o aparecería una notificación vacía.
+4. Tocarla: `PushManager` navega por `entity_type` (`invoice` → la factura, `issue` → la
+   nota o el canvas según el SQLite local, `person`/`salary_increase_reminder` → Salaries,
+   `subscription` → inicio).
+
+**Nunca el servicio de push de Expo**: la app registra su token **nativo** de FCM
+(`getDevicePushTokenAsync`) en `POST /api/mobile/devices` y el servidor habla con FCM
+directo. Credencial: `FCM_SERVICE_ACCOUNT_JSON` en Railway, una cuenta de servicio
+(`book-push-sender@uxprogramming-crm`) que **solo** puede mandar mensajes FCM; su clave
+firma un JWT que se canjea por un access token de una hora (cacheado). En producción el
+`token_uri` tiene que ser el de Google. Nada de eso se loguea.
+
+**Firebase**: proyecto `uxprogramming-crm`, app Android `com.bolstro.book` **sin SHA-1**
+(con una, Firebase podría crear un segundo cliente OAuth de Android y romper el login del
+teléfono). `google-services.json` no va en git: vive en `theBookApp/` y
+`mobile/scripts/google-services.mjs` lo copia a `mobile/` antes del prebuild (lo corren el
+script de release y `pnpm android`; falla con instrucciones si falta).
+
+**Permiso** (Android 13+): se pide una vez, explicado, después del login — nunca en el
+primer arranque. Si luego se apaga en los ajustes de Android, la app da de baja su
+dispositivo al arrancar.
+
+**Dispositivos**: uno por token de API. Cerrar sesión o revocar el token en Settings borra
+el dispositivo (los tokens se revocan, no se borran, así que el `ON DELETE CASCADE` no
+alcanza solo); FCM avisando `UNREGISTERED` también lo borra.
+
+**Probarlo en producción**: en el teléfono, cuenta → *Test notification* → *In 10 s*, y
+cerrar la app (deslizarla fuera de recientes) o bloquear la pantalla: tiene que llegar
+igual. *Now* prueba el primer plano.
+
+**Doze**: los mensajes de alta prioridad despiertan la app aunque el teléfono esté en
+reposo, pero Android puede demorarlos o bajarles la prioridad si la app no muestra nada al
+recibirlos (esta siempre muestra la notificación). No se pudo medir en local — la entrega
+real necesita la clave de producción —; queda para la prueba del dueño. MIUI/HyperOS
+(Xiaomi) puede además frenar apps en segundo plano: si los avisos no llegan con la app
+cerrada, poner book. en *Sin restricciones* de batería.
+
+**`PushSubscription`** (web push retirada): fase 1 hecha — salió de `schema.prisma` en este
+cambio; la tabla sigue intacta en la base. **Fase 2, en el deploy siguiente**: una
+migración `DROP TABLE "PushSubscription"` con el comentario `ACEPTO PERDER ESTOS DATOS` (son
+endpoints de navegador inútiles sin las claves VAPID, borradas el 2026-09-27).
 
 ## Sincronización
 

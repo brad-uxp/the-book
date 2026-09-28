@@ -47,7 +47,10 @@ routes (no credential), one that needs the token:
 |---|---|---|
 | POST | `/api/mobile/nonce` | → `{ nonce, expires_at }`. Signed, single use, 5 minutes. |
 | POST | `/api/mobile/sign-in` | `{ id_token, device_name }` → `201 { token, token_id, name, expires_at, email }` |
-| POST | `/api/mobile/sign-out` | Bearer. Revokes the calling token — only itself. |
+| POST | `/api/mobile/sign-out` | Bearer. Revokes the calling token — only itself — and forgets its push device. |
+| POST | `/api/mobile/devices` | Mobile token only. `{ fcm_token, platform: "android", app_version? }` → registers (or refreshes) the phone's native FCM token for push. One device per token. |
+| DELETE | `/api/mobile/devices` | Mobile token only. The phone stops receiving pushes. |
+| POST | `/api/mobile/devices/test` | Mobile token only. `{ delay_seconds? ≤ 60 }` → a test push to the caller's phone: `200 sent`, `202 scheduled`, `409 no_device`, `410 unregistered`, `502 failed`, `503 not_configured`. |
 
 Sign-in accepts the ID token only if its signature checks against Google's keys,
 `iss` is Google, `aud` is this server's web OAuth client, `azp` is book's
@@ -61,6 +64,12 @@ from there like any other.
 Errors: `400` malformed body · `401` anything about the token or the nonce
 (deliberately not more specific) · `403` a Google account that is not allowed ·
 `413` a body over 8 KB · `503` the server is not configured for mobile sign-in.
+
+Push (`/api/mobile/devices*`) accepts only a `mobile` token: the browser has no
+device, and an automation or release token must not be able to point the owner's
+notifications at another phone. Pushes are FCM data-only (`{ kind, id }`, nothing
+else); the phone fetches the text from `GET /api/notifications/:id`. Never Expo's
+push service. See docs/product/mobile-app.md (5 · Push).
 
 There is no per-IP rate limit on these two routes, on purpose: nothing on them
 can be guessed (success needs a Google-signed token for an allowed account), and
@@ -284,7 +293,7 @@ Payments are soft-deleted, so a delete is undoable.
 ### System
 | Method | Path |
 |---|---|
-| GET/PATCH | `/api/notifications` · GET `/api/notifications/count` · POST `/api/notifications/mark-all-read` |
+| GET/PATCH | `/api/notifications` · GET `/api/notifications/count` · POST `/api/notifications/mark-all-read` · GET `/api/notifications/:id` (the phone reads a pushed notification's title and body here) |
 | GET | `/api/audit-logs` |
 | GET/PATCH | `/api/settings` |
 
