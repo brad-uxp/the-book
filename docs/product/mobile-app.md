@@ -1,9 +1,8 @@
 # App mobile de book
 
-> Estado: **fase 1 en producción** (2026-09-27). **Fase 2** (sync, datos y editor)
-> integrada en `feat/phase2` (2026-09-28), con los hallazgos de la revisión de seguridad de
-> `/api/sync/*` corregidos (ver [Sincronización](#sincronización)); falta verificar los
-> arreglos y subir a producción.
+> Estado: **fases 1 y 2 en producción** (2026-09-27; app 0.2.0 en el teléfono). **Fase 3**
+> (canvas en el teléfono) en `feat/phase3-canvas` (2026-09-28): falta la revisión de
+> seguridad del cambio de servidor (convertir y crear canvas por sync) y subir.
 >
 > - Prototipo de estructura aprobado: https://claude.ai/artifact/SB2xQjdXzmKYnW2xgZQ7C6
 > - Estudio de logo (elegida la **F · Full stop**, `book.` con punto violeta): https://claude.ai/artifact/ExsVzSCnKmK5DGUYeS97pD
@@ -121,6 +120,56 @@ entrar contra un servidor local; queda para el APK release en el teléfono.
 
 Tarjetas, conexiones, hoja de edición, gestos, sin conexión.
 
+**Hecho (2026-09-28):** el canvas se ve y se edita en el teléfono
+(`mobile/src/app/canvas/[id].tsx`, `mobile/src/canvas/`), con los gestos del prototipo:
+
+- **Un dedo en el vacío** mueve el lienzo; **pinch** hace zoom (y mueve, si los dedos se
+  desplazan); **doble toque con dos dedos** encuadra todo. Sin botones de zoom.
+- **Tocar una tarjeta** la selecciona: sus cuatro puntos y una barra (Edit, Color, borrar).
+  **Doble toque** la abre en el editor; en el vacío crea una idea ahí. El **+** crea una en
+  el centro de la vista.
+- **Arrastrar una tarjeta** solo si ya está seleccionada (así un dedo que panea nunca la mueve
+  sin querer); cae en la grilla de 8 px, como en la web.
+- **Arrastrar un punto** saca una línea: soltada sobre el punto de otra tarjeta fija los dos
+  lados; sobre el cuerpo de una tarjeta deja libre el lado de llegada; en el vacío crea una
+  idea nueva conectada y abre su editor.
+- **Tocar una conexión** la selecciona: × la quita, ↺ (si tiene lados fijados) la devuelve a
+  automático. Borrar ideas y conexiones deja 6 s de Undo.
+- **Editar** es una hoja inferior con el editor de las notas (formato, resaltado, @ y #);
+  guarda mientras se escribe y una idea que queda vacía se descarta al cerrar, como en la web.
+
+Cómo está hecho:
+
+- **Tarjetas nativas**, no una WebView por tarjeta: `richtext.ts` lee el HTML del editor
+  (títulos, listas, citas, código, marcas, resaltado, las dos menciones) en bloques que
+  `RichTextView` dibuja con `<Text>`. Alto según el contenido, medido al dibujar.
+- **Líneas**: los anclajes son la regla compartida (`lib/canvas-geometry`,
+  `connectionAnchors`), la curva es la bezier de React Flow re-derivada (`geometry.ts`):
+  mismo dibujo que la web.
+- **Gestos**: Gesture Handler + Reanimated. El viewport son tres valores compartidos que
+  mueven una sola transformación en el hilo de UI; dónde empieza un toque (un punto, la
+  tarjeta seleccionada, el vacío) se decide ahí mismo con pruebas que son *worklets*. Mover
+  una tarjeta y seguir una línea pasan por React a ritmo de cuadro: la tarjeta y sus líneas
+  se mueven juntas.
+- **Datos**: ideas y conexiones se escriben en SQLite y se encolan, igual que las notas
+  (`mobile/src/canvas/store.ts`). Una idea confirmada manda solo lo que cambió contra el
+  `updated_at` del servidor en que se basó (migración local 4: `server_updated_at` en las
+  ideas); una sin confirmar manda todo. El texto lleva el hash del que partió: si la web lo
+  cambió mientras tanto, el servidor guarda el suyo y el del teléfono queda como idea hermana.
+- **Convertir una nota en canvas desde el teléfono** (y crear un canvas desde el +): el
+  teléfono crea la primera idea con el texto y le dice al servidor que la descripción queda
+  vacía, así el servidor no siembra otra. Si la web cambió el texto mientras tanto, el
+  servidor convierte sembrando el suyo: quedan las dos ideas y ninguna nota «(conflict)»
+  (`lib/sync.ts`, `planIssueUpsert`). Un canvas nuevo vacío (sin título ni ideas) se
+  descarta al salir, como una nota vacía.
+- **Palabras que el servidor rechaza** en una idea: se guardan antes en una nota local
+  «<canvas> · idea (not synced)», marcada, como las de una nota.
+
+**Límites conocidos:** no se cambia el ancho de una tarjeta desde el teléfono (se respeta el
+de la web); un solo dedo mueve una sola tarjeta (sin selección múltiple); una idea de más de
+200 000 caracteres no se guarda (avisa); tocar una mención dentro de una tarjeta no abre nada
+(sí dentro del editor).
+
 ### 4 · Negocio
 
 - **Invoices:** lista con Awaiting / In prep / Paid, detalle, marcar como pagada, compartir
@@ -145,7 +194,7 @@ Estas tres tabs muestran lo último sincronizado cuando no hay señal.
 
 Las pantallas leen **solo** SQLite (`mobile/src/db/`, SQL a mano sobre `expo-sqlite`, sin
 ORM: cinco tablas y migraciones por `PRAGMA user_version`; la 3 guarda los lados fijados de
-las conexiones, para el canvas de la fase 3). Cada cambio local actualiza la
+las conexiones y la 4 el `server_updated_at` de las ideas, para el canvas de la fase 3). Cada cambio local actualiza la
 fila al instante y deja un cambio en la cola (`outbox`). El motor
 (`mobile/src/sync/engine.ts`) empuja la cola en orden y después trae lo nuevo; corre al
 abrir, al volver a primer plano, al volver la red, con pull-to-refresh y 2 s después del

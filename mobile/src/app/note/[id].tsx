@@ -149,6 +149,9 @@ export default function NoteScreen() {
     }
   }, [issue, doc, title, bodyFocused]);
 
+  // Set once the note turns into a canvas (see below).
+  const becameCanvas = useRef(false);
+
   // Leaving: save what is pending, and drop a new note left empty.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
@@ -156,14 +159,18 @@ export default function NoteScreen() {
     });
     return () => {
       sub.remove();
-      void flush().then(() => (isNew ? discardIfBlank(id) : false));
+      // A new note turned into a canvas is the canvas screen's now: it
+      // discards it if it is left empty there.
+      void flush().then(() => (isNew && !becameCanvas.current ? discardIfBlank(id) : false));
     };
   }, [flush, id, isNew]);
 
   // A canvas opens in its own screen.
   useEffect(() => {
-    if (issue?.note_format === "canvas") router.replace({ pathname: "/canvas/[id]", params: { id } });
-  }, [issue?.note_format, id, router]);
+    if (issue?.note_format !== "canvas") return;
+    becameCanvas.current = true;
+    router.replace({ pathname: "/canvas/[id]", params: isNew ? { id, new: "1" } : { id } });
+  }, [issue?.note_format, id, isNew, router]);
 
 
   if (issue === undefined || (issue && (doc === null || title === null))) {
