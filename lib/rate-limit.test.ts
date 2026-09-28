@@ -56,6 +56,28 @@ describe("checkRateLimit", () => {
   });
 });
 
+describe("checkRateLimit — con costo", () => {
+  beforeEach(resetRateLimits);
+
+  it("un pedido que cuesta N consume N del presupuesto", () => {
+    const t = 1_000_000;
+    expect(checkRateLimit("sync", t, 1000, 60_000, 200).remaining).toBe(800);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 800).allowed).toBe(true);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 1).allowed).toBe(false);
+  });
+
+  it("uno que no entra se rechaza sin cobrarse: uno más chico todavía pasa", () => {
+    const t = 1_000_000;
+    checkRateLimit("sync", t, 1000, 60_000, 900);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 200).allowed).toBe(false);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 100).allowed).toBe(true);
+  });
+
+  it("un pedido que cuesta más que todo el presupuesto nunca pasa", () => {
+    expect(checkRateLimit("sync", 1_000_000, 100, 60_000, 101).allowed).toBe(false);
+  });
+});
+
 describe("pruneRateLimits", () => {
   beforeEach(resetRateLimits);
 

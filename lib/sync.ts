@@ -192,6 +192,15 @@ export function nextCursor(plan: PullPlan, positions: Positions, hasMore: boolea
  */
 export const SYNC_PUSH_BUDGET = { bytes: 4 * 1024 * 1024, ms: 10_000 } as const;
 
+/**
+ * How many changes one caller may push per minute. A push costs one unit per
+ * change it carries — each is a transaction of several queries, so a request
+ * count would let one 200-change push weigh the same as a one-change one.
+ * A phone catching up after days offline sends a few hundred at most; past
+ * the budget it gets a 429 with Retry-After and sends the rest then.
+ */
+export const SYNC_MUTATIONS_PER_MINUTE = 1000;
+
 /** sha256 of a text, hex — what `base_hash` is compared against. UTF-8, like the phone's. */
 export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");

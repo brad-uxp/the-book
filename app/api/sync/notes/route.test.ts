@@ -17,6 +17,7 @@ vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn(async ()
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   requireSession: vi.fn(),
+  resolveActor: vi.fn(async () => ({ kind: "token", id: "tok-phone", label: "token:mobile · Pixel" })),
 }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
 
@@ -24,7 +25,8 @@ import { GET, POST } from "./route";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { requireSession } from "@/lib/api";
-import { SYNC_PAGE_LIMITS, encodeCursor } from "@/lib/sync";
+import { SYNC_MUTATIONS_PER_MINUTE, SYNC_PAGE_LIMITS, encodeCursor } from "@/lib/sync";
+import { resetRateLimits } from "@/lib/rate-limit";
 
 const tx = vi.mocked(prisma.$transaction);
 const stored = vi.mocked(prisma.syncMutation.findUnique);
@@ -63,6 +65,7 @@ const issueRow = (id: string, updated: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimits();
   vi.mocked(requireSession).mockResolvedValue(null);
   stored.mockResolvedValue(null);
   record.mockResolvedValue({} as never);
@@ -239,6 +242,43 @@ describe("POST /api/sync/notes — presupuesto de un push", () => {
     tx.mockRejectedValueOnce(Object.assign(new Error("Can't reach database server"), { code: "P1001" }));
     const body = await (await push({ mutations: upserts(2) })).json();
     expect(body).toEqual({ results: [] });
+  });
+});
+
+describe("POST /api/sync/notes — costo", () => {
+  const deletes = (n: number, from = 1) =>
+    Array.from({ length: n }, (_, i) => ({ mutation_id: MID(from + i), entity: "issue", op: "delete", id: ID }));
+
+  beforeEach(() => {
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } })) as never);
+  });
+
+  it("se cobra por cambio: pasado el presupuesto del minuto, 429 con Retry-After y sin tocar la base", async () => {
+    const pushes = SYNC_MUTATIONS_PER_MINUTE / 200;
+    for (let i = 0; i < pushes; i++) {
+      expect((await push({ mutations: deletes(200, i * 200 + 1) })).status).toBe(200);
+    }
+    tx.mockClear();
+    const res = await push({ mutations: deletes(1, 5000) });
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(tx).not.toHaveBeenCalled();
+  });
+
+  it("dos pushes del mismo token no corren a la vez", async () => {
+    let running = 0;
+    let most = 0;
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise((r) => setTimeout(r, 5));
+      const out = await fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } });
+      running -= 1;
+      return out;
+    }) as never);
+    await Promise.all([push({ mutations: deletes(3, 1) }), push({ mutations: deletes(3, 10) })]);
+    expect(most).toBe(1);
   });
 });
 

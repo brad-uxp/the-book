@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSession, readJsonLimited, invalid } from "@/lib/api";
+import { requireSession, readJsonLimited, invalid, resolveActor, type Actor } from "@/lib/api";
 import { getActorEmail } from "@/lib/audit";
+import { withKeyLock } from "@/lib/keyed-lock";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { SyncPushSchema } from "@/lib/validations";
 import { SYNC_PUSH_MAX_BYTES } from "@/lib/sync-protocol";
+import { SYNC_MUTATIONS_PER_MINUTE } from "@/lib/sync";
 import { pullNotes, pushNotes } from "@/lib/sync-server";
+
+/** Who a push's budget and lock belong to: a token, or the browser's user. */
+function syncKey(actor: Actor | null): string {
+  return actor?.kind === "token" ? `sync:token:${actor.id}` : "sync:user";
+}
 
 /**
  * The phone's offline notes: pull what changed, push what it changed.
@@ -43,6 +51,20 @@ export async function POST(req: NextRequest) {
   const parsed = SyncPushSchema.safeParse(body.value);
   if (!parsed.success) return invalid(parsed.error);
 
-  const { results, more } = await pushNotes(parsed.data.mutations, await getActorEmail());
+  // Charged per change, not per request: the changes are the work.
+  const key = syncKey(await resolveActor());
+  const mutations = parsed.data.mutations;
+  const budget = checkRateLimit(key, Date.now(), SYNC_MUTATIONS_PER_MINUTE, 60_000, mutations.length);
+  if (!budget.allowed) {
+    return NextResponse.json(
+      { error: "Too many changes pushed; try again shortly" },
+      { status: 429, headers: { "Retry-After": String(budget.retryAfterSeconds) } }
+    );
+  }
+
+  // One push per caller at a time: each holds a database connection while it
+  // runs, and a burst from one token must not take the pool from the web.
+  const actorEmail = await getActorEmail();
+  const { results, more } = await withKeyLock(key, () => pushNotes(mutations, actorEmail));
   return NextResponse.json(more ? { results, more } : { results });
 }
