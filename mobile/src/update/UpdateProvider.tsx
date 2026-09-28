@@ -1,18 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, AppState } from "react-native";
 import { Directory, File, Paths } from "expo-file-system";
-import {
-  canInstallUpdates,
-  installedVersion,
-  installUpdate,
-  openInstallSettings,
-  sha256OfUpdate,
-} from "../../modules/app-update";
+import { canInstallUpdates, installedVersion, installUpdate, openInstallSettings, sha256OfUpdate, verifyUpdate } from "../../modules/app-update";
 import { getDb } from "@/db/database";
 import { getMeta, setMeta } from "@/db/repo";
 import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { parseRelease, shouldCheck, updateFileName, type Release } from "./rules";
+import { parseRelease, shouldCheck, updateFileName, type Release, refusedUpdateMessage } from "./rules";
 
 /**
  * In-app updates. The app asks GET /api/mobile/releases/latest at start and on
@@ -144,7 +138,20 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       installUpdate(cur.fileUri);
     } catch (err) {
       console.warn("[update] install", err);
-      setState({ status: "failed", release: cur.release, message: "Android couldn't open the installer. Try again." });
+      // The native side re-checks package and key before opening the installer.
+      const notThisApp = (err as { code?: unknown } | null)?.code === "ERR_NOT_THIS_APP";
+      if (notThisApp) {
+        try {
+          new File(cur.fileUri).delete();
+        } catch {
+          // Cleared at the next start anyway (clearDownloads).
+        }
+      }
+      setState({
+        status: "failed",
+        release: cur.release,
+        message: notThisApp ? refusedUpdateMessage("wrong_signer")! : "Android couldn't open the installer. Try again.",
+      });
     }
   }, []);
 
@@ -174,6 +181,14 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       if (digest !== release.sha256) {
         file.delete();
         setState({ status: "failed", release, message: "The download was damaged. Try again." });
+        return;
+      }
+      // The hash only proves the file is the one published. Whether it is
+      // book., signed with this app's key, is checked on the file itself.
+      const refused = refusedUpdateMessage(await verifyUpdate(file.uri));
+      if (refused) {
+        file.delete();
+        setState({ status: "failed", release, message: refused });
         return;
       }
       setState({ status: "ready", release, fileUri: file.uri });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatSize, parseRelease, shouldCheck, updateFileName, updateLine, UPDATE_CHECK_EVERY_MS } from "./rules.ts";
+import { formatSize, parseRelease, shouldCheck, updateFileName, updateLine, refusedUpdateMessage, UPDATE_CHECK_EVERY_MS } from "./rules.ts";
 
 const release = {
   version: "0.4.3",
@@ -67,4 +67,14 @@ test("la línea de la hoja de cuenta sigue al actualizador", () => {
   assert.equal(updateLine({ status: "downloading", release: { version: "0.5.1" }, progress: 0.42 }, installed), "Downloading 0.5.1… 42%");
   assert.equal(updateLine({ status: "ready", release: { version: "0.5.1" } }, installed), "0.5.1 is ready to install");
   assert.equal(updateLine({ status: "failed", release: { version: "0.5.1" }, message: "The download was damaged. Try again." }, installed), "The download was damaged. Try again.");
+});
+
+test("una descarga que no es book. firmada con su clave se rechaza con un motivo claro", () => {
+  assert.equal(refusedUpdateMessage("ok"), null);
+  assert.match(refusedUpdateMessage("wrong_package")!, /isn't book\./);
+  assert.match(refusedUpdateMessage("wrong_signer")!, /key/);
+  assert.match(refusedUpdateMessage("unreadable")!, /couldn't be checked/);
+  for (const v of ["wrong_package", "wrong_signer", "unreadable"] as const) {
+    assert.match(refusedUpdateMessage(v)!, /Nothing was installed/);
+  }
 });

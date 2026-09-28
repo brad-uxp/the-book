@@ -86,3 +86,20 @@ export function updateLine(
       return `Version ${installed.name} (${installed.code})`;
   }
 }
+
+/**
+ * What the owner reads when a downloaded update is not book. signed with this
+ * app's key (the file is deleted either way). null = it is, go on.
+ */
+export function refusedUpdateMessage(verdict: "ok" | "wrong_package" | "wrong_signer" | "unreadable"): string | null {
+  switch (verdict) {
+    case "ok":
+      return null;
+    case "wrong_package":
+      return "This download isn't book., so it was deleted. Nothing was installed.";
+    case "wrong_signer":
+      return "This download isn't signed by book.'s key, so it was deleted. Nothing was installed.";
+    default:
+      return "This download couldn't be checked, so it was deleted. Nothing was installed.";
+  }
+}

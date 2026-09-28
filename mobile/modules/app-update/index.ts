@@ -10,6 +10,15 @@ export function sha256OfUpdate(fileUri: string): Promise<string> {
   return AppUpdate.sha256(fileUri);
 }
 
+/**
+ * Whether a downloaded update is book. signed with the installed app's key:
+ * "ok", or why not. A different package or signer is refused before the
+ * installer is ever offered.
+ */
+export function verifyUpdate(fileUri: string): Promise<"ok" | "wrong_package" | "wrong_signer" | "unreadable"> {
+  return AppUpdate.verify(fileUri);
+}
+
 /** Whether Android lets book. open the installer (the owner allows it once in Settings). */
 export function canInstallUpdates(): boolean {
   return AppUpdate.canInstall();

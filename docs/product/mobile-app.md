@@ -445,10 +445,15 @@ El teléfono se actualiza solo desde la app, sin USB:
    un aviso en Notes; **Download** baja el APK a `cache/updates/`, compara su sha256 con el
    publicado y **Install** se lo pasa al instalador de Android, que pide confirmar. La primera
    vez Android pide además permitir instalaciones desde book.
-3. Integridad: Android solo instala una actualización firmada con la misma clave que la app
-   instalada, así que un archivo cambiado no puede reemplazarla; el sha256 atrapa una
-   descarga rota antes de llegar al instalador. `modules/app-update` (Kotlin) hace el hash y
-   el paso al instalador, y solo acepta archivos de `cache/updates/`.
+3. Integridad: el sha256 atrapa una descarga rota. Después, `modules/app-update` (Kotlin) lee
+   el APK y exige que sea **el mismo paquete** (`com.bolstro.book`) **firmado por la misma
+   clave** que la app instalada (o, tras una rotación de clave, con la clave instalada en su
+   historial de firma); si no, lo borra y no ofrece instalar nada. Hace falta porque la regla
+   de Android de "misma clave" solo protege una actualización del *mismo* paquete: un APK de
+   otro paquete, con cualquier clave, se instalaría como app nueva. `install` vuelve a
+   verificar antes de abrir el instalador, y solo acepta archivos de `cache/updates/`.
+   La URL firmada de subida no pasa por los argumentos de `curl` (va por su config en stdin),
+   así que `ps` no la muestra.
 
 **Una sola vez, en el Mac** — el script lee un token de release del Llavero:
 
@@ -458,8 +463,14 @@ El teléfono se actualiza solo desde la app, sin USB:
    token; pegarlo).
 
 Ese token solo publica versiones: todas las demás rutas lo rechazan (403), así que si se
-filtrara no abre la contabilidad. Revocarlo en Settings corta la publicación. Sin él, el
-script compila igual y avisa que no publicó.
+filtrara no abre la contabilidad, y lo que publique el teléfono lo rechaza si no es book.
+firmado con su clave. Revocarlo en Settings corta la publicación. Sin él, el script compila
+igual y avisa que no publicó.
+
+`versionCode` puede subir como mucho **100** por encima del último publicado (400 si no): un
+token robado no puede publicar 999999999 y dejar trabadas las versiones legítimas. Si igual
+se publicara algo indebido: revocar el token en Settings y borrar esa fila de `MobileRelease`
+(y su objeto en R2).
 
 ## Editor
 
