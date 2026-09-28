@@ -11,6 +11,8 @@
  */
 
 import { addDaysUTC, clampDay, monthlyPeriodKey } from "./dates";
+import { awaitingOf } from "./invoices";
+import type { MetricsPeriod, MetricsReport, UpcomingPayment } from "./metrics-report";
 
 // ── Months ──────────────────────────────────────────────────────────────────
 
@@ -326,57 +328,15 @@ export function corporateOf(
 
 // ── Invoices awaiting payment ───────────────────────────────────────────────
 
-/**
- * An invoice that was sent and whose due date has already gone by.
- *
- * Derived, never stored. Due dates are always a month's last day, so a Sent
- * invoice due Aug 31 is past due from Sep 1 (Montevideo) on — and never on the
- * due date itself. `today` is a UTC-midnight date as getTodayInTZ returns it.
- */
-export function isPastDue(
-  invoice: { status: string; due_date: Date | string },
-  today: Date
-): boolean {
-  if (invoice.status !== "sent") return false;
-  const due = typeof invoice.due_date === "string" ? new Date(invoice.due_date) : invoice.due_date;
-  const dueDay = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
-  const todayDay = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  return dueDay < todayDay;
-}
-
-export interface Awaiting {
-  count: number;
-  /** Σ amount + fee — what the company will actually receive. */
-  netCents: number;
-  pastDueCount: number;
-}
-
-/** Invoices with status Sent: count, what they will bring in, how many are late. */
-export function awaitingOf(
-  sent: { status: string; amount_cents: number; fee_cents: number; due_date: Date }[],
-  today: Date
-): Awaiting {
-  const onlySent = sent.filter((i) => i.status === "sent");
-  return {
-    count: onlySent.length,
-    netCents: onlySent.reduce((s, i) => s + i.amount_cents + i.fee_cents, 0),
-    pastDueCount: onlySent.filter((i) => isPastDue(i, today)).length,
-  };
-}
+// In lib/invoices, which has no imports, so the Android app shares them.
+export { awaitingOf, isPastDue, type Awaiting } from "./invoices";
 
 // ── Upcoming payments ───────────────────────────────────────────────────────
 
 /** How far ahead "upcoming" looks, in days, today included. */
 export const UPCOMING_DAYS = 5;
 
-export interface UpcomingPayment {
-  id: string;
-  type: "subscription" | "salary";
-  name: string;
-  amount_cents: number;
-  /** ISO string of the day it falls due. */
-  due_date: string;
-}
+export type { UpcomingPayment } from "./metrics-report";
 
 export interface SubscriptionForUpcoming {
   id: string;
@@ -532,7 +492,7 @@ export function workExpensesByItemOf(
 
 // ── The report GET /api/metrics returns ─────────────────────────────────────
 
-export type MetricsPeriod = "this_year" | "last_12_months";
+export type { MetricsPeriod, MetricsReport } from "./metrics-report";
 
 export const PERIOD_PRESET: Record<MetricsPeriod, Preset> = {
   this_year: "ytd",
@@ -566,7 +526,7 @@ export interface MetricsReportInput {
  * dashboard, so a number here is the number the dashboard shows for the same
  * period and the same saved exclusions.
  */
-export function buildMetricsReport(input: MetricsReportInput) {
+export function buildMetricsReport(input: MetricsReportInput): MetricsReport {
   const { monthly, incomeByClient } = bucketByMonth(input.months, input.rows);
   const shown =
     input.selection.kind === "month"
@@ -630,4 +590,3 @@ export function buildMetricsReport(input: MetricsReportInput) {
   };
 }
 
-export type MetricsReport = ReturnType<typeof buildMetricsReport>;
