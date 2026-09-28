@@ -273,11 +273,13 @@ riesgo: `API.md` nunca documentó esas rutas (solo aparecen en `PROJECT.md`).
 El modelo de mouse cambió el 2026-09-27 a pedido del dueño: antes era trackpad-first (dos
 dedos movían el lienzo y shift+arrastrar seleccionaba). Ese mismo día se separaron la rueda
 y el trackpad, que el navegador reporta con el mismo evento `wheel`: `lib/wheel-device.ts`
-juzga cada gesto por su primer evento — una muesca mueve 4 px o más en vertical, un trackpad
-arranca con uno o dos píxeles y a menudo en diagonal — y lo pasa a pan si los eventos llegan
-al ritmo del trackpad (cada ~10 ms; una rueda, cada 40 ms o más). La primera versión se
-guiaba por el delta legacy (120 por muesca) y falló con el mouse del dueño, que es continuo y
-reporta píxeles como un trackpad; los tests reproducen sus grabaciones reales. React Flow queda en `panOnScroll` (dos
+juzga cada gesto por su primer evento: una muesca mueve 4 px o más en vertical puro, un trackpad
+arranca con uno o dos píxeles y se mueve de costado. Un gesto tomado por rueda solo por su tamaño
+pasa a pan si hace algo que ninguna rueda hace (moverse de costado, o menos de una muesca). La
+primera versión se guiaba por el delta legacy (120 por muesca) y la segunda por el ritmo; las dos
+fallaron con el mouse del dueño, que es continuo (reporta píxeles con la aritmética del trackpad) y,
+girado a ritmo normal, manda cada ~10 ms como un trackpad. Los tests reproducen sus grabaciones,
+tomadas con una sonda del navegador. React Flow queda en `panOnScroll` (dos
 dedos y pinch nativos) y la rueda del mouse se intercepta antes para hacer zoom.
 
 - **Las tarjetas no tienen scroll.** El ancho lo decide el usuario (manijas a izquierda y
