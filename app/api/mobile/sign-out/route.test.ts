@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/db", () => ({ prisma: { apiToken: { updateMany: vi.fn() } } }));
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn() }));
+vi.mock("@/lib/push", () => ({ forgetDevice: vi.fn().mockResolvedValue(1) }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   requireSession: vi.fn(),
@@ -14,6 +15,7 @@ import { POST } from "./route";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { requireSession, resolveActor } from "@/lib/api";
+import { forgetDevice } from "@/lib/push";
 
 const updateMany = vi.mocked(prisma.apiToken.updateMany);
 
@@ -32,6 +34,8 @@ describe("POST /api/mobile/sign-out", () => {
     const where = updateMany.mock.calls[0][0]!.where;
     expect(where).toEqual({ id: "tok-1", revoked_at: null });
     expect(vi.mocked(auditLog).mock.calls[0][0]).toMatchObject({ entity_id: "tok-1", action: "delete" });
+    // …and its phone stops getting pushes.
+    expect(forgetDevice).toHaveBeenCalledWith("tok-1");
   });
 
   it("una sesión web no puede usarlo: no tiene un token que revocar", async () => {

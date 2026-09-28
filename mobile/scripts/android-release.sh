@@ -34,6 +34,9 @@ CODE=$(node -p "require('./app.json').expo.android.versionCode")
 # The editor page is bundled into the app as a generated module; Metro needs it.
 pnpm editor:build
 
+# FCM push needs the Firebase config (kept out of git, next to the repo).
+node scripts/google-services.mjs
+
 pnpm expo prebuild --platform android --clean --no-install
 
 # Expo's template caps Gradle at 2 GB of heap, which D8's dex merge outgrew

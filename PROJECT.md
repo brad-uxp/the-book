@@ -37,8 +37,9 @@
 > (ID token de Google verificado con `jose`, nonce de un solo uso, allowlist) emiten
 > un `ApiToken`, y `/api/mobile/sign-out` lo revoca.
 >
-> **Tampoco hay PWA ni web push** desde el 2026-09-27: se quitaron a favor de una
-> app React Native, que traerá push nativo. Las notificaciones viven solo en la
+> **Tampoco hay PWA ni web push** desde el 2026-09-27: se quitaron a favor de la
+> app React Native, que tiene **push nativo por FCM** desde la fase 5 (2026-09-28,
+> `lib/fcm.ts` + `lib/push.ts`, mensajes solo de datos). En la web las notificaciones viven solo en la
 > campana y en `/notifications`. `public/sw.js` no es un worker de la app: es el
 > *kill switch* que desinstala el service worker viejo de los navegadores que lo
 > tenían (ver su cabecera); se puede borrar unas semanas después, junto con
@@ -139,7 +140,8 @@ guardan como **UTC midnight**.
 | Modelo             | Descripción                                                              |
 | ------------------ | ------------------------------------------------------------------------ |
 | `Settings`         | Configuración global (singleton, `CHECK (id = 'singleton')`): días de anticipación de las alertas y `corporate_excluded_client_ids`, los clientes que quedan fuera de la rentabilidad corporativa (dashboard y `/api/metrics`) |
-| `PushSubscription` | **Inactiva** desde 2026-09-27: suscripciones del web push retirado. Nada la lee ni escribe; el plan de la app React Native decide si se borra (push nativo usa tokens con otra forma) |
+| `MobileDevice` | Token nativo de FCM de un teléfono, uno por `ApiToken` (FK con `ON DELETE CASCADE`); cerrar sesión o revocar lo borra. Destino de los push |
+| `PushSubscription` | **Fuera del schema** desde 2026-09-28 (fase 1 de su borrado): la tabla sigue en la base, sin uso; la migración que la dropea va en el deploy siguiente, con `ACEPTO PERDER ESTOS DATOS` |
 
 ### Suscripciones
 
@@ -312,7 +314,8 @@ recrearía el mes salteado al reactivarla.
 6. **Issues**: aviso para tareas que vencen hoy o mañana
 
 Todo lo que crea queda como `Notification` en la app (campana y `/notifications`).
-No hay entrega push desde el 2026-09-27; vuelve con la app React Native.
+Además, cada notificación que la corrida **crea** (no las que ya estaban) se empuja al
+teléfono por FCM como mensaje solo de datos; best effort, nunca tumba el job.
 
 > El aviso anticipado mira **hacia adelante** desde hoy (`advanceNotice`).
 > Calcularlo restando desde el vencimiento del mes corriente falla en silencio

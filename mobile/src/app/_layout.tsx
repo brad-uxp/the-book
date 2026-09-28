@@ -16,6 +16,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ToastProvider } from "@/components/Toast";
 import { SyncProvider } from "@/sync/SyncProvider";
 import { useIsDark, usePalette } from "@/lib/theme";
+import { PushManager } from "@/push/PushManager";
 
 // The splash stays up until fonts and the saved session are both ready, so the
 // first frame is already the right screen in the right typeface.
@@ -57,6 +58,8 @@ function Gate({ fontsLoaded }: { fontsLoaded: boolean }) {
   return (
     <>
       <StatusBar style={isDark ? "light" : "dark"} />
+      {/* Push: permission, device registration and taps — only with a session. */}
+      {signedIn ? <PushManager /> : null}
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
         {/* Nothing with data is reachable without a token, and the sign-in
             screen is unreachable with one. */}

@@ -45,6 +45,15 @@ Read the `expo` major in `package.json` (57 today) and use the versioned docs,
   --experimental-strip-types`). The shared `../lib` modules import each other
   without extensions, as the web expects; `scripts/test-resolve.mjs` (loaded by
   `pnpm test`) retries those imports as `.ts`.
+- **Push** (`src/push/`): FCM data-only messages (`{ kind, id }`); the app
+  fetches the text from `GET /api/notifications/:id` and shows a local
+  notification. `index.ts` loads `src/push/task.ts` before the router, because a
+  push with the app closed runs the bundle headless and only module scope runs.
+  The app registers its NATIVE FCM token (`getDevicePushTokenAsync`) at
+  `/api/mobile/devices` — never Expo's push service. `google-services.json` is
+  not in git: `scripts/google-services.mjs` copies it from `theBookApp/` before
+  prebuild. `book://dev/push` (development builds) runs the task's handler with
+  a typed payload, since a real push needs the production key.
 - **Google sign-in** is `modules/google-id` (a local Expo module on Android's
   Credential Manager). The app asks Google for a token for the WEB OAuth client;
   the server verifies it (`/api/mobile/sign-in`).

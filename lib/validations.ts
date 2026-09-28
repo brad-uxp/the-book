@@ -495,3 +495,24 @@ export const MobileSignInSchema = z.object({
 });
 
 export type MobileSignInInput = z.infer<typeof MobileSignInSchema>;
+
+/**
+ * POST /api/mobile/devices: the phone's native FCM registration token. FCM
+ * tokens are ~160 URL-safe characters; the cap only keeps junk out.
+ */
+export const MobileDeviceSchema = z
+  .object({
+    fcm_token: z.string().min(20).max(4096).regex(/^[A-Za-z0-9_:\-.]+$/, "Not an FCM token"),
+    platform: z.literal("android"),
+    app_version: z
+      .string()
+      .max(32)
+      .regex(/^[0-9A-Za-z.+-]+$/)
+      .optional(),
+  })
+  .strict();
+
+/** POST /api/mobile/devices/test: optionally wait, so the app can be closed first. */
+export const MobileDeviceTestSchema = z
+  .object({ delay_seconds: z.number().int().min(0).max(60).optional() })
+  .strict();

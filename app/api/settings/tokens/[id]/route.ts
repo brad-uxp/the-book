@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireUserSession, toApiResponse } from "@/lib/api";
+import { forgetDevice } from "@/lib/push";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,8 @@ export async function DELETE(
       where: { id },
       data: { revoked_at: new Date() },
     });
+    // A revoked phone gets no more pushes either (the row stays, so no cascade).
+    await forgetDevice(id);
 
     auditLog({
       entity_type: "api_token",
