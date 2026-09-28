@@ -376,6 +376,20 @@ empaquetada dentro de la app, en una WebView (`mobile/src/editor/RichTextEditor.
 - **Teclado**: el editor mide dónde está en la ventana y deja libre lo que tapa el teclado
   (un `KeyboardAvoidingView` se mide contra su padre y, debajo del título de una nota, no veía
   el solapamiento). `onFocusChange` avisa a la pantalla cuando el texto toma o suelta el foco.
+- **Composición y carreras con la barra** (2026-09-28): los teclados de Android componen la
+  palabra en curso (subrayada), y todo lo que manda el lado nativo — formato, `@`/`#`, elegir
+  una mención, cargar otro documento — llega de afuera de la página sin cerrar esa
+  composición; ProseMirror no puede cambiar marcas ni texto alrededor de una viva. Negrita
+  con una composición abierta duplicaba la palabra (`hel` + negrita `hello`) o perdía la marca.
+  La página cierra la composición antes de esos comandos (saca y devuelve el foco, sin
+  avisarle al nativo: el teclado no se baja). Además, el toque de un botón cruza después de
+  soltarlo y las letras siguientes pueden llegar antes: la barra manda la hora del toque
+  (la del evento nativo, `pressedAtEpoch`) y la página le da el formato también a las letras
+  que entraron después (`src/editor/typing.ts`). Verificado con un arnés de Chromium que
+  compone como Gboard (antes 10 de 13 escenarios fallaban 20/20, después 0) y en el emulador:
+  B y letras en el mismo instante perdían la negrita 13 de 20 veces, ahora 0 de 60, en la
+  demo y en la hoja de una idea del canvas. El Gboard del emulador confirma letra por letra
+  (no compone), así que la composición real se probó en el arnés.
 - **Límites**: los enlaces de una nota no se abren desde el teléfono; `#` no ofrece "crear
   factura" como en la web; una lista de personas o facturas vacía se toma como "todavía no
   cargó" y no marca nada como borrado.
