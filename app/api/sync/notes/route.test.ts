@@ -370,6 +370,25 @@ describe("POST /api/sync/notes — costo", () => {
     expect(tx).not.toHaveBeenCalled();
   });
 
+  it("un push que se corta con more solo paga lo que procesó: al reenviar el resto no hay 429", async () => {
+    // 200 cambios de a 1,5 MB de respuesta: se corta en 3 y devuelve lo demás.
+    const row = { ...issueRow(ID, "2026-09-28T10:00:00Z"), description: "x".repeat(1_500_000) };
+    tx.mockImplementation((async (fn: (t: unknown) => unknown) =>
+      fn({ $queryRaw: vi.fn(async () => []), syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => row) } })) as never);
+    const upserts = (n: number, from: number) =>
+      Array.from({ length: n }, (_, i) => ({ mutation_id: MID(from + i), entity: "issue", op: "upsert", id: ID, base_updated_at: "2026-09-28T10:00:00Z", fields: {} }));
+    let answered = 0;
+    for (let round = 0; round < 6; round++) {
+      const res = await push({ mutations: upserts(200, 1 + round * 1000) });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.more).toBe(true);
+      answered += body.results.length;
+    }
+    // 6 pushes de 200 pasarían los 1000 si se cobraran enteros; se cobró lo procesado.
+    expect(answered).toBe(18);
+  });
+
   it("dos pushes del mismo token no corren a la vez", async () => {
     let running = 0;
     let most = 0;

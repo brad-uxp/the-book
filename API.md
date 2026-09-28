@@ -196,8 +196,8 @@ hold that has no unsent change, then apply the pages.
 
 **Push.** Up to 200 changes, body up to 5 MB, applied in order, each in its own
 transaction. Charged per change against a per-caller budget of 1000 a minute
-(`429` with `Retry-After` past it); one caller's pushes run one at a time. A
-change is
+(`429` with `Retry-After` past it) — only for the changes it answered, since
+the rest are sent again; one caller's pushes run one at a time. A change is
 `{ mutation_id, entity, op: "upsert" | "delete", id, base_updated_at?, base_hash?, title_hint?, fields? }`
 where `fields` holds only what changed.
 

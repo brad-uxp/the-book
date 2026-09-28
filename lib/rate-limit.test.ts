@@ -3,6 +3,7 @@ import {
   checkRateLimit,
   pruneRateLimits,
   rateLimitKeyCount,
+  refundRateLimit,
   resetRateLimits,
 } from "./rate-limit";
 
@@ -75,6 +76,28 @@ describe("checkRateLimit — con costo", () => {
 
   it("un pedido que cuesta más que todo el presupuesto nunca pasa", () => {
     expect(checkRateLimit("sync", 1_000_000, 100, 60_000, 101).allowed).toBe(false);
+  });
+});
+
+describe("refundRateLimit", () => {
+  beforeEach(resetRateLimits);
+
+  it("devuelve lo cobrado por trabajo que no se hizo", () => {
+    const t = 1_000_000;
+    checkRateLimit("sync", t, 1000, 60_000, 1000);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 1).allowed).toBe(false);
+    refundRateLimit("sync", 150, t);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 150).allowed).toBe(true);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 1).allowed).toBe(false);
+  });
+
+  it("nunca deja el contador bajo cero, y no toca una ventana vencida", () => {
+    const t = 1_000_000;
+    checkRateLimit("sync", t, 1000, 60_000, 10);
+    refundRateLimit("sync", 500, t);
+    expect(checkRateLimit("sync", t, 1000, 60_000, 1000).allowed).toBe(true);
+    refundRateLimit("sync", 1000, t + 60_000); // ya venció: no hay nada que devolver
+    expect(checkRateLimit("sync", t + 60_000, 1000, 60_000, 1000).allowed).toBe(true);
   });
 });
 

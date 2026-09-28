@@ -68,6 +68,18 @@ export function checkRateLimit(
 }
 
 /**
+ * Gives back `units` of what `key` was charged in its current window — for
+ * work paid for up front that was not done (a sync push that stopped early:
+ * the phone sends the rest again, and must not pay for it twice). Nothing to
+ * give back once the window has rolled over.
+ */
+export function refundRateLimit(key: string, units: number, now: number = Date.now()): void {
+  const window = windows.get(key);
+  if (!window || now >= window.resetAt || units <= 0) return;
+  window.count = Math.max(0, window.count - units);
+}
+
+/**
  * Drops windows that have already expired. Called by checkRateLimit once the
  * map passes PRUNE_ABOVE keys.
  */
