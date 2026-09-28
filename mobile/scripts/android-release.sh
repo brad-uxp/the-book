@@ -55,8 +55,12 @@ pnpm expo prebuild --platform android --clean --no-install
 # once expo-sharing and expo-file-system joined (OutOfMemoryError in
 # mergeDexRelease, 0.3.0). prebuild --clean rewrites gradle.properties, so the
 # cap is raised here, for this build only.
+# arm64-v8a only: the owner's phone (and every Android phone sold in years)
+# is 64-bit ARM. Native code for four ABIs made the APK 118.6 MB; one makes it
+# 52 MB — what the phone now downloads for each in-app update.
 (cd android && ./gradlew --no-daemon --quiet \
   "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+  -PreactNativeArchitectures=arm64-v8a \
   assembleRelease)
 
 UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
