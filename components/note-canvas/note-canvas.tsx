@@ -922,7 +922,8 @@ function Canvas({ issueId, initialIdeas, initialConnections }: Props) {
         e.preventDefault();
       }}
       className={cn(
-        "relative w-full overflow-hidden border bg-background",
+        // `note-canvas` scopes this canvas's cursor rules (app/globals.css).
+        "note-canvas relative w-full overflow-hidden border bg-background",
         expanded
           ? // Above the sidebar (also z-50, but earlier in the DOM) and below
             // dialogs, whose portals are appended last to <body>.

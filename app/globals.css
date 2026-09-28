@@ -244,3 +244,11 @@
   color: hsl(25 95% 40%);
   border-color: hsl(25 95% 53% / 0.4);
 }
+/* The note canvas's cursors (components/note-canvas). The empty pane rests on
+   the arrow: a left-drag there draws a selection box, it does not pan — React
+   Flow's pointing hand said otherwise. A pan (right or middle button) shows
+   the grabbing hand, which React Flow's own `.selection` rule, later in its
+   stylesheet, used to override. Cards keep grab, dots crosshair, text the
+   I-beam. */
+.note-canvas .react-flow__pane.selection { cursor: default; }
+.note-canvas .react-flow__pane.dragging { cursor: grabbing; }
