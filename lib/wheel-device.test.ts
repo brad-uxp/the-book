@@ -8,19 +8,25 @@ import {
 } from "./wheel-device";
 
 // Grabaciones reales, tomadas con la sonda de rueda del canvas (2026-09-27,
-// Chrome 152 en macOS): [ms desde el inicio del gesto, deltaX, deltaY,
-// wheelDeltaY]. El mouse del dueño es continuo: legacy = -3 × deltaY, igual
-// que el trackpad.
+// Chrome 152 en macOS, el hardware del dueño): [ms desde el inicio del gesto,
+// deltaX, deltaY, wheelDeltaY]. El mouse es continuo (legacy = -3 × deltaY,
+// igual que el trackpad) y, girado a ritmo normal, manda cada ~10 ms: ni el
+// legacy ni el ritmo lo distinguen del trackpad.
 type Rec = [t: number, dx: number, dy: number, wdy: number][];
-const OWNER_MOUSE_SLOW: Rec = [[0, 0, 12, -36], [58, 0, 13, -39], [153, 0, 13, -39]];
-const OWNER_MOUSE_FAST: Rec = [
-  [0, 0, 13, -39], [130, 0, 13, -39], [216, 0, 13, -39], [263, 0, 13, -39],
-  [330, 0, 28, -84], [386, 0, 56, -168], [516, 0, 13, -39],
-];
-const OWNER_MOUSE_UP: Rec = [
-  [0, 0, -12, 36], [72, 0, -13, 39], [131, 0, -13, 39],
-  [175, 0, -45, 135], [250, 0, -62, 186], [311, 0, -88, 264],
-];
+const OWNER_MOUSE: Record<string, Rec> = {
+  "lento, muesca a muesca": [[0, 0, 12, -36], [102.1, 0, 13, -39], [194.2, 0, 13, -39], [312.7, 0, 13, -39], [418.5, 0, 13, -39], [479.7, 0, 13, -39], [539.2, 0, 13, -39], [620.4, 0, 23, -69], [802.6, 0, 13, -39]],
+  "lento, acelerando hacia arriba": [[0, 0, -12, 36], [52.9, 0, -13, 39], [83, 0, -36, 108], [122.9, 0, -75, 225], [183, 0, -99, 297], [273.6, 0, -103, 309], [336.2, 0, -103, 309], [386.3, 0, -103, 309], [446.6, 0, -102, 306], [491.5, 0, -103, 309], [596.8, 0, -13, 39]],
+  "normal (antes: 2 zoom, 8 pan)": [[0, 0, -12, 36], [39.1, 0, -13, 39], [49, 0, -96, 288], [69.1, 0, -103, 309], [88.9, 0, -103, 309], [109.1, 0, -103, 309], [129.1, 0, -102, 306], [158.8, 0, -103, 309], [190.9, 0, -103, 309], [334.3, 0, -13, 39]],
+  "normal (antes: 6 zoom, 4 pan)": [[0, 0, 12, -36], [90.4, 0, 13, -39], [119.5, 0, 25, -75], [140.9, 0, 86, -258], [170.3, 0, 103, -309], [200.3, 0, 102, -306], [214.9, 0, 103, -309], [255.4, 0, 103, -309], [284.1, 0, 103, -309], [330.5, 0, 103, -309]],
+  "normal (antes: 3 zoom, 7 pan)": [[0, 0, -12, 36], [25.3, 0, -71, 213], [55.3, 0, -103, 309], [65.3, 0, -103, 309], [75.4, 0, -103, 309], [85.2, 0, -102, 306], [95.1, 0, -103, 309], [114.3, 0, -103, 309], [135.2, 0, -103, 309], [224.3, 0, -103, 309]],
+  "normal, con un evento doble (antes: 2 zoom, 8 pan)": [[0, 0, -12, 36], [39.7, 0, -13, 39], [49.7, 0, -103, 309], [69.6, 0, -103, 309], [79, 0, -103, 309], [99.8, 0, -205, 615], [108.8, 0, -103, 309], [119.7, 0, -103, 309], [148.9, 0, -103, 309], [202.2, 0, -102, 306]],
+  "normal (antes: 3 zoom, 8 pan)": [[0, 0, 12, -36], [39.8, 0, 13, -39], [69.3, 0, 67, -201], [89.2, 0, 103, -309], [100.1, 0, 103, -309], [110, 0, 103, -309], [130, 0, 102, -306], [148.6, 0, 103, -309], [164.8, 0, 103, -309], [189.9, 0, 103, -309], [242.2, 0, 103, -309]],
+  "rápido, evento triple": [[0, 0, -13, 39], [20, 0, -34, 102], [29.9, 0, -309, 927], [39.9, 0, -205, 615], [49.8, 0, -103, 309], [59.9, 0, -103, 309], [69.8, 0, -103, 309]],
+  "rápido, cada 10 ms": [[0, 0, -13, 39], [11.1, 0, -102, 306], [19.9, 0, -206, 618], [29.9, 0, -103, 309], [39.9, 0, -103, 309], [49, 0, -102, 306], [69.9, 0, -103, 309]],
+  "rápido, ida y vuelta sin pausa": [[0, 0, -11, 33], [19.7, 0, -73, 219], [30.4, 0, -103, 309], [39.5, 0, -102, 306], [50.4, 0, -103, 309], [60.4, 0, -103, 309], [70.4, 0, -103, 309], [80.3, 0, -103, 309], [90.3, 0, -205, 615], [130.3, 0, -103, 309], [207.6, 0, 102, -306], [229.8, 0, 103, -309], [236, 0, 102, -306], [252.2, 0, 103, -309], [260.1, 0, 103, -309], [270.4, 0, 103, -309], [280.3, 0, 103, -309], [289.7, 0, 205, -615], [300.3, 0, 103, -309], [310.3, 0, 103, -309], [320.3, 0, 103, -309], [447.6, 0, -12, 36], [462.7, 0, -71, 213], [471.2, 0, -103, 309]],
+};
+// Dos dedos, de la primera grabación: casi todos los eventos llevan algo de
+// horizontal y arrancan con uno o dos píxeles.
 const OWNER_TRACKPAD: Rec = [
   [0, 1, 0, 0], [17, 2, 1, -3], [20, 2, 1, -3], [29, 2, 1, -3], [39, 2, 1, -3],
   [50, 2, 1, -3], [60, 2, 1, -3], [70, 2, 1, -3], [80, 2, 1, -3], [90, 2, 1, -3],
@@ -43,11 +49,7 @@ const notch = (notches: number, deltaY: number): WheelSample => ({
 });
 
 describe("con el hardware del dueño", () => {
-  it.each([
-    ["muescas lentas", OWNER_MOUSE_SLOW],
-    ["giro rápido", OWNER_MOUSE_FAST],
-    ["hacia arriba, acelerando", OWNER_MOUSE_UP],
-  ])("el mouse, %s → zoom en todo el gesto", (_label, rec) => {
+  it.each(Object.entries(OWNER_MOUSE))("el mouse, %s → zoom en todo el gesto", (_label, rec) => {
     expect(replay(rec)).toEqual(all("mouse", rec.length));
   });
 
@@ -55,10 +57,11 @@ describe("con el hardware del dueño", () => {
     expect(replay(OWNER_TRACKPAD)).toEqual(all("trackpad", OWNER_TRACKPAD.length));
   });
 
-  it("alternando: trackpad, pausa, mouse, pausa, trackpad", () => {
+  it("alternando: trackpad, pausa, mouse rápido, pausa, trackpad", () => {
     const track = createWheelDeviceTracker();
+    const fast = OWNER_MOUSE["rápido, cada 10 ms"];
     expect(replay(OWNER_TRACKPAD, 0, track)).toEqual(all("trackpad", OWNER_TRACKPAD.length));
-    expect(replay(OWNER_MOUSE_SLOW, 1000, track)).toEqual(all("mouse", OWNER_MOUSE_SLOW.length));
+    expect(replay(fast, 1000, track)).toEqual(all("mouse", fast.length));
     expect(replay(OWNER_TRACKPAD, 2000, track)).toEqual(all("trackpad", OWNER_TRACKPAD.length));
   });
 });
@@ -90,12 +93,22 @@ describe("wheelDevice (primer evento de un gesto)", () => {
 });
 
 describe("createWheelDeviceTracker", () => {
-  it("un deslizamiento rápido que arranca grande pasa a pan en cuanto llega al ritmo del trackpad", () => {
-    const flick: Rec = [[0, 0, 15, -45], [10, 0, 22, -66], [20, 0, 30, -90], [30, 0, 26, -78]];
-    expect(replay(flick)).toEqual(["mouse", "trackpad", "trackpad", "trackpad"]);
+  it("un deslizamiento que arranca grande y vertical pasa a pan en cuanto se mueve de costado", () => {
+    const swipe: Rec = [[0, 0, 15, -45], [10, 0, 22, -66], [20, 1, 30, -90], [30, 0, 26, -78]];
+    expect(replay(swipe)).toEqual(["mouse", "mouse", "trackpad", "trackpad"]);
   });
 
-  it("una rueda clásica girada rápido sigue siendo mouse (es seguro, no se revisa)", () => {
+  it("…o en cuanto mueve menos que una muesca (la cola de la inercia)", () => {
+    const swipe: Rec = [[0, 0, 15, -45], [10, 0, 9, -27], [20, 0, 3, -9], [30, 0, 1, -3]];
+    expect(replay(swipe)).toEqual(["mouse", "mouse", "trackpad", "trackpad"]);
+  });
+
+  it("el ritmo no cuenta: un mouse que manda cada 10 ms sigue siendo mouse", () => {
+    const spin: Rec = [[0, 0, 13, -39], [10, 0, 103, -309], [20, 0, 102, -306], [30, 0, 206, -618], [40, 0, 103, -309]];
+    expect(replay(spin)).toEqual(all("mouse", spin.length));
+  });
+
+  it("una rueda clásica es segura: no se revisa", () => {
     const spin: Rec = [[0, 0, 4.000244140625, -120], [12, 0, 8.00048828125, -240], [24, 0, 12.000732421875, -360]];
     expect(replay(spin)).toEqual(["mouse", "mouse", "mouse"]);
   });
