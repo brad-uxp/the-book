@@ -120,7 +120,20 @@ const MIGRATIONS: string[] = [
   UPDATE canvas_edges SET updated_at = created_at;
   `,
 
-  // 4 — phase 3: ideas are written on the phone. Like a note, an idea
+  // 4 — phase 4: the last answer the Invoices, Salaries and Metrics tabs got
+  // from the API, whole, keyed by what was asked ("invoices", "people",
+  // "metrics:this_year", …). They are read-mostly views of server data, so a
+  // snapshot per screen — shown with its time when offline — is all they need;
+  // their actions go straight to the API. Not user-authored: a 401 wipes it.
+  `
+  CREATE TABLE business_cache (
+    key TEXT PRIMARY KEY NOT NULL,
+    payload TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+  );
+  `,
+
+  // 5 — phase 3: ideas are written on the phone. Like a note, an idea
   // remembers the server's updated_at it is based on (null until the server
   // has confirmed one made here): a change to a confirmed idea carries only
   // what changed, one to an unconfirmed idea carries all of it. Every idea
@@ -161,7 +174,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
 
 // ─── Writes ──────────────────────────────────────────────────────────────────
 
-export type Table = "issues" | "canvas_nodes" | "canvas_edges" | "refs" | "outbox" | "meta";
+export type Table = "issues" | "canvas_nodes" | "canvas_edges" | "refs" | "outbox" | "meta" | "business_cache";
 
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -251,9 +264,9 @@ export function useLiveQuery<T>(
  * unsent changes still reach the server after signing back in.)
  */
 export async function wipeLocalData(): Promise<void> {
-  await write(["issues", "canvas_nodes", "canvas_edges", "refs", "outbox", "meta"], async (db) => {
+  await write(["issues", "canvas_nodes", "canvas_edges", "refs", "outbox", "meta", "business_cache"], async (db) => {
     await db.execAsync(
-      "DELETE FROM issues; DELETE FROM canvas_nodes; DELETE FROM canvas_edges; DELETE FROM clients; DELETE FROM people; DELETE FROM invoices; DELETE FROM outbox; DELETE FROM meta;"
+      "DELETE FROM issues; DELETE FROM canvas_nodes; DELETE FROM canvas_edges; DELETE FROM clients; DELETE FROM people; DELETE FROM invoices; DELETE FROM outbox; DELETE FROM meta; DELETE FROM business_cache;"
     );
   });
 }

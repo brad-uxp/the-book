@@ -238,7 +238,22 @@ export default function CanvasScreen() {
           onPress={removeCanvas}
         />
       </Sheet>
-      <MentionSheet mention={mention} people={people} invoices={invoices} onClose={() => setMention(null)} />
+      <MentionSheet
+        mention={mention}
+        people={people}
+        invoices={invoices}
+        onClose={() => setMention(null)}
+        onOpenInvoice={(invoiceId) => {
+          setMention(null);
+          // Close the idea first: its last words are saved as the editor goes.
+          if (editing) {
+            const ideaId = editing.id;
+            setEditing(null);
+            setTimeout(() => void discardIdeaIfBlank(ideaId), 0);
+          }
+          router.push({ pathname: "/invoice/[id]", params: { id: invoiceId } });
+        }}
+      />
     </View>
   );
 }

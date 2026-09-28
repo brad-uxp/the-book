@@ -437,7 +437,16 @@ export default function NoteScreen() {
         </ScrollView>
       </Sheet>
 
-      <MentionSheet mention={mention} people={people} invoices={invoices} onClose={() => setMention(null)} />
+      <MentionSheet
+        mention={mention}
+        people={people}
+        invoices={invoices}
+        onClose={() => setMention(null)}
+        onOpenInvoice={(invoiceId) => {
+          setMention(null);
+          void flush().then(() => router.push({ pathname: "/invoice/[id]", params: { id: invoiceId } }));
+        }}
+      />
     </View>
   );
 }

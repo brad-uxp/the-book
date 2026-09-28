@@ -8,6 +8,10 @@
 
 const MONTEVIDEO_OFFSET_MS = -3 * 60 * 60 * 1000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 /** Today's date in Montevideo, as YYYY-MM-DD. */
 export function montevideoToday(now: Date): string {
@@ -55,3 +59,53 @@ export function relativeTime(iso: string, now: Date): string {
   const then = new Date(Date.parse(iso) + MONTEVIDEO_OFFSET_MS).toISOString().slice(0, 10);
   return shortDate(then, montevideoToday(now));
 }
+
+// ─── Months and days (Invoices, Salaries, Metrics) ───────────────────────────
+
+/** "YYYY-MM" of a Montevideo day. */
+export function monthOf(ymd: string): string {
+  return ymd.slice(0, 7);
+}
+
+/** "YYYY-MM" plus or minus whole months. */
+export function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "September 2026". */
+export function monthTitle(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${MONTHS_LONG[m - 1]} ${y}`;
+}
+
+/** "Sep 2026". */
+export function monthShort(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${MONTHS[m - 1]} ${y}`;
+}
+
+/**
+ * A stored day — an ISO string at UTC midnight, or YYYY-MM-DD — as "Sep 30",
+ * with the year when it is not this year's.
+ */
+export function dayLabel(dayIso: string, now: Date): string {
+  return shortDate(dayIso.slice(0, 10), montevideoToday(now));
+}
+
+/** 1 → "1st", 22 → "22nd", 25 → "25th". */
+export function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  const suffix = ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+/** "Updated just now", "Updated 5m ago", "Updated Sep 12" — when a screen's data was fetched. */
+export function fetchedLabel(fetchedAtIso: string, now: Date): string {
+  const ago = relativeTime(fetchedAtIso, now);
+  if (ago === "now") return "Updated just now";
+  return /^\d/.test(ago) ? `Updated ${ago} ago` : `Updated ${ago}`;
+}
+
