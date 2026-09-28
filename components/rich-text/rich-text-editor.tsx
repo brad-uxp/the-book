@@ -134,6 +134,10 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
 
 // ── Bubble Menu ──────────────────────────────────────────────────────────────
 
+function setBubbleLayer(element: HTMLDivElement | null) {
+  if (element) element.style.zIndex = "9999";
+}
+
 function SelectionBubbleMenu({
   editor,
   appendTo,
@@ -148,7 +152,11 @@ function SelectionBubbleMenu({
   return (
     <BubbleMenu
       editor={editor}
-      className="z-50"
+      // The layer goes on TipTap's own positioned element, which the ref
+      // exposes: `className` only reaches the div inside it. Without it the
+      // menu sat at z-index auto — under the full-screen canvas (fixed,
+      // z-50), so it never showed there. Same layer as the mention lists.
+      ref={setBubbleLayer}
       appendTo={appendTo}
       options={{
         placement: "bottom",
