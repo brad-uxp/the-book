@@ -33,6 +33,17 @@ const OWNER_TRACKPAD: Rec = [
   [100, 2, 1, -3], [110, 1, 1, -3], [120, 1, 1, -3], [130, 1, 1, -3],
 ];
 
+// Más gestos de dos dedos, de la sonda v4 (lento, normal y rápido).
+const OWNER_TRACKPAD_MORE: Record<string, Rec> = {
+  "lento, vertical casi puro": [[0, 0, 1, -3], [11, 0, 1, -3], [30.2, 1, 1, -3], [41, 1, 1, -3], [51.1, 1, 1, -3], [60.9, 1, 1, -3], [70.2, 0, 1, -3], [80.4, 1, 1, -3], [91.1, 0, 1, -3], [101, 0, 1, -3], [111, 0, 1, -3], [120.3, 1, 1, -3], [131.1, 1, 1, -3], [141.1, 0, 1, -3], [151.1, 0, 1, -3]],
+  "normal, en círculo": [[0, 0, 1, -3], [13.2, 0, 2, -6], [21.5, -1, 3, -9], [29.5, -1, 5, -15], [39.7, -1, 6, -18], [49.7, -1, 7, -21], [59.8, -1, 6, -18], [69.7, -1, 6, -18], [78.8, -1, 6, -18], [89, 0, 5, -15], [99.2, 0, 5, -15], [108.7, 0, 6, -18], [119.7, 1, 4, -12], [129.2, 1, 6, -18]],
+  // Arranca con 1 px y después la inercia es vertical pura, 80–88 px por
+  // evento sin nada de horizontal: lo que una regla por tamaño tomaría por
+  // una rueda si juzgara a mitad de gesto.
+  "rápido, con inercia vertical larga": [[0, 0, 1, -3], [13.3, 0, 4, -12], [22.9, -1, 6, -18], [33.2, -1, 8, -24], [43.2, -1, 12, -36], [53.2, -1, 26, -78], [63.3, -1, 48, -144], [73.4, -1, 56, -168], [83.4, -1, 64, -192], [93.4, -2, 75, -225], [103.2, -3, 73, -219], [119.1, -4, 54, -162], [129.1, -4, 44, -132], [138.9, -5, 36, -108], [148.9, 0, 80, -240], [159.1, 0, 85, -255], [169.1, 0, 88, -264], [179.6, 0, 85, -255], [189.8, 0, 82, -246], [200, 0, 81, -243], [209.9, 0, 75, -225], [219.9, 0, 72, -216], [235.6, 0, 71, -213], [343.1, 0, 55, -165], [353.1, 0, 103, -308], [364.3, 0, 49, -147]],
+  "rápido, de costado": [[0, 1, 0, 0], [11.3, 2, 0, 0], [20.3, 4, -1, 3], [29.6, 4, -1, 3], [40.6, 5, -1, 3], [49.7, 10, -1, 3], [59.3, 13, -1, 3], [70.3, 15, 0, 0], [80.9, 17, 0, 0], [90.3, 19, 1, -3], [100.3, 21, 1, -3], [110.4, 26, 2, -6], [120.2, 30, 2, -6]],
+};
+
 /** Pasa una grabación por un tracker y devuelve lo que decidió en cada evento. */
 function replay(rec: Rec, start = 0, track = createWheelDeviceTracker()) {
   return rec.map(([t, dx, dy, wdy]) =>
@@ -55,6 +66,10 @@ describe("con el hardware del dueño", () => {
 
   it("el trackpad con dos dedos → pan en todo el gesto", () => {
     expect(replay(OWNER_TRACKPAD)).toEqual(all("trackpad", OWNER_TRACKPAD.length));
+  });
+
+  it.each(Object.entries(OWNER_TRACKPAD_MORE))("el trackpad, %s → pan en todo el gesto", (_label, rec) => {
+    expect(replay(rec)).toEqual(all("trackpad", rec.length));
   });
 
   it("alternando: trackpad, pausa, mouse rápido, pausa, trackpad", () => {
