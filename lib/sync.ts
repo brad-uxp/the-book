@@ -11,6 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { checkShapeChange, isBlankHtml, type IssueShape } from "./notes";
+import { ISSUE_TITLE_MAX } from "./text-limits";
 
 // ─── Retention ───────────────────────────────────────────────────────────────
 
@@ -189,11 +190,14 @@ export function textHash(text: string): string {
 
 /**
  * The title of a note holding the phone's side of a conflict. The mark goes at
- * the end so the list still sorts and reads by the original title.
+ * the end so the list still sorts and reads by the original title; a title
+ * already at the limit is cut to make room for it, so the copy is a note the
+ * phone can edit and send back.
  */
 export function conflictTitle(title: string | null | undefined, fallback = "Recovered note"): string {
-  const base = (title ?? "").trim() || fallback;
-  return `${base} (conflict)`;
+  const mark = " (conflict)";
+  const base = ((title ?? "").trim() || fallback).slice(0, ISSUE_TITLE_MAX - mark.length).trimEnd();
+  return `${base}${mark}`;
 }
 
 /** An issue's fields a push may set. Only the keys present were changed. */

@@ -4,6 +4,7 @@ import { CANVAS_BOUND } from "./canvas-geometry";
 import { CANVAS_COLOR_KEYS } from "./canvas-palette";
 import { NOTE_FORMATS } from "./notes";
 import { SYNC_PUSH_MAX } from "./sync-protocol";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import {
   LAYOUT_BATCH_MAX,
   NODE_CONTENT_MAX,
@@ -195,7 +196,10 @@ export type InvoiceInput = z.infer<typeof InvoiceSchema>;
 // ─── Issues ──────────────────────────────────────────────────────────────────
 
 export const IssueSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: z
+    .string()
+    .min(1, "Title is required")
+    .max(ISSUE_TITLE_MAX, `At most ${ISSUE_TITLE_MAX} characters`),
   client_id: z.string().nullable().optional(),
   category: z.enum(["task", "note"]).default("task"),
   /** Only meaningful for a note; a canvas task is refused by the route. */
@@ -205,7 +209,7 @@ export const IssueSchema = z.object({
     .default("pending"),
   progress: z.number().int().min(0).max(100).default(0),
   due_date: DateString.nullable().optional(),
-  description: z.string().default(""),
+  description: z.string().max(RICH_TEXT_MAX, "Too long").default(""),
   sort_order: z.number().int().default(0),
 });
 
@@ -345,7 +349,7 @@ export const SyncMutationSchema = z.object({
     .regex(/^[0-9a-f]{64}$/, "Must be a sha256 in hex")
     .nullable()
     .optional(),
-  title_hint: z.string().max(500).optional(),
+  title_hint: z.string().max(ISSUE_TITLE_MAX).optional(),
   fields: z.record(z.string(), z.unknown()).optional(),
 });
 

@@ -25,6 +25,13 @@ export interface LocalIssue extends SyncIssueRow {
   search: string;
 }
 
+/**
+ * `sync_error` of a note whose text is too long for the server. Unlike a
+ * refusal, it is the phone's own verdict: the text was never sent, and it
+ * stays here — a server row must not replace it — until it is shortened.
+ */
+export const TEXT_TOO_LONG = "too_long";
+
 const ISSUE_FIELDS = [
   "title",
   "client_id",
@@ -49,6 +56,7 @@ export function mergeIssue(
   if (hasPendingDelete(queue)) return "skip";
 
   const keep = pendingFields(queue);
+  if (local?.sync_error === TEXT_TOO_LONG) keep.add("description");
   const merged: LocalIssue = {
     ...server,
     server_updated_at: server.updated_at,

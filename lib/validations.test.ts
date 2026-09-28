@@ -8,7 +8,10 @@ import {
   IssueSchema,
   MetricsQuerySchema,
   SettingsPatchSchema,
+  SyncIssueFieldsSchema,
+  SyncMutationSchema,
 } from "./validations";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import { CANVAS_BOUND } from "./canvas-geometry";
 import {
   LAYOUT_BATCH_MAX,
@@ -63,6 +66,32 @@ describe("IssueSchema — note_format", () => {
     expect(
       IssueSchema.safeParse({ title: "x", note_format: "whiteboard" }).success
     ).toBe(false);
+  });
+});
+
+describe("límites de texto (los mismos en REST y en la sync)", () => {
+  it("título: hasta 500 caracteres", () => {
+    expect(IssueSchema.safeParse({ title: "x".repeat(ISSUE_TITLE_MAX) }).success).toBe(true);
+    expect(IssueSchema.safeParse({ title: "x".repeat(ISSUE_TITLE_MAX + 1) }).success).toBe(false);
+  });
+
+  it("descripción: hasta 200 000 caracteres, lo mismo que una idea", () => {
+    expect(RICH_TEXT_MAX).toBe(NODE_CONTENT_MAX);
+    expect(IssueSchema.safeParse({ title: "x", description: "a".repeat(RICH_TEXT_MAX) }).success).toBe(true);
+    expect(IssueSchema.safeParse({ title: "x", description: "a".repeat(RICH_TEXT_MAX + 1) }).success).toBe(false);
+  });
+
+  it("el PATCH de REST y los campos de la sync heredan el mismo límite", () => {
+    const huge = "a".repeat(RICH_TEXT_MAX + 1);
+    expect(IssueSchema.partial().safeParse({ description: huge }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ description: huge }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ title: "x".repeat(ISSUE_TITLE_MAX + 1) }).success).toBe(false);
+  });
+
+  it("el nombre de reserva de una copia de conflicto tampoco pasa del título", () => {
+    const m = { mutation_id: "00000000-0000-4000-8000-000000000001", entity: "issue", op: "upsert", id: "x" };
+    expect(SyncMutationSchema.safeParse({ ...m, title_hint: "x".repeat(ISSUE_TITLE_MAX) }).success).toBe(true);
+    expect(SyncMutationSchema.safeParse({ ...m, title_hint: "x".repeat(ISSUE_TITLE_MAX + 1) }).success).toBe(false);
   });
 });
 

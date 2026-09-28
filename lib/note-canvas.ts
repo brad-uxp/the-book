@@ -6,6 +6,7 @@
  */
 
 import { snapToGrid } from "./canvas-geometry";
+import { RICH_TEXT_MAX } from "./text-limits";
 
 /** An idea as the API and the page hand it to the canvas. */
 export interface CanvasIdea {
@@ -48,11 +49,12 @@ export const NODE_MIN_HEIGHT = 64;
 export const NODE_MAX_SIZE = 4000;
 
 /**
- * Per-idea content ceiling, in characters of HTML. A description has no
- * limit, but a node is meant to be one idea — and this keeps a single
- * runaway paste from turning every autosave into a megabyte request.
+ * Per-idea content ceiling, in characters of HTML: the same as a note's
+ * description (lib/text-limits.ts), so converting a note into a canvas —
+ * which moves its text into the first idea — never produces an idea the API
+ * would refuse.
  */
-export const NODE_CONTENT_MAX = 200_000;
+export const NODE_CONTENT_MAX = RICH_TEXT_MAX;
 
 /** Positions and sizes moved in one gesture travel as one write. */
 export const LAYOUT_BATCH_MAX = 1000;

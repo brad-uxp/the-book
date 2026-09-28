@@ -298,6 +298,14 @@ describe("planDelete", () => {
   });
 });
 
+describe("conflictTitle — límite", () => {
+  it("un título ya en el límite se corta para que la copia no lo pase", () => {
+    const t = conflictTitle("x".repeat(500));
+    expect(t.length).toBeLessThanOrEqual(500);
+    expect(t.endsWith(" (conflict)")).toBe(true);
+  });
+});
+
 describe("conflictTitle", () => {
   it("marca al final y cae a un nombre si no hay título", () => {
     expect(conflictTitle("Pricing")).toBe("Pricing (conflict)");

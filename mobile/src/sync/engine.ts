@@ -13,7 +13,7 @@ import { getDb, write } from "@/db/database";
 import * as repo from "@/db/repo";
 import { ApiError, apiRequest } from "@/lib/api";
 import { dropBlankDrafts, finalizeDeletes } from "@/notes/store";
-import { mergeIssue, resultEffect } from "./merge";
+import { TEXT_TOO_LONG, mergeIssue, resultEffect } from "./merge";
 import { backoffMs, type PendingMutation } from "./outbox";
 
 /**
@@ -294,13 +294,16 @@ export class SyncEngine {
   /**
    * A full sync starts from what the server has: every row the phone got from
    * it goes, except those with changes still queued (they are the person's
-   * words) and new notes the server has never seen.
+   * words), notes whose text is held back as too long (the same), and new
+   * notes the server has never seen.
    */
   private async forgetSyncedRows(d: Awaited<ReturnType<typeof getDb>>): Promise<void> {
     await d.runAsync(
       `DELETE FROM issues
        WHERE server_updated_at IS NOT NULL AND deleted_at IS NULL
-         AND id NOT IN (SELECT entity_id FROM outbox WHERE entity = 'issue')`
+         AND (sync_error IS NULL OR sync_error <> ?)
+         AND id NOT IN (SELECT entity_id FROM outbox WHERE entity = 'issue')`,
+      TEXT_TOO_LONG
     );
     await d.runAsync("DELETE FROM canvas_nodes WHERE id NOT IN (SELECT entity_id FROM outbox WHERE entity = 'canvas_node')");
     await d.runAsync("DELETE FROM canvas_edges WHERE id NOT IN (SELECT entity_id FROM outbox WHERE entity = 'canvas_edge')");

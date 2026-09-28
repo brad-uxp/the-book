@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeIssue, resultEffect, type LocalIssue } from "./merge.ts";
+import { TEXT_TOO_LONG, mergeIssue, resultEffect, type LocalIssue } from "./merge.ts";
 import type { PendingMutation } from "./outbox.ts";
 import type { SyncIssueRow } from "../../../lib/sync-protocol.ts";
 
@@ -94,4 +94,22 @@ test("editar algo borrado en el servidor: el texto quedó en una copia, la fila 
 
 test("si quedan cambios en cola para la fila (deshacer tras borrar), no se borra", () => {
   assert.deepEqual(resultEffect({ mutation_id: "m", status: "applied", row: null }, "delete", [queued({ title: "t" })]), { kind: "none" });
+});
+
+test("un texto demasiado largo para el servidor no se pisa con la fila que llega, y sigue marcado", () => {
+  const long = { ...local, description: "<p>largo</p>", sync_error: TEXT_TOO_LONG };
+  const m = mergeIssue(long, { ...server, title: "Otro título" }, []);
+  assert.notEqual(m, "skip");
+  if (m === "skip") return;
+  assert.equal(m.description, "<p>largo</p>");
+  assert.equal(m.title, "Otro título");
+  assert.equal(m.sync_error, TEXT_TOO_LONG);
+});
+
+test("cualquier otro error de sync no protege el texto: la fila del servidor gana y el error se limpia", () => {
+  const m = mergeIssue({ ...local, sync_error: "invalid" }, server, []);
+  assert.notEqual(m, "skip");
+  if (m === "skip") return;
+  assert.equal(m.description, server.description);
+  assert.equal(m.sync_error, null);
 });

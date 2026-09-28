@@ -7,6 +7,7 @@
  */
 import { plainTextSnippet } from "../../../lib/mentions.ts";
 import { isBlankHtml } from "../../../lib/notes.ts";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "../../../lib/text-limits.ts";
 
 export { isBlankHtml };
 
@@ -18,7 +19,7 @@ const DERIVED_TITLE_MAX = 80;
  * not — like Apple Notes, a note without one is named by its first line.
  */
 export function effectiveTitle(title: string, html: string): string {
-  const typed = title.trim();
+  const typed = title.trim().slice(0, ISSUE_TITLE_MAX);
   if (typed) return typed;
   const firstLine = firstTextLine(html);
   return firstLine ? plainTextSnippet(firstLine, DERIVED_TITLE_MAX) : "Untitled";
@@ -57,4 +58,12 @@ export function textLines(html: string): string[] {
     .split(/<\/(?:p|h[1-6]|li|blockquote)>|<br\s*\/?>/i)
     .map((block) => plainTextSnippet(block, 10_000))
     .filter((line) => line !== "");
+}
+
+/**
+ * Whether a note's text is past what the server accepts (lib/text-limits.ts).
+ * Such a text stays on the phone, flagged, until it is shortened.
+ */
+export function textTooLong(html: string): boolean {
+  return html.length > RICH_TEXT_MAX;
 }
