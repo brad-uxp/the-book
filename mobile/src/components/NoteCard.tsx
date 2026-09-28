@@ -1,17 +1,32 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { Calendar, SquareCheck, StickyNote, Waypoints } from "lucide-react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Calendar, CloudOff, SquareCheck, StickyNote, Waypoints } from "lucide-react-native";
 import { dueLabel, relativeTime } from "@/lib/format";
-import { kindOf, snippetOf, type Issue } from "@/lib/issues";
+import { kindOf, snippetOf } from "@/lib/issues";
+import type { NoteListItem } from "@/notes/hooks";
+import { effectiveTitle } from "@/notes/text";
 import { font, statusColor, statusLabel, usePalette } from "@/lib/theme";
 
 const KIND_ICON = { note: StickyNote, canvas: Waypoints, task: SquareCheck } as const;
 
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 /**
  * One issue in the notes list, compact: enough to recognise it, nothing more.
- * Read-only in this version — opening and editing arrive with the editor.
+ * A note shows two lines of text; a canvas how many ideas and connections; a
+ * task its state, due date and progress.
  */
-export const NoteCard = memo(function NoteCard({ issue, now }: { issue: Issue; now: Date }) {
+export const NoteCard = memo(function NoteCard({
+  issue,
+  now,
+  onPress,
+}: {
+  issue: NoteListItem;
+  now: Date;
+  onPress: (issue: NoteListItem) => void;
+}) {
   const c = usePalette();
   const kind = kindOf(issue);
   const Icon = KIND_ICON[kind];
@@ -20,13 +35,18 @@ export const NoteCard = memo(function NoteCard({ issue, now }: { issue: Issue; n
   const dueColor = due?.tone === "overdue" ? c.overdue : due?.tone === "soon" ? c.soon : c.muted;
 
   return (
-    <View style={[styles.card, { backgroundColor: c.raised, borderColor: c.line }]}>
+    <Pressable
+      onPress={() => onPress(issue)}
+      accessibilityRole="button"
+      testID={`note-card-${issue.id}`}
+      style={({ pressed }) => [styles.card, { backgroundColor: pressed ? c.surface : c.raised, borderColor: c.line }]}
+    >
       <View style={[styles.kind, { backgroundColor: c.surface }]}>
         <Icon size={16} color={kind === "canvas" ? c.accent : c.muted} strokeWidth={2} />
       </View>
       <View style={styles.body}>
         <Text numberOfLines={1} style={[styles.title, { color: c.ink }]}>
-          {issue.title}
+          {effectiveTitle(issue.title, issue.description)}
         </Text>
         {snippet ? (
           <Text numberOfLines={2} style={[styles.snippet, { color: c.muted }]}>
@@ -34,7 +54,9 @@ export const NoteCard = memo(function NoteCard({ issue, now }: { issue: Issue; n
           </Text>
         ) : null}
         {kind === "canvas" ? (
-          <Text style={[styles.snippet, { color: c.muted }]}>Canvas · connected ideas</Text>
+          <Text style={[styles.snippet, { color: c.muted }]}>
+            {plural(issue.ideas, "idea", "ideas")} · {plural(issue.connections, "connection", "connections")}
+          </Text>
         ) : null}
 
         <View style={styles.meta}>
@@ -60,7 +82,18 @@ export const NoteCard = memo(function NoteCard({ issue, now }: { issue: Issue; n
               </Text>
             </View>
           ) : null}
-          <Text style={[styles.metaText, styles.when, { color: c.faint }]}>{relativeTime(issue.updated_at, now)}</Text>
+          {issue.sync_error ? (
+            <View style={styles.inline}>
+              <CloudOff size={12} color={c.danger} />
+              <Text style={[styles.metaText, { color: c.danger }]}>Not synced</Text>
+            </View>
+          ) : null}
+          <View style={[styles.inline, styles.when]}>
+            {issue.pending && !issue.sync_error ? (
+              <View accessibilityLabel="Waiting to sync" style={[styles.dot, { backgroundColor: c.faint }]} />
+            ) : null}
+            <Text style={[styles.metaText, { color: c.faint }]}>{relativeTime(issue.updated_at, now)}</Text>
+          </View>
         </View>
 
         {kind === "task" && issue.progress > 0 ? (
@@ -69,7 +102,7 @@ export const NoteCard = memo(function NoteCard({ issue, now }: { issue: Issue; n
           </View>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 });
 

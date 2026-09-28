@@ -11,6 +11,8 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { ToastProvider } from "@/components/Toast";
+import { SyncProvider } from "@/sync/SyncProvider";
 import { useIsDark, usePalette } from "@/lib/theme";
 
 // The splash stays up until fonts and the saved session are both ready, so the
@@ -21,7 +23,11 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
   return (
     <AuthProvider>
-      <Gate fontsLoaded={fontsLoaded} />
+      <SyncProvider>
+        <ToastProvider>
+          <Gate fontsLoaded={fontsLoaded} />
+        </ToastProvider>
+      </SyncProvider>
     </AuthProvider>
   );
 }
@@ -51,6 +57,8 @@ function Gate({ fontsLoaded }: { fontsLoaded: boolean }) {
             screen is unreachable with one. */}
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="note/[id]" />
+          <Stack.Screen name="canvas/[id]" />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="sign-in" />
