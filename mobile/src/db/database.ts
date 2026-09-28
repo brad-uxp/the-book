@@ -109,6 +109,17 @@ const MIGRATIONS: string[] = [
   );
   DELETE FROM meta WHERE key = 'sync.refs_at';
   `,
+
+  // 3 — a connection's pinned sides (top/right/bottom/left, or NULL for the
+  // canvas to choose) and its last change: sides can change after a
+  // connection is made, and the server now pulls connections by updated_at.
+  // Kept for the canvas screen of phase 3; nothing reads them yet.
+  `
+  ALTER TABLE canvas_edges ADD COLUMN source_side TEXT;
+  ALTER TABLE canvas_edges ADD COLUMN target_side TEXT;
+  ALTER TABLE canvas_edges ADD COLUMN updated_at TEXT;
+  UPDATE canvas_edges SET updated_at = created_at;
+  `,
 ];
 
 let opening: Promise<SQLite.SQLiteDatabase> | null = null;

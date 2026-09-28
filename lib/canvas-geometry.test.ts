@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { snapToGrid, edgeAnchor, type Rect } from "./canvas-geometry";
+import { snapToGrid, edgeAnchor, sideAnchor, connectionAnchors, isSide, type Rect } from "./canvas-geometry";
 
 describe("edgeAnchor", () => {
   // Una card de 100×100 en el origen; la otra se mueve alrededor.
@@ -65,5 +65,45 @@ describe("snapToGrid", () => {
     expect(snapToGrid(3)).toBe(0);
     expect(snapToGrid(5)).toBe(8);
     expect(snapToGrid(-5)).toBe(-8);
+  });
+});
+
+describe("sideAnchor", () => {
+  const card: Rect = { x: 100, y: 50, width: 200, height: 80 };
+  it.each([
+    ["top", { x: 200, y: 50 }],
+    ["right", { x: 300, y: 90 }],
+    ["bottom", { x: 200, y: 130 }],
+    ["left", { x: 100, y: 90 }],
+  ] as const)("%s: el medio de ese lado", (side, point) => {
+    expect(sideAnchor(card, side)).toEqual({ ...point, side });
+  });
+});
+
+describe("connectionAnchors", () => {
+  const a: Rect = { x: 0, y: 0, width: 100, height: 40 };
+  const b: Rect = { x: 400, y: 0, width: 100, height: 40 };
+
+  it("sin lados fijos, es lo mismo que antes: cada extremo mira a la otra tarjeta", () => {
+    expect(connectionAnchors(a, b)).toEqual({ start: edgeAnchor(a, b), end: edgeAnchor(b, a) });
+  });
+
+  it("con los dos lados fijos, sale y llega por esos lados aunque no se miren", () => {
+    const { start, end } = connectionAnchors(a, b, "bottom", "top");
+    expect(start).toEqual({ x: 50, y: 40, side: "bottom" });
+    expect(end).toEqual({ x: 450, y: 0, side: "top" });
+  });
+
+  it("con un solo extremo fijo, el otro apunta a ese punto y no al centro de la tarjeta", () => {
+    // B fijo arriba: el extremo libre en A mira hacia (450, 0), no hacia el centro de B.
+    const below: Rect = { x: 400, y: 300, width: 100, height: 40 };
+    const { start, end } = connectionAnchors(a, below, null, "top");
+    expect(end).toEqual({ x: 450, y: 300, side: "top" });
+    expect(start).toEqual(edgeAnchor(a, { x: 450, y: 300, width: 0, height: 0 }));
+  });
+
+  it("isSide reconoce solo los cuatro lados", () => {
+    expect(["top", "right", "bottom", "left"].every(isSide)).toBe(true);
+    expect([null, "", "center", "TOP", 1].some(isSide)).toBe(false);
   });
 });

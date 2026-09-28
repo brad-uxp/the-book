@@ -30,7 +30,12 @@ export interface Rect {
   height: number;
 }
 
-export type Side = "top" | "right" | "bottom" | "left";
+export const SIDES = ["top", "right", "bottom", "left"] as const;
+export type Side = (typeof SIDES)[number];
+
+export function isSide(value: unknown): value is Side {
+  return (SIDES as readonly unknown[]).includes(value);
+}
 
 export interface EdgeAnchor {
   x: number;
@@ -79,4 +84,39 @@ export function edgeAnchor(from: Rect, to: Rect): EdgeAnchor {
         : "top";
 
   return { x: cx + dx * t, y: cy + dy * t, side };
+}
+
+/** The middle of one side of a box: where a connection pinned to that side meets it. */
+export function sideAnchor(box: Rect, side: Side): EdgeAnchor {
+  switch (side) {
+    case "top":
+      return { x: box.x + box.width / 2, y: box.y, side };
+    case "right":
+      return { x: box.x + box.width, y: box.y + box.height / 2, side };
+    case "bottom":
+      return { x: box.x + box.width / 2, y: box.y + box.height, side };
+    case "left":
+      return { x: box.x, y: box.y + box.height / 2, side };
+  }
+}
+
+/**
+ * Both ends of a connection. An end pinned to a side sits in the middle of
+ * that side; an end left free floats as before — but aimed at the other end's
+ * pinned point when there is one, not at the other card's centre, so the line
+ * does not bend away from where it is going.
+ */
+export function connectionAnchors(
+  from: Rect,
+  to: Rect,
+  sourceSide: Side | null = null,
+  targetSide: Side | null = null
+): { start: EdgeAnchor; end: EdgeAnchor } {
+  const point = (a: EdgeAnchor): Rect => ({ x: a.x, y: a.y, width: 0, height: 0 });
+  const pinnedStart = sourceSide ? sideAnchor(from, sourceSide) : null;
+  const pinnedEnd = targetSide ? sideAnchor(to, targetSide) : null;
+  return {
+    start: pinnedStart ?? edgeAnchor(from, pinnedEnd ? point(pinnedEnd) : to),
+    end: pinnedEnd ?? edgeAnchor(to, pinnedStart ? point(pinnedStart) : from),
+  };
 }

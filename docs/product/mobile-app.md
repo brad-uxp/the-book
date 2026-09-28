@@ -144,7 +144,8 @@ Estas tres tabs muestran lo último sincronizado cuando no hay señal.
 ## Sincronización
 
 Las pantallas leen **solo** SQLite (`mobile/src/db/`, SQL a mano sobre `expo-sqlite`, sin
-ORM: cinco tablas y migraciones por `PRAGMA user_version`). Cada cambio local actualiza la
+ORM: cinco tablas y migraciones por `PRAGMA user_version`; la 3 guarda los lados fijados de
+las conexiones, para el canvas de la fase 3). Cada cambio local actualiza la
 fila al instante y deja un cambio en la cola (`outbox`). El motor
 (`mobile/src/sync/engine.ts`) empuja la cola en orden y después trae lo nuevo; corre al
 abrir, al volver a primer plano, al volver la red, con pull-to-refresh y 2 s después del

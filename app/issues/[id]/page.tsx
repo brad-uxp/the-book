@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { isCanvasNote } from "@/lib/notes";
-import { EDGE_SELECT, NODE_SELECT } from "@/lib/note-canvas-server";
+import { EDGE_SELECT, NODE_SELECT, toConnection } from "@/lib/note-canvas-server";
 import { NoteCanvasView } from "@/components/note-canvas/note-canvas-view";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,7 @@ export default async function IssuePage({
       }}
       clients={clients}
       ideas={ideas}
-      connections={connections}
+      connections={connections.map(toConnection)}
     />
   );
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isInvoiceKey } from "./r2";
-import { CANVAS_BOUND } from "./canvas-geometry";
+import { CANVAS_BOUND, SIDES } from "./canvas-geometry";
 import { CANVAS_COLOR_KEYS } from "./canvas-palette";
 import { NOTE_FORMATS } from "./notes";
 import { SYNC_PUSH_MAX } from "./sync-protocol";
@@ -319,20 +319,42 @@ export const CanvasLayoutSchema = z.object({
  * backstop. That both ends belong to the same canvas is enforced by the
  * compound foreign keys alone.
  */
+/** A side of a card a connection is pinned to; null lets the canvas choose. */
+const EdgeSide = z.enum(SIDES).nullable();
+
 export const CanvasEdgeSchema = z
   .object({
     id: z.uuid().optional(),
     source_id: Text().min(1),
     target_id: Text().min(1),
+    source_side: EdgeSide.optional(),
+    target_side: EdgeSide.optional(),
   })
   .refine((d) => d.source_id !== d.target_id, {
     message: "An idea cannot connect to itself",
     path: ["target_id"],
   });
 
+/**
+ * Moving a connection: its ends to other ideas of the same canvas, or its
+ * sides. Whether the result would connect an idea to itself is checked
+ * against the stored row, since only one end may be in the request.
+ */
+export const CanvasEdgeUpdateSchema = z
+  .object({
+    source_id: Text().min(1),
+    target_id: Text().min(1),
+    source_side: EdgeSide,
+    target_side: EdgeSide,
+  })
+  .partial()
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, { message: "Nothing to change" });
+
 export type CanvasNodeInput = z.infer<typeof CanvasNodeSchema>;
 export type CanvasLayoutInput = z.infer<typeof CanvasLayoutSchema>;
 export type CanvasEdgeInput = z.infer<typeof CanvasEdgeSchema>;
+export type CanvasEdgeUpdateInput = z.infer<typeof CanvasEdgeUpdateSchema>;
 
 // ─── Phone sync ──────────────────────────────────────────────────────────────
 
@@ -385,12 +407,20 @@ export const SyncEdgeFieldsSchema = z
     issue_id: Text().min(1).max(64),
     source_id: Text().min(1).max(64),
     target_id: Text().min(1).max(64),
+    source_side: EdgeSide.optional(),
+    target_side: EdgeSide.optional(),
   })
   .strict()
   .refine((d) => d.source_id !== d.target_id, {
     message: "An idea cannot connect to itself",
     path: ["target_id"],
   });
+
+/** A change to an existing connection from the phone: its sides, nothing else. */
+export const SyncEdgeSidesSchema = z
+  .object({ source_side: EdgeSide, target_side: EdgeSide })
+  .partial()
+  .strict();
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 

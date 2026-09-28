@@ -3,6 +3,7 @@ import { isCanvasNote, isBlankHtml } from "@/lib/notes";
 import { plainTextSnippet } from "@/lib/mentions";
 import { EDGE_SELECT, NODE_SELECT } from "@/lib/note-canvas-server";
 import type { Db, WriteContext } from "@/lib/issues-service";
+import type { Side } from "@/lib/canvas-geometry";
 
 /**
  * Writing what is drawn on a canvas note: ideas and connections. Shared by
@@ -161,6 +162,8 @@ export interface EdgeCreate {
   issue_id: string;
   source_id: string;
   target_id: string;
+  source_side?: Side | null;
+  target_side?: Side | null;
 }
 
 /** No check-then-insert: the database refuses a duplicate or a foreign end. */
@@ -171,7 +174,46 @@ export function createEdge(db: Db, data: EdgeCreate) {
       issue_id: data.issue_id,
       source_id: data.source_id,
       target_id: data.target_id,
+      source_side: data.source_side ?? null,
+      target_side: data.target_side ?? null,
     },
+    select: EDGE_SELECT,
+  });
+}
+
+export interface EdgeUpdate {
+  source_id?: string;
+  target_id?: string;
+  source_side?: Side | null;
+  target_side?: Side | null;
+}
+
+/** An update that would connect an idea to itself — refused before the CHECK would be. */
+export class SelfLinkError extends Error {
+  constructor() {
+    super("An idea cannot connect to itself");
+  }
+}
+
+/**
+ * Moves a connection's ends or pins its sides. Scoped by issue_id: an edge of
+ * another canvas is a P2025 from here. A new end must be an idea of the same
+ * canvas (the compound foreign keys, P2003), and must not duplicate another
+ * connection (the unique index, P2002).
+ */
+export async function updateEdge(db: Db, issueId: string, edgeId: string, data: EdgeUpdate) {
+  if (data.source_id !== undefined || data.target_id !== undefined) {
+    const current = await db.canvasEdge.findFirst({
+      where: { id: edgeId, issue_id: issueId },
+      select: { source_id: true, target_id: true },
+    });
+    const source = data.source_id ?? current?.source_id;
+    const target = data.target_id ?? current?.target_id;
+    if (current && source === target) throw new SelfLinkError();
+  }
+  return db.canvasEdge.update({
+    where: { id: edgeId, issue_id: issueId },
+    data,
     select: EDGE_SELECT,
   });
 }

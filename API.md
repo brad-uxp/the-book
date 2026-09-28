@@ -139,7 +139,7 @@ notes offline). A taken id is a `409`, never an overwrite.
 | PATCH/DELETE | `/api/issues/{id}/canvas/nodes/{nodeId}` |
 | PATCH | `/api/issues/{id}/canvas/layout` |
 | POST | `/api/issues/{id}/canvas/edges` |
-| DELETE | `/api/issues/{id}/canvas/edges/{edgeId}` |
+| PATCH/DELETE | `/api/issues/{id}/canvas/edges/{edgeId}` |
 
 On an issue that is not a canvas note these return `409`; on one that does
 not exist, `404`.
@@ -158,9 +158,14 @@ not exist, `404`.
   send are written. Position and size go through `layout`, which takes
   `{ "nodes": [{ id, x, y, width?, height? }] }` (up to 1000) and ignores ids
   that are not on this canvas.
-- **An edge** is `{ id, source_id, target_id }`, directed, between two nodes
-  of the same canvas. A duplicate is `409`; a self-link, or an end that is not
-  a node of this canvas, is `400`.
+- **An edge** is `{ id, source_id, target_id, source_side, target_side }`,
+  directed, between two nodes of the same canvas. A side (`top`, `right`,
+  `bottom`, `left`) pins that end to the middle of that side of its node;
+  `null` (the default) lets the canvas pick the side facing the other end.
+  A duplicate is `409`; a self-link, or an end that is not a node of this
+  canvas, is `400`. `PATCH` takes any of `source_id`, `target_id`,
+  `source_side`, `target_side` — to move an end to another node or side, or
+  `{ "source_side": null, "target_side": null }` to unpin both.
 - Deleting a node deletes its edges. Deleting a node that held text is
   audited with its content and edges, so it can be recovered from the audit
   log; nothing else on a canvas is audited.

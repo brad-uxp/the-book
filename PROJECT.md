@@ -276,7 +276,7 @@ navegador o un token `mobile` (los que emite el login de la app), no los tokens
 | Canvas idea       | PATCH/DELETE    | `/api/issues/[id]/canvas/nodes/[nodeId]` |
 | Canvas layout     | PATCH           | `/api/issues/[id]/canvas/layout`     |
 | Canvas conexiones | POST            | `/api/issues/[id]/canvas/edges`      |
-| Canvas conexión   | DELETE          | `/api/issues/[id]/canvas/edges/[edgeId]` |
+| Canvas conexión   | PATCH, DELETE   | `/api/issues/[id]/canvas/edges/[edgeId]` |
 | Notifications     | GET/PATCH       | `/api/notifications`                 |
 | Notif. count      | GET             | `/api/notifications/count`           |
 | Mark all read     | POST            | `/api/notifications/mark-all-read`   |

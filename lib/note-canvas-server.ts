@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isCanvasNote } from "@/lib/notes";
+import { isSide } from "@/lib/canvas-geometry";
+import type { CanvasConnection } from "@/lib/note-canvas";
 
 /**
  * The canvas note a nested canvas route acts on, or the response that says
@@ -45,4 +47,26 @@ export const EDGE_SELECT = {
   id: true,
   source_id: true,
   target_id: true,
+  source_side: true,
+  target_side: true,
 } as const;
+
+/**
+ * A stored connection for the canvas. The sides are plain text columns (a
+ * CHECK keeps them to the four sides); this is where they become `Side`s.
+ */
+export function toConnection(row: {
+  id: string;
+  source_id: string;
+  target_id: string;
+  source_side: string | null;
+  target_side: string | null;
+}): CanvasConnection {
+  return {
+    id: row.id,
+    source_id: row.source_id,
+    target_id: row.target_id,
+    source_side: isSide(row.source_side) ? row.source_side : null,
+    target_side: isSide(row.target_side) ? row.target_side : null,
+  };
+}

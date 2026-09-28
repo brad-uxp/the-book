@@ -7,6 +7,8 @@
  * The rules live in lib/sync.ts; the database side in lib/sync-server.ts.
  */
 
+import type { Side } from "./canvas-geometry";
+
 export type SyncEntity = "issue" | "canvas_node" | "canvas_edge";
 
 /** How many changes one push may carry, and how big its body may be. */
@@ -42,13 +44,20 @@ export interface SyncNodeRow {
   updated_at: string;
 }
 
-/** Connections are never edited — only created and deleted. */
+/**
+ * A connection. Its ends and its pinned sides can change after it is made
+ * (from the web, for now), so it is pulled by updated_at like the rest.
+ */
 export interface SyncEdgeRow {
   id: string;
   issue_id: string;
   source_id: string;
   target_id: string;
+  /** The side of each card it is pinned to; null lets the canvas choose. */
+  source_side: Side | null;
+  target_side: Side | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface SyncTombstoneRow {

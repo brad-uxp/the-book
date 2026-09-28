@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
+import { isSide } from "@/lib/canvas-geometry";
 import {
   SyncEdgeFieldsSchema,
+  SyncEdgeSidesSchema,
   SyncIssueFieldsSchema,
   SyncMutationSchema,
   SyncNodeFieldsSchema,
@@ -89,7 +91,10 @@ const EDGE_SELECT = {
   issue_id: true,
   source_id: true,
   target_id: true,
+  source_side: true,
+  target_side: true,
   created_at: true,
+  updated_at: true,
 } as const;
 
 /** A row as Prisma returns it: the same fields, with Dates where the wire has strings. */
@@ -127,13 +132,22 @@ export function toNodeRow(r: FromDb<SyncNodeRow, "created_at" | "updated_at">): 
   };
 }
 
-export function toEdgeRow(r: FromDb<SyncEdgeRow, "created_at">): SyncEdgeRow {
+export function toEdgeRow(
+  r: Omit<FromDb<SyncEdgeRow, "created_at" | "updated_at">, "source_side" | "target_side"> & {
+    source_side: string | null;
+    target_side: string | null;
+  }
+): SyncEdgeRow {
   return {
     id: r.id,
     issue_id: r.issue_id,
     source_id: r.source_id,
     target_id: r.target_id,
+    // Text columns kept to the four sides by a CHECK.
+    source_side: isSide(r.source_side) ? r.source_side : null,
+    target_side: isSide(r.target_side) ? r.target_side : null,
     created_at: r.created_at.toISOString(),
+    updated_at: r.updated_at.toISOString(),
   };
 }
 
@@ -186,8 +200,8 @@ export async function pullNotes(cursor: string | null, now: number = Date.now())
         select: NODE_SELECT,
       });
       const edges = await tx.canvasEdge.findMany({
-        where: window("created_at", plan.from, plan.after.canvas_edges),
-        orderBy: [{ created_at: "asc" }, { id: "asc" }],
+        where: window("updated_at", plan.from, plan.after.canvas_edges),
+        orderBy: [{ updated_at: "asc" }, { id: "asc" }],
         take: L.canvas_edges + 1,
         select: EDGE_SELECT,
       });
@@ -219,7 +233,7 @@ export async function pullNotes(cursor: string | null, now: number = Date.now())
 
   const issues = take("issues", page.issues, (r) => r.updated_at);
   const nodes = take("canvas_nodes", page.nodes, (r) => r.updated_at);
-  const edges = take("canvas_edges", page.edges, (r) => r.created_at);
+  const edges = take("canvas_edges", page.edges, (r) => r.updated_at);
   const tombs = take("tombstones", page.tombstones, (r) => r.deleted_at);
 
   const tombstones: SyncTombstoneRow[] = tombs
@@ -746,13 +760,23 @@ async function deleteNodeChange(tx: Db, m: SyncMutation, ctx: WriteContext): Pro
 }
 
 async function upsertEdge(tx: Db, m: SyncMutation): Promise<SyncResult> {
-  // A connection is never edited: if it exists, there is nothing to do.
   const current = await tx.canvasEdge.findUnique({ where: { id: m.id }, select: EDGE_SELECT });
-  if (current) return answer(m, { status: "applied", row: toEdgeRow(current) });
+  if (current) {
+    // An existing connection: the phone changes its sides only (last write
+    // wins); its ends are the server's. Nothing to change is still applied.
+    const fields = (m.fields ?? {}) as Record<string, unknown>;
+    const sides = SyncEdgeSidesSchema.safeParse(
+      Object.fromEntries(Object.entries(fields).filter(([k]) => k === "source_side" || k === "target_side"))
+    );
+    if (!sides.success) return answer(m, { status: "rejected", reason: "invalid", row: toEdgeRow(current) });
+    if (Object.keys(sides.data).length === 0) return answer(m, { status: "applied", row: toEdgeRow(current) });
+    const row = await tx.canvasEdge.update({ where: { id: m.id }, data: sides.data, select: EDGE_SELECT });
+    return answer(m, { status: "applied", row: toEdgeRow(row) });
+  }
 
   const parsed = SyncEdgeFieldsSchema.safeParse(m.fields ?? {});
   if (!parsed.success || !UUID.test(m.id)) return answer(m, { status: "rejected", reason: "invalid", row: null });
-  const { issue_id, source_id, target_id } = parsed.data;
+  const { issue_id, source_id, target_id, source_side, target_side } = parsed.data;
 
   const canvas = await canvasOf(tx, issue_id);
   if (!canvas) return answer(m, { status: "deleted", reason: "deleted_on_server" });
@@ -766,7 +790,7 @@ async function upsertEdge(tx: Db, m: SyncMutation): Promise<SyncResult> {
   const ends = await tx.canvasNode.count({ where: { issue_id, id: { in: [source_id, target_id] } } });
   if (ends < 2) return answer(m, { status: "deleted", reason: "endpoint_missing" });
 
-  await createEdge(tx, { id: m.id, issue_id, source_id, target_id });
+  await createEdge(tx, { id: m.id, issue_id, source_id, target_id, source_side, target_side });
   return answer(m, { status: "applied", row: await currentRow(m, tx) });
 }
 

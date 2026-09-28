@@ -4,7 +4,7 @@ vi.mock("@/lib/db", () => ({ prisma: {} }));
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
 
-import { isTransientDbError } from "./sync-server";
+import { isTransientDbError, toEdgeRow } from "./sync-server";
 
 // Qué corta un push (la base no responde: reintentar después) y qué es un
 // fallo del cambio mismo (se responde server_error y el push sigue).
@@ -32,5 +32,35 @@ describe("isTransientDbError", () => {
     ["nada", null],
   ])("fallo del cambio: %s", (_label, err) => {
     expect(isTransientDbError(err)).toBe(false);
+  });
+});
+
+describe("toEdgeRow", () => {
+  const row = {
+    id: "e1",
+    issue_id: "cv1",
+    source_id: "a",
+    target_id: "b",
+    source_side: "bottom",
+    target_side: null,
+    created_at: new Date("2026-09-28T10:00:00Z"),
+    updated_at: new Date("2026-09-28T11:30:00Z"),
+  };
+
+  it("lleva los lados fijados y la última modificación, en ISO", () => {
+    expect(toEdgeRow(row)).toEqual({
+      id: "e1",
+      issue_id: "cv1",
+      source_id: "a",
+      target_id: "b",
+      source_side: "bottom",
+      target_side: null,
+      created_at: "2026-09-28T10:00:00.000Z",
+      updated_at: "2026-09-28T11:30:00.000Z",
+    });
+  });
+
+  it("un lado que no es uno de los cuatro llega como null (la base no lo deja guardar)", () => {
+    expect(toEdgeRow({ ...row, source_side: "center" }).source_side).toBeNull();
   });
 });

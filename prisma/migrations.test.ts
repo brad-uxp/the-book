@@ -173,6 +173,10 @@ const PROTECTED_CONSTRAINTS = [
     name: "CanvasEdge_no_self_link",
     purpose: "stops an idea from connecting to itself on a canvas note",
   },
+  {
+    name: "CanvasEdge_sides_valid",
+    purpose: "keeps a connection's pinned sides to top, right, bottom or left",
+  },
 ];
 
 describe("CHECK constraints que Prisma no puede modelar", () => {

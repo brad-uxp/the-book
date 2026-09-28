@@ -455,11 +455,17 @@ model CanvasNode {
  * API. Self-links are refused by a CHECK that lives only in the migration.
  */
 model CanvasEdge {
-  id         String   @id @default(uuid())
-  issue_id   String
-  source_id  String
-  target_id  String
-  created_at DateTime @default(now())
+  id          String   @id @default(uuid())
+  issue_id    String
+  source_id   String
+  target_id   String
+  /// The side of each card the connection is pinned to: top, right, bottom or
+  /// left (CHECK "CanvasEdge_sides_valid" in the migration). Null lets the
+  /// canvas pick the side facing the other end, as it did before sides existed.
+  source_side String?
+  target_side String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
 
   issue  Issue      @relation(fields: [issue_id], references: [id], onDelete: Cascade)
   source CanvasNode @relation("CanvasEdgeSource", fields: [issue_id, source_id], references: [issue_id, id], onDelete: Cascade)
@@ -467,9 +473,9 @@ model CanvasEdge {
 
   @@unique([issue_id, source_id, target_id])
   @@index([issue_id, target_id])
-  /// "What changed since" for the phone's sync. A connection is never edited,
-  /// only created and deleted, so its creation is its last change.
-  @@index([created_at, id])
+  /// "What changed since" for the phone's sync: a connection's sides and ends
+  /// can change after it is made.
+  @@index([updated_at, id])
 }
 
 // ============================================================

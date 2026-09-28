@@ -5,7 +5,7 @@
  * can drag to a size is exactly the card the API will accept.
  */
 
-import { snapToGrid } from "./canvas-geometry";
+import { snapToGrid, type Side } from "./canvas-geometry";
 import { RICH_TEXT_MAX } from "./text-limits";
 
 /** An idea as the API and the page hand it to the canvas. */
@@ -24,6 +24,9 @@ export interface CanvasConnection {
   id: string;
   source_id: string;
   target_id: string;
+  /** The side of each card it is pinned to; null (or absent) lets the canvas choose. */
+  source_side?: Side | null;
+  target_side?: Side | null;
 }
 
 /**

@@ -79,8 +79,8 @@ export async function removeNode(db: SQLiteDatabase, id: string): Promise<void> 
 
 export async function putEdge(db: SQLiteDatabase, e: SyncEdgeRow): Promise<void> {
   await db.runAsync(
-    "INSERT OR REPLACE INTO canvas_edges (id, issue_id, source_id, target_id, created_at) VALUES (?, ?, ?, ?, ?)",
-    [e.id, e.issue_id, e.source_id, e.target_id, e.created_at]
+    "INSERT OR REPLACE INTO canvas_edges (id, issue_id, source_id, target_id, source_side, target_side, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [e.id, e.issue_id, e.source_id, e.target_id, e.source_side ?? null, e.target_side ?? null, e.created_at, e.updated_at ?? e.created_at]
   );
 }
 
