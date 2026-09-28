@@ -7,7 +7,7 @@
  * what the person is looking at, and the push will reconcile them (the server
  * decides conflicts, not the phone).
  */
-import type { SyncIssueRow, SyncResult } from "../../../lib/sync-protocol.ts";
+import type { SyncIssueRow, SyncNodeRow, SyncResult } from "../../../lib/sync-protocol.ts";
 import { ISSUE_TITLE_MAX } from "../../../lib/text-limits.ts";
 import { hasPendingDelete, pendingFields, type PendingMutation } from "./outbox.ts";
 import { effectiveTitle, isBlankHtml, searchText } from "../notes/text.ts";
@@ -156,6 +156,49 @@ export function refusedTextCopy(
     due_date: local.due_date,
     description: text,
     sort_order: local.sort_order,
+    created_at: now,
+    updated_at: now,
+    server_updated_at: null,
+    announced: 1,
+    deleted_at: null,
+    sync_error: result.reason ?? "rejected",
+    search: searchText(title, text),
+  };
+}
+
+/**
+ * The same, for an idea: words of an idea the server refused, when the
+ * server's row (or none) is about to take its place without them. They are
+ * kept as a note on this phone, named after the canvas, flagged and not
+ * queued — like `refusedTextCopy`. Null when nothing would be lost.
+ */
+export function refusedIdeaCopy(
+  result: SyncResult,
+  sent: Pick<PendingMutation, "op" | "fields">,
+  canvasTitle: string | null,
+  id: string,
+  now: string
+): LocalIssue | null {
+  if (result.status !== "rejected" || sent.op !== "upsert") return null;
+  const text = sent.fields.content;
+  if (typeof text !== "string" || isBlankHtml(text)) return null;
+  const row = (result.row ?? null) as SyncNodeRow | null;
+  if (row && row.content === text) return null;
+
+  const mark = " · idea (not synced)";
+  const base = (canvasTitle ?? "").trim() || "Canvas";
+  const title = `${base.slice(0, ISSUE_TITLE_MAX - mark.length).trimEnd()}${mark}`;
+  return {
+    id,
+    title,
+    client_id: null,
+    category: "note",
+    note_format: "text",
+    status: "pending",
+    progress: 0,
+    due_date: null,
+    description: text,
+    sort_order: 0,
     created_at: now,
     updated_at: now,
     server_updated_at: null,

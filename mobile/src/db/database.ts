@@ -113,12 +113,21 @@ const MIGRATIONS: string[] = [
   // 3 — a connection's pinned sides (top/right/bottom/left, or NULL for the
   // canvas to choose) and its last change: sides can change after a
   // connection is made, and the server now pulls connections by updated_at.
-  // Kept for the canvas screen of phase 3; nothing reads them yet.
   `
   ALTER TABLE canvas_edges ADD COLUMN source_side TEXT;
   ALTER TABLE canvas_edges ADD COLUMN target_side TEXT;
   ALTER TABLE canvas_edges ADD COLUMN updated_at TEXT;
   UPDATE canvas_edges SET updated_at = created_at;
+  `,
+
+  // 4 — phase 3: ideas are written on the phone. Like a note, an idea
+  // remembers the server's updated_at it is based on (null until the server
+  // has confirmed one made here): a change to a confirmed idea carries only
+  // what changed, one to an unconfirmed idea carries all of it. Every idea
+  // stored so far came from the server.
+  `
+  ALTER TABLE canvas_nodes ADD COLUMN server_updated_at TEXT;
+  UPDATE canvas_nodes SET server_updated_at = updated_at;
   `,
 ];
 

@@ -4,7 +4,8 @@ import * as repo from "@/db/repo";
 import { newId, textHash } from "@/lib/hash";
 import { TEXT_TOO_LONG, type LocalIssue } from "@/sync/merge";
 import { changedFields, coalesce, hasPendingDelete } from "@/sync/outbox";
-import { effectiveTitle, isBlankNote, searchText, textTooLong } from "./text";
+import { SEED_NODE_HEIGHT, SEED_NODE_WIDTH } from "@shared/note-canvas";
+import { effectiveTitle, isBlankHtml, isBlankNote, searchText, textTooLong } from "./text";
 
 /**
  * Everything the phone does to a note, offline first: the local row changes
@@ -12,7 +13,7 @@ import { effectiveTitle, isBlankNote, searchText, textTooLong } from "./text";
  * server. The sync engine pushes the queue; see src/sync/engine.ts.
  */
 
-/** What the screens may change. What a note is made of (text ↔ canvas) is the web's, for now. */
+/** What the screens may change. Turning a note into a canvas is `convertToCanvas`. */
 export type IssueEdit = Partial<
   Pick<LocalIssue, "title" | "client_id" | "category" | "status" | "progress" | "due_date" | "description">
 >;
@@ -27,6 +28,11 @@ let localWriteListener: () => void = () => undefined;
 /** The sync engine listens here to push soon after the person stops typing. */
 export function setLocalWriteListener(listener: () => void): void {
   localWriteListener = listener;
+}
+
+/** Tells the sync engine something was queued — for writes made outside this module (the canvas). */
+export function notifyLocalWrite(): void {
+  localWriteListener();
 }
 
 /** Every field, as a create needs them — for a note the server has never seen. */
@@ -49,10 +55,11 @@ function titleHint(row: LocalIssue): string {
 }
 
 /**
- * A new, empty note or task, on the phone only. Nothing is queued until
- * something is written in it — an empty one is discarded on leaving.
+ * A new, empty note, task or canvas, on the phone only. Nothing is queued
+ * until something is written in it (for a canvas: a title or an idea) — an
+ * empty one is discarded on leaving.
  */
-export async function createNote(kind: "note" | "task"): Promise<string> {
+export async function createNote(kind: "note" | "task" | "canvas"): Promise<string> {
   const id = newId();
   const now = new Date().toISOString();
   await write(TABLES, (db) =>
@@ -60,8 +67,8 @@ export async function createNote(kind: "note" | "task"): Promise<string> {
       id,
       title: "",
       client_id: null,
-      category: kind,
-      note_format: "text",
+      category: kind === "task" ? "task" : "note",
+      note_format: kind === "canvas" ? "canvas" : "text",
       status: "pending",
       progress: 0,
       due_date: null,
@@ -136,6 +143,85 @@ export async function editIssue(
   if (changed) localWriteListener();
 }
 
+/**
+ * Makes a new note real for the server: queues its create. A canvas needs it
+ * before its first idea, which the server only accepts on a canvas it has.
+ * Nothing when it already is.
+ */
+export async function announceIssue(db: SQLiteDatabase, id: string): Promise<void> {
+  const row = await repo.getIssue(db, id);
+  if (!row || row.announced) return;
+  const next: LocalIssue = { ...row, announced: 1 };
+  await repo.putIssue(db, next);
+  await repo.enqueue(db, create(next));
+}
+
+/**
+ * Turns a text note into a canvas, as on the web: what it said becomes the
+ * canvas's first idea, and there is no way back (lib/notes.ts).
+ *
+ * The phone makes that first idea itself — so the canvas shows it at once,
+ * offline too — and tells the server the note's text is now empty: the
+ * server then seeds nothing of its own (lib/sync.ts planIssueUpsert). The
+ * conversion is judged against the text the note had, so if the server's
+ * changed meanwhile it keeps that too, as another idea.
+ */
+export async function convertToCanvas(id: string): Promise<void> {
+  const changed = await write(["issues", "canvas_nodes", "outbox"], async (db) => {
+    const row = await repo.getIssue(db, id);
+    if (!row || row.category !== "note" || row.note_format === "canvas") return false;
+    const now = new Date().toISOString();
+    const text = row.description;
+    const next: LocalIssue = { ...row, note_format: "canvas", description: "", updated_at: now };
+    next.search = searchText(next.title, "");
+    // A text too long to sync is not one the server ever had.
+    if (next.sync_error === TEXT_TOO_LONG) next.sync_error = null;
+
+    if (!row.announced) {
+      await repo.putIssue(db, next);
+    } else {
+      await repo.putIssue(db, next);
+      if (!row.server_updated_at && row.sync_error === TEXT_TOO_LONG) {
+        // Never sent (its text was too long): the create goes out now, as a canvas.
+        await repo.enqueue(db, create(next));
+      } else {
+        await queueEdit(db, row, next, { note_format: "canvas", description: "" }, row.description);
+      }
+    }
+
+    if (!isBlankHtml(text)) {
+      // The first idea needs the canvas on the server first.
+      if (!next.announced) await announceIssue(db, id);
+      const node = {
+        id: newId(),
+        issue_id: id,
+        content: text,
+        color: null,
+        x: 0,
+        y: 0,
+        width: SEED_NODE_WIDTH,
+        height: SEED_NODE_HEIGHT,
+        created_at: now,
+        updated_at: now,
+        server_updated_at: null,
+      };
+      await repo.putLocalNode(db, node);
+      await repo.enqueue(db, {
+        mutation_id: newId(),
+        entity: "canvas_node",
+        op: "upsert",
+        entity_id: node.id,
+        fields: { issue_id: id, content: text, color: null, x: 0, y: 0, width: SEED_NODE_WIDTH, height: SEED_NODE_HEIGHT },
+        base_updated_at: null,
+        base_hash: null,
+        title_hint: null,
+      });
+    }
+    return true;
+  });
+  if (changed) localWriteListener();
+}
+
 function create(row: LocalIssue) {
   return {
     mutation_id: newId(),
@@ -153,7 +239,7 @@ async function queueEdit(
   db: SQLiteDatabase,
   row: LocalIssue,
   next: LocalIssue,
-  diff: IssueEdit,
+  diff: IssueEdit & Partial<Pick<LocalIssue, "note_format">>,
   previousDescription: string | undefined
 ): Promise<void> {
   const queue = await repo.queueFor(db, "issue", row.id);
@@ -249,13 +335,20 @@ export async function finalizeDeletes(now: number = Date.now()): Promise<void> {
   if (queued) localWriteListener();
 }
 
+/** Nothing typed anywhere — and, for a canvas, not a single idea on it. */
+async function isBlankIssue(db: SQLiteDatabase, row: LocalIssue): Promise<boolean> {
+  if (!isBlankNote(row.title, row.description)) return false;
+  if (row.note_format !== "canvas") return true;
+  return !(await db.getFirstAsync("SELECT 1 FROM canvas_nodes WHERE issue_id = ?", row.id));
+}
+
 /**
  * Leaving a new note with nothing in it throws it away. True when it did.
  */
 export async function discardIfBlank(id: string): Promise<boolean> {
   const discarded = await write(TABLES, async (db) => {
     const row = await repo.getIssue(db, id);
-    if (!row || !isBlankNote(row.title, row.description)) return false;
+    if (!row || !(await isBlankIssue(db, row))) return false;
     if (!row.announced) {
       await repo.removeIssue(db, id);
       return true;
@@ -271,11 +364,10 @@ export async function discardIfBlank(id: string): Promise<boolean> {
 /** New notes left empty when the app was closed on them. */
 export async function dropBlankDrafts(): Promise<void> {
   await write(TABLES, async (db) => {
-    const drafts = await db.getAllAsync<{ id: string; title: string; description: string }>(
-      "SELECT id, title, description FROM issues WHERE announced = 0"
-    );
+    const drafts = await db.getAllAsync<{ id: string }>("SELECT id FROM issues WHERE announced = 0");
     for (const d of drafts) {
-      if (isBlankNote(d.title, d.description)) await repo.removeIssue(db, d.id);
+      const row = await repo.getIssue(db, d.id);
+      if (row && (await isBlankIssue(db, row))) await repo.removeIssue(db, d.id);
     }
   });
 }

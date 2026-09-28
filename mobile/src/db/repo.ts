@@ -64,11 +64,45 @@ export async function removeIssue(db: SQLiteDatabase, id: string): Promise<void>
 
 // ─── Canvas ──────────────────────────────────────────────────────────────────
 
+/** An idea as the phone stores it. */
+export interface LocalNode extends SyncNodeRow {
+  /** The server's updated_at this copy is based on; null until the server has confirmed an idea made here. */
+  server_updated_at: string | null;
+}
+
+/** An idea from the server: its row is the server's. */
 export async function putNode(db: SQLiteDatabase, n: SyncNodeRow): Promise<void> {
+  await putLocalNode(db, { ...n, server_updated_at: n.updated_at });
+}
+
+/** An idea as the phone has it now — written here, or from the server. */
+export async function putLocalNode(db: SQLiteDatabase, n: LocalNode): Promise<void> {
   await db.runAsync(
-    `INSERT OR REPLACE INTO canvas_nodes (id, issue_id, content, color, x, y, width, height, created_at, updated_at, search)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [n.id, n.issue_id, n.content, n.color, n.x, n.y, n.width, n.height, n.created_at, n.updated_at, searchText("", n.content)]
+    `INSERT OR REPLACE INTO canvas_nodes (id, issue_id, content, color, x, y, width, height, created_at, updated_at, server_updated_at, search)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      n.id,
+      n.issue_id,
+      n.content,
+      n.color,
+      n.x,
+      n.y,
+      n.width,
+      n.height,
+      n.created_at,
+      n.updated_at,
+      n.server_updated_at,
+      searchText("", n.content),
+    ]
+  );
+}
+
+export async function getNode(db: SQLiteDatabase, id: string): Promise<LocalNode | null> {
+  return (
+    (await db.getFirstAsync<LocalNode>(
+      "SELECT id, issue_id, content, color, x, y, width, height, created_at, updated_at, server_updated_at FROM canvas_nodes WHERE id = ?",
+      id
+    )) ?? null
   );
 }
 
@@ -82,6 +116,28 @@ export async function putEdge(db: SQLiteDatabase, e: SyncEdgeRow): Promise<void>
     "INSERT OR REPLACE INTO canvas_edges (id, issue_id, source_id, target_id, source_side, target_side, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     [e.id, e.issue_id, e.source_id, e.target_id, e.source_side ?? null, e.target_side ?? null, e.created_at, e.updated_at ?? e.created_at]
   );
+}
+
+export async function getEdge(db: SQLiteDatabase, id: string): Promise<SyncEdgeRow | null> {
+  return (
+    (await db.getFirstAsync<SyncEdgeRow>(
+      "SELECT id, issue_id, source_id, target_id, source_side, target_side, created_at, updated_at FROM canvas_edges WHERE id = ?",
+      id
+    )) ?? null
+  );
+}
+
+/** The connections touching an idea. */
+export async function edgesOf(db: SQLiteDatabase, nodeId: string): Promise<SyncEdgeRow[]> {
+  return db.getAllAsync<SyncEdgeRow>(
+    "SELECT id, issue_id, source_id, target_id, source_side, target_side, created_at, updated_at FROM canvas_edges WHERE source_id = ? OR target_id = ?",
+    nodeId,
+    nodeId
+  );
+}
+
+export async function removeEdge(db: SQLiteDatabase, id: string): Promise<void> {
+  await db.runAsync("DELETE FROM canvas_edges WHERE id = ?", id);
 }
 
 export async function removeTombstoned(db: SQLiteDatabase, t: SyncTombstoneRow): Promise<void> {

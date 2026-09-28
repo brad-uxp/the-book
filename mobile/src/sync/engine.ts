@@ -13,7 +13,7 @@ import { getDb, write } from "@/db/database";
 import * as repo from "@/db/repo";
 import { ApiError, apiRequest } from "@/lib/api";
 import { dropBlankDrafts, finalizeDeletes } from "@/notes/store";
-import { TEXT_TOO_LONG, mergeIssue, refusedTextCopy, resultEffect } from "./merge";
+import { TEXT_TOO_LONG, mergeIssue, refusedIdeaCopy, refusedTextCopy, resultEffect } from "./merge";
 import { newId } from "@/lib/hash";
 import { backoffMs, type PendingMutation } from "./outbox";
 
@@ -248,13 +248,27 @@ export class SyncEngine {
           } else if (effect.kind === "flag") {
             await db.runAsync("UPDATE issues SET sync_error = ? WHERE id = ?", effect.reason, m.entity_id);
           }
-        } else if (queue.length === 0) {
-          // Ideas and connections: the canvas arrives on the phone in phase 3,
-          // which is what writes them; answers are applied as they come.
+        } else {
+          // Ideas and connections. Words of an idea the server refused are
+          // kept aside first, as a note, before its row replaces the phone's.
+          if (m.entity === "canvas_node") {
+            const local = await repo.getNode(db, m.entity_id);
+            const canvas = local ? await repo.getIssue(db, local.issue_id) : null;
+            const copy = refusedIdeaCopy(result, m, canvas?.title ?? null, newId(), new Date().toISOString());
+            if (copy) await repo.putIssue(db, copy);
+          }
+          if (queue.length > 0) continue;
           const row = result.row;
-          if (row && m.entity === "canvas_node") await repo.putNode(db, row as SyncNodeRow);
+          if (m.entity === "canvas_edge" && result.status === "rejected" && result.reason === "duplicate" && row) {
+            // The same connection exists under another id (made on the web
+            // meanwhile): the phone adopts the server's.
+            await repo.removeEdge(db, m.entity_id);
+            await repo.putEdge(db, row as SyncEdgeRow);
+          } else if (row && m.entity === "canvas_node") await repo.putNode(db, row as SyncNodeRow);
           else if (row && m.entity === "canvas_edge") await repo.putEdge(db, row as SyncEdgeRow);
-          else if (result.status === "deleted" || m.op === "delete") {
+          else if (result.status === "deleted" || m.op === "delete" || (result.status === "rejected" && m.op === "upsert")) {
+            // Gone on the server, or refused with nothing there to show:
+            // the phone stops showing it too (its words were kept above).
             await repo.removeTombstoned(db, { entity: m.entity, entity_id: m.entity_id, issue_id: null, deleted_at: "" });
           }
         }
@@ -286,7 +300,9 @@ export class SyncEngine {
         for (const node of page.canvas_nodes) {
           if ((await repo.queueFor(d, "canvas_node", node.id)).length === 0) await repo.putNode(d, node);
         }
-        for (const edge of page.canvas_edges) await repo.putEdge(d, edge);
+        for (const edge of page.canvas_edges) {
+          if ((await repo.queueFor(d, "canvas_edge", edge.id)).length === 0) await repo.putEdge(d, edge);
+        }
         // Deletions last: a row and its own deletion never share a page (the
         // server reads one snapshot), but a note's ideas may.
         for (const t of page.tombstones) {

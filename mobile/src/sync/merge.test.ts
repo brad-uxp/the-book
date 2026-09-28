@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TEXT_TOO_LONG, mergeIssue, refusedTextCopy, resultEffect, type LocalIssue } from "./merge.ts";
+import { TEXT_TOO_LONG, mergeIssue, refusedIdeaCopy, refusedTextCopy, resultEffect, type LocalIssue } from "./merge.ts";
 import type { PendingMutation } from "./outbox.ts";
 import type { SyncIssueRow } from "../../../lib/sync-protocol.ts";
 
@@ -148,4 +148,26 @@ test("el título de la copia nunca pasa del límite del servidor", () => {
   const result = { mutation_id: "m", status: "rejected" as const, reason: "server_error", row: server };
   const copy = refusedTextCopy(result, sentText("<p>x</p>"), { ...local, title: "t".repeat(600) }, "c", NOW);
   assert.ok(copy && copy.title.length <= 500 && copy.title.endsWith(" (not synced)"));
+});
+
+test("una idea rechazada con texto que el servidor no tiene: queda como nota local marcada, con el nombre del canvas", () => {
+  const rejected = { mutation_id: "m", status: "rejected" as const, reason: "server_error", row: null };
+  const copy = refusedIdeaCopy(rejected, { op: "upsert", fields: { content: "<p>idea</p>" } }, "Estrategia", "copy-9", "2026-09-28T10:00:00.000Z");
+  assert.equal(copy?.title, "Estrategia · idea (not synced)");
+  assert.equal(copy?.description, "<p>idea</p>");
+  assert.equal(copy?.sync_error, "server_error");
+  assert.equal(copy?.server_updated_at, null);
+  assert.equal(copy?.announced, 1);
+});
+
+test("una idea rechazada cuyo texto el servidor ya tiene, o sin texto: nada que guardar", () => {
+  const withRow = {
+    mutation_id: "m",
+    status: "rejected" as const,
+    reason: "invalid",
+    row: { id: "n", issue_id: "c", content: "<p>idea</p>", color: null, x: 0, y: 0, width: 280, height: 160, created_at: "", updated_at: "" },
+  };
+  assert.equal(refusedIdeaCopy(withRow, { op: "upsert", fields: { content: "<p>idea</p>" } }, "C", "x", "t"), null);
+  assert.equal(refusedIdeaCopy(withRow, { op: "upsert", fields: { x: 3 } }, "C", "x", "t"), null);
+  assert.equal(refusedIdeaCopy({ ...withRow, status: "applied" }, { op: "upsert", fields: { content: "<p>otra</p>" } }, "C", "x", "t"), null);
 });

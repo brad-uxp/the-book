@@ -123,26 +123,41 @@ export function useInvoices(): InvoiceRef[] {
   return useLiveQuery(["refs"], (db) => db.getAllAsync<InvoiceRef>("SELECT * FROM invoices"), []) ?? [];
 }
 
-export interface Idea {
+export interface CanvasIdeaRow {
   id: string;
   content: string;
   color: string | null;
   x: number;
   y: number;
-  links: number;
+  width: number;
+  created_at: string;
 }
 
-/** A canvas note's ideas in reading order — top to bottom, then left to right. */
-export function useIdeas(issueId: string): Idea[] | undefined {
+export interface CanvasConnectionRow {
+  id: string;
+  source_id: string;
+  target_id: string;
+  source_side: "top" | "right" | "bottom" | "left" | null;
+  target_side: "top" | "right" | "bottom" | "left" | null;
+}
+
+/**
+ * A canvas's ideas and connections, live. Ideas in the order they were made —
+ * the order they are drawn, so a newer card sits over an older one, as on the web.
+ */
+export function useCanvas(issueId: string): { ideas: CanvasIdeaRow[]; connections: CanvasConnectionRow[] } | undefined {
   return useLiveQuery(
     ["canvas_nodes", "canvas_edges"],
-    (db) =>
-      db.getAllAsync<Idea>(
-        `SELECT n.id, n.content, n.color, n.x, n.y,
-                (SELECT count(*) FROM canvas_edges e WHERE e.source_id = n.id OR e.target_id = n.id) AS links
-         FROM canvas_nodes n WHERE n.issue_id = ? ORDER BY n.y, n.x`,
+    async (db) => ({
+      ideas: await db.getAllAsync<CanvasIdeaRow>(
+        "SELECT id, content, color, x, y, width, created_at FROM canvas_nodes WHERE issue_id = ? ORDER BY created_at, id",
         issueId
       ),
+      connections: await db.getAllAsync<CanvasConnectionRow>(
+        "SELECT id, source_id, target_id, source_side, target_side FROM canvas_edges WHERE issue_id = ?",
+        issueId
+      ),
+    }),
     [issueId]
   );
 }
