@@ -79,8 +79,12 @@ CREATED=$(auth | curl -sS --fail-with-body -K - -X POST -H "Content-Type: applic
 UPLOAD_URL=$(json_field upload_url <<<"$CREATED")
 
 echo "Uploading…"
-curl -sS --fail-with-body -X PUT -H "Content-Type: application/vnd.android.package-archive" \
-  --upload-file "$APK" "$UPLOAD_URL" >/dev/null
+# The presigned URL is a credential for 15 minutes: it goes to curl as a
+# config line on stdin (printf is a shell builtin, so it never appears in a
+# process's arguments, where `ps` would show it), not on the command line.
+printf 'url = "%s"\n' "$(printf '%s' "$UPLOAD_URL" | sed 's/[\\"]/\\&/g')" \
+  | curl -sS --fail-with-body -K - -X PUT -H "Content-Type: application/vnd.android.package-archive" \
+    --upload-file "$APK" >/dev/null
 
 echo "Publishing…"
 auth | curl -sS --fail-with-body -K - -X POST "$API/api/mobile/releases/$CODE/publish" >/dev/null
