@@ -289,6 +289,11 @@ Servidor: `GET/POST /api/sync/notes` y `GET /api/sync/refs` (detalle en `API.md`
 - **Para probar con el emulador** el login de desarrollo (token pegado a mano) necesita un
   token `mobile`: uno creado en Settings es `automation` y la sync lo rechaza. Se crea con
   `UPDATE "ApiToken" SET kind = 'mobile' WHERE id = …` en la base local.
+- **Conexión**: "en línea" es que Android tenga red (`mobile/src/sync/connectivity.ts`). La prueba
+  de alcance de NetInfo está apagada: consultaba una URL de Google y, al volver la red, seguía
+  diciendo "sin internet" hasta su próxima prueba (hasta un minuto), así que la sync tardaba en
+  arrancar. Al volver la red se sincroniza enseguida y las esperas entre reintentos vuelven a
+  cero; si en realidad no hay internet, la request falla y se reintenta como cualquier fallo.
 
 ## Login
 
