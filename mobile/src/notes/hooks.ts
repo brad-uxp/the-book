@@ -113,7 +113,6 @@ export interface InvoiceRef {
   client_name: string;
   status: string;
   amount_cents: number;
-  net_cents: number;
 }
 
 export function usePeople(): PersonRef[] {

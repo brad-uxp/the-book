@@ -265,7 +265,12 @@ async function stillExisting(
 
 // ─── Refs ────────────────────────────────────────────────────────────────────
 
-/** Clients, people and invoices — labels and @/# mentions, offline. */
+/**
+ * Clients, people and invoices — labels and @/# mentions, offline. Only what
+ * a label shows: an invoice's total, as the web's mention shows it, never
+ * what it nets after the fee. The phone keeps this in plain SQLite, which
+ * revoking its token does not erase.
+ */
 export async function loadRefs(): Promise<SyncRefs> {
   const [clients, people, invoices] = await Promise.all([
     prisma.client.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color_hex: true } }),
@@ -280,7 +285,6 @@ export async function loadRefs(): Promise<SyncRefs> {
         invoice_number: true,
         status: true,
         amount_cents: true,
-        fee_cents: true,
         client: { select: { name: true } },
       },
     }),
@@ -294,7 +298,6 @@ export async function loadRefs(): Promise<SyncRefs> {
       client_name: i.client.name,
       status: i.status,
       amount_cents: i.amount_cents,
-      net_cents: i.amount_cents - i.fee_cents,
     })),
   };
 }

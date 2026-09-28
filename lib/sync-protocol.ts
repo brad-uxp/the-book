@@ -149,7 +149,7 @@ export interface SyncRefs {
     invoice_number: string | null;
     client_name: string;
     status: "pending" | "accounting" | "sent" | "paid";
+    /** The invoice's total — what its mention label shows. */
     amount_cents: number;
-    net_cents: number;
   }[];
 }

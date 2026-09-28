@@ -94,6 +94,21 @@ const MIGRATIONS: string[] = [
 
   CREATE TABLE meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
   `,
+
+  // 2 — invoices without net_cents: the phone never showed it, and a lost
+  // phone would keep every invoice's net in plain text. Invoices are a cache
+  // replaced whole on every refs fetch, so the table is rebuilt empty.
+  `
+  DROP TABLE invoices;
+  CREATE TABLE invoices (
+    id TEXT PRIMARY KEY NOT NULL,
+    invoice_number TEXT,
+    client_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL
+  );
+  DELETE FROM meta WHERE key = 'sync.refs_at';
+  `,
 ];
 
 let opening: Promise<SQLite.SQLiteDatabase> | null = null;
