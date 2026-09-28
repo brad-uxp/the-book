@@ -145,7 +145,13 @@ Cómo está hecho:
   `RichTextView` dibuja con `<Text>`. Alto según el contenido, medido al dibujar.
 - **Líneas**: los anclajes son la regla compartida (`lib/canvas-geometry`,
   `connectionAnchors`), la curva es la bezier de React Flow re-derivada (`geometry.ts`):
-  mismo dibujo que la web.
+  mismo dibujo que la web. Se dibujan **en espacio de pantalla**: un solo `<Svg>` del tamaño
+  del canvas, y cada línea sigue a la vista en el hilo de UI (`edgeScreenPaths`). Nunca en el
+  mundo con zoom, en un `<Svg>` del tamaño de las tarjetas: react-native-svg pinta cada Svg
+  en un bitmap de su tamaño, y en la 0.4.0 un canvas de 20 ideas separadas le pidió a
+  Android 243 MB (el límite es ~100 MB) y la app se cerraba al abrirlo
+  (`Canvas: trying to draw too large bitmap`, 2026-09-28). `svg-layers.test.ts` exige que
+  todo Svg del canvas ocupe la pantalla.
 - **Gestos**: Gesture Handler + Reanimated. El viewport son tres valores compartidos que
   mueven una sola transformación en el hilo de UI; dónde empieza un toque (un punto, la
   tarjeta seleccionada, el vacío) se decide ahí mismo con pruebas que son *worklets*. Mover
@@ -333,7 +339,7 @@ plugin de Android de React Native 0.86 toma por error, y el build nativo falla.
 - `pnpm android`: debug en el emulador o el teléfono conectado. Con
   `EXPO_PUBLIC_API_URL=http://10.0.2.2:3001 pnpm start` habla con la web local (solo en
   debug, que además muestra un formulario "Use API token" para no depender de Google).
-- **Emulador, dos trampas conocidas:**
+- **Emulador, trampas conocidas:**
   - Un build debug busca Metro en `10.0.2.2:8081` (no en `localhost`, así que `adb reverse`
     no alcanza). Con Metro en otro puerto (varios trabajando a la vez), apuntar la app con
     `adb -s emulator-5554 shell "run-as com.bolstro.book sh -c '… > shared_prefs/com.bolstro.book_preferences.xml'"`
@@ -341,6 +347,15 @@ plugin de Android de React Native 0.86 toma por error, y el build nativo falla.
   - Con la GPU del Mac el emulador puede dejar de presentar cuadros bajo presión de memoria:
     `screencap` devuelve una imagen vieja mientras la app sigue viva (`uiautomator dump` dice
     la verdad). Arrancarlo con `-gpu swiftshader_indirect` lo evita, más lento.
+  - `CI=1 pnpm start` apaga la vigilancia de archivos de Metro: sirve el código de cuando
+    arrancó aunque lo edites. Para probar cambios, arrancarlo sin `CI` (con
+    `< /dev/null` si corre en segundo plano).
+  - **Pellizco con dos dedos**: `adb input` es de un dedo, y la imagen de Google Play no
+    deja `sendevent` ni root. La consola del emulador sí inyecta multitouch desde el host:
+    `adb -s emulator-5554 emu event send EV_ABS:ABS_MT_SLOT:0 EV_ABS:ABS_MT_TRACKING_ID:31
+    EV_ABS:ABS_MT_POSITION_X:… EV_ABS:ABS_MT_POSITION_Y:… EV_ABS:ABS_MT_SLOT:1 … EV_KEY:BTN_TOUCH:1
+    EV_SYN:0:0`, un comando por cuadro, con posiciones de 0 a 32767 sobre la pantalla y
+    `TRACKING_ID:-1` + `BTN_TOUCH:0` para soltar (`EV_SYN` va con código numérico).
 - `pnpm android:release`: APK firmado en `~/Downloads/book-<versión>-<code>.apk`. La clave
   es `~/.android/book-release.jks` (alias `book`); la contraseña sale del Llavero de macOS
   (`book. Android release keystore`) directo al entorno de Gradle. El script se niega a
