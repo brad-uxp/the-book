@@ -1,7 +1,8 @@
 # App mobile de book
 
-> Estado: **fase 1 construida** (2026-09-27) en la rama `feat/mobile-phase1`, en `dev`.
-> **No va a producción** hasta la revisión de seguridad del login mobile.
+> Estado: **fase 1 en producción** (2026-09-27). **Fase 2**: sync y datos construidos en
+> `feat/phase2-sync` (2026-09-28); falta el editor de texto enriquecido y la revisión de
+> seguridad de `/api/sync/*` antes de producción.
 >
 > - Prototipo de estructura aprobado: https://claude.ai/artifact/SB2xQjdXzmKYnW2xgZQ7C6
 > - Estudio de logo (elegida la **F · Full stop**, `book.` con punto violeta): https://claude.ai/artifact/ExsVzSCnKmK5DGUYeS97pD
@@ -77,6 +78,20 @@ se configura con el plugin de `expo-notifications`, que trae FCM, y eso es de es
 
 **Se ve:** una app de notas que ya se puede usar a diario.
 
+**Hecho (sync y datos):** ver [Sincronización](#sincronización). La home, la nota y la task
+leen solo SQLite; el + crea una nota de texto (manteniéndolo: Note / Task, Canvas "arrives
+soon"), búsqueda local por título y texto (sin acentos), cambio Note ↔ Task, borrar con
+Undo de 6 s, autoguardado, una nota nueva vacía se descarta al salir. Un canvas se abre en
+una pantalla de solo lectura con sus ideas en orden de lectura. En el header, el estado de
+la sync (offline / sincronizando / cambios pendientes) y en la cuenta "Synced 2 min ago".
+Salir a propósito borra las notas del teléfono (avisa si hay cambios sin subir); un token
+vencido no, para que lo pendiente suba al volver a entrar.
+
+**Pendiente:** el editor. `mobile/src/editor/RichTextEditor.tsx` es un **stub temporal**
+(TextInput de texto plano ↔ párrafos `<p>`; una nota con formato o menciones se abre de solo
+lectura para no aplanarla). Se reemplaza ese archivo, con la misma interfaz, por el editor
+TipTap en WebView; `mobile/src/editor/plain.ts` se va con él.
+
 ### 3 · Canvas
 
 Tarjetas, conexiones, hoja de edición, gestos, sin conexión.
@@ -100,6 +115,38 @@ Estas tres tabs muestran lo último sincronizado cuando no hay señal.
   schema de Prisma, en el deploy siguiente la migración.
 
 **Se ve:** avisos de vencimientos en el teléfono.
+
+## Sincronización
+
+Las pantallas leen **solo** SQLite (`mobile/src/db/`, SQL a mano sobre `expo-sqlite`, sin
+ORM: cinco tablas y migraciones por `PRAGMA user_version`). Cada cambio local actualiza la
+fila al instante y deja un cambio en la cola (`outbox`). El motor
+(`mobile/src/sync/engine.ts`) empuja la cola en orden y después trae lo nuevo; corre al
+abrir, al volver a primer plano, al volver la red, con pull-to-refresh y 2 s después del
+último cambio. Si falla, reintenta con espera creciente (5 s → 5 min); un 401 lleva al login.
+
+Servidor: `GET/POST /api/sync/notes` y `GET /api/sync/refs` (detalle en `API.md`).
+
+- **Pull**: cursor opaco; cada pull relee 2 minutos antes del cursor (una fila se fecha al
+  escribirse pero se ve al hacer commit). Página por entidad en orden (fecha, id), las cuatro
+  listas en una sola foto `REPEATABLE READ`. Un cursor de más de 60 días (lo que se guardan
+  los *tombstones*) pide `reset`: sync completa.
+- **Borrados**: triggers `AFTER DELETE` en `Task`, `CanvasNode` y `CanvasEdge` escriben
+  `SyncTombstone` — ven cascadas, el vaciado del archivo y cualquier otra vía.
+- **Push**: hasta 200 cambios, cada uno en su transacción con su respuesta guardada por
+  `mutation_id` (un reintento no aplica dos veces). Pasa por los mismos servicios que las
+  rutas de la web (`lib/issues-service.ts`, `lib/canvas-service.ts`), así que valida y audita
+  igual, con el token del teléfono como actor.
+- **Conflictos**: última escritura gana por campo, salvo el texto. El teléfono manda el
+  sha256 del texto del que partió su edición; si el del servidor ya es otro, el servidor
+  conserva el suyo y guarda el del teléfono como copia: una nota "<título> (conflict)" (o,
+  para una idea, una idea hermana 24 px más abajo). Editar con texto algo borrado en el
+  servidor también termina en una copia; sin texto, se descarta. Borrar algo cuyo texto
+  cambió en el servidor se rechaza y la fila vuelve.
+- **En el teléfono**: una fila traída del servidor reemplaza a la local salvo en los campos
+  que un cambio en cola todavía va a escribir. Un cambio que no se envió absorbe los
+  siguientes de la misma fila; uno que ya viajó no se toca (su reintento devolvería la
+  respuesta guardada).
 
 ## Login
 
