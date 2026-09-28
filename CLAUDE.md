@@ -27,7 +27,7 @@ Backend web del sistema (paquete `accounting-system`). Repo: [brad-uxp/the-book]
 - **Límites de texto** en `lib/text-limits.ts` (título 500, texto 200 000 caracteres de HTML), sin imports: los lee la web, la API y el teléfono (`@shared/text-limits`). No pongas otro número en otro lado.
 - **La sync del teléfono** usa `requireSyncSession()` (sesión del navegador o token `mobile`, nunca uno `automation`), se cobra por cambio (`checkRateLimit` con costo) y corre de a un push por llamante (`lib/keyed-lock.ts`). Rate limit y lock viven en memoria: asumen **una sola réplica**.
 - **Borrados que el teléfono tiene que ver**: triggers `AFTER DELETE` en `Task`, `CanvasNode` y `CanvasEdge` llenan `SyncTombstone`. Invisibles para Prisma y guardados por `prisma/migrations.test.ts`: nunca los dropees ni los desactives.
-- **Números del dashboard** solo en `lib/metrics.ts` (puro, testeado contra la implementación anterior). El dashboard y `GET /api/metrics` (la app mobile) lo usan; nunca dupliques una fórmula. Las consultas viven en `lib/metrics-server.ts`.
+- **Números del dashboard** solo en `lib/metrics.ts` (puro, testeado contra la implementación anterior). El dashboard y `GET /api/metrics` (la app mobile) lo usan; nunca dupliques una fórmula. Las consultas viven en `lib/metrics-server.ts`. La regla de factura vencida y el total "awaiting payment" viven en `lib/invoices.ts` (sin imports, `lib/metrics` los re-exporta) y el tipo de la respuesta de `/api/metrics` en `lib/metrics-report.ts`: la pestaña Invoices y Metrics del teléfono los usan vía `@shared/*`.
 - **Prisma client** singleton en `lib/db.ts`.
 
 ## Comandos de desarrollo

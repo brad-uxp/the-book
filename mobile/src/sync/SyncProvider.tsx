@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLiveQuery } from "@/db/database";
+import { clearBusinessCache } from "@/business/snapshots";
 import { setLocalWriteListener } from "@/notes/store";
 import { SyncEngine, type SyncStatus } from "./engine";
 
@@ -50,6 +51,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       setStatus(IDLE);
     };
   }, [token, expire]);
+
+  // However the session ends — a 401 seen by the sync, by a business screen,
+  // or signing out — the invoices, salaries and metrics snapshots go with it.
+  const signedOut = state.status === "signed-out";
+  useEffect(() => {
+    if (signedOut) void clearBusinessCache().catch((err) => console.warn("[auth] clear business cache", err));
+  }, [signedOut]);
 
   const pending =
     useLiveQuery(["outbox"], async (db) => (await db.getFirstAsync<{ n: number }>("SELECT count(*) AS n FROM outbox"))?.n ?? 0, []) ?? 0;

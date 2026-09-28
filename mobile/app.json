@@ -42,7 +42,8 @@
       "./plugins/with-release-signing",
       "./plugins/with-gradle-project-name",
       "expo-sqlite",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
