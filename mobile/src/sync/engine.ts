@@ -16,6 +16,7 @@ import { dropBlankDrafts, finalizeDeletes } from "@/notes/store";
 import { TEXT_TOO_LONG, mergeIssue, refusedIdeaCopy, refusedTextCopy, resultEffect } from "./merge";
 import { newId } from "@/lib/hash";
 import { backoffMs, type PendingMutation } from "./outbox";
+import { isOnline } from "./connectivity";
 
 /**
  * Keeps the phone's SQLite and the server in step.
@@ -91,11 +92,20 @@ export class SyncEngine {
       .then((v) => this.set({ lastSyncedAt: v ? Number(v) : null }))
       .catch(() => undefined);
 
+    // No reachability probe: it requests a Google URL, and it lagged a minute
+    // behind a network coming back (see ./connectivity).
+    NetInfo.configure({ reachabilityShouldRun: () => false });
     const offNet = NetInfo.addEventListener((state: NetInfoState) => {
-      const online = state.isConnected !== false && state.isInternetReachable !== false;
+      const online = isOnline(state);
       const cameBack = online && !this.status.online;
       this.set({ online });
-      if (cameBack) void this.syncNow({ refs: true });
+      if (cameBack) {
+        // A fresh start: the waits grown while offline don't carry over.
+        this.failures = 0;
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = null;
+        void this.syncNow({ refs: true });
+      }
     });
     const appState = AppState.addEventListener("change", (s: AppStateStatus) => {
       if (s === "active") void this.syncNow({ refs: true });
