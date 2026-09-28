@@ -14,7 +14,7 @@
  * Pure (no React Native), so `node --test` runs it; the "worklet" directives
  * are plain strings there.
  */
-import { connectionAnchors, type EdgeAnchor, type Rect, type Side } from "../../../lib/canvas-geometry.ts";
+import { connectionAnchors, GRID_SIZE, type EdgeAnchor, type Rect, type Side } from "../../../lib/canvas-geometry.ts";
 
 export type { Rect, Side };
 
@@ -353,3 +353,98 @@ export function fitView(boxes: CardBox[], width: number, height: number, pad = 2
     y: (height - bh * z) / 2 - b.minY * z,
   };
 }
+
+// ── Width ────────────────────────────────────────────────────────────────────
+
+/** The two width grips of a selected card. Its height always follows its content. */
+export type GripSide = "left" | "right";
+
+/**
+ * Below this height on screen (dp) a card's grips would sit on its side dots:
+ * they are not shown, and the finger zooms in to resize. Low enough that a
+ * one-line card (46 world units) has them at 1× and a little below.
+ */
+export const GRIP_MIN_SCREEN_HEIGHT = 40;
+
+/**
+ * Where a card's width grips are: on its left and right edges at the bottom
+ * corners. Toward the bottom of the side, as on the web, away from the
+ * connection dot in the middle of it — and at the corner itself, so even a
+ * one-line card leaves a gap between the two.
+ */
+export function gripPoints(box: CardBox): { side: GripSide; x: number; y: number }[] {
+  "worklet";
+  return [
+    { side: "left", x: box.x, y: box.y + box.h },
+    { side: "right", x: box.x + box.w, y: box.y + box.h },
+  ];
+}
+
+export function gripsShown(box: CardBox, view: View): boolean {
+  "worklet";
+  return box.h * view.z >= GRIP_MIN_SCREEN_HEIGHT;
+}
+
+export type Handle = { kind: "dot"; side: Side } | { kind: "grip"; side: GripSide };
+
+/**
+ * What a touch on a selected card picks up: one of its connection dots or
+ * width grips — the nearest within reach, so a grip next to a dot never
+ * steals it and the other way round — or null (the card itself, or nothing).
+ * Radii in screen pixels; grips only when they are shown.
+ */
+export function handleAt(box: CardBox, view: View, sx: number, sy: number, dotRadius: number, gripRadius: number): Handle | null {
+  "worklet";
+  let best: Handle | null = null;
+  let bestD = Infinity;
+  const dots = [
+    { side: "top" as Side, x: box.x + box.w / 2, y: box.y },
+    { side: "right" as Side, x: box.x + box.w, y: box.y + box.h / 2 },
+    { side: "bottom" as Side, x: box.x + box.w / 2, y: box.y + box.h },
+    { side: "left" as Side, x: box.x, y: box.y + box.h / 2 },
+  ];
+  for (const p of dots) {
+    const dx = p.x * view.z + view.x - sx;
+    const dy = p.y * view.z + view.y - sy;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d <= dotRadius && d < bestD) {
+      bestD = d;
+      best = { kind: "dot", side: p.side };
+    }
+  }
+  if (box.h * view.z >= GRIP_MIN_SCREEN_HEIGHT) {
+    const grips = [
+      { side: "left" as GripSide, x: box.x, y: box.y + box.h },
+      { side: "right" as GripSide, x: box.x + box.w, y: box.y + box.h },
+    ];
+    for (const g of grips) {
+      const dx = g.x * view.z + view.x - sx;
+      const dy = g.y * view.z + view.y - sy;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= gripRadius && d < bestD) {
+        bestD = d;
+        best = { kind: "grip", side: g.side };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * A card's x and width while one grip is dragged `dx` world units. The width
+ * snaps to the grid and stays within [min, max], as on the web, and the other
+ * edge does not move — dragging the left grip moves x as well.
+ */
+export function resizeWidth(
+  start: { x: number; w: number },
+  side: GripSide,
+  dx: number,
+  min: number,
+  max: number
+): { x: number; w: number } {
+  "worklet";
+  const grown = side === "right" ? start.w + dx : start.w - dx;
+  const w = Math.min(max, Math.max(min, Math.round(grown / GRID_SIZE) * GRID_SIZE));
+  return side === "right" ? { x: start.x, w } : { x: start.x + start.w - w, w };
+}
+

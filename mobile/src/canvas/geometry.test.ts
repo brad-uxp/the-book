@@ -13,12 +13,18 @@ import {
   edgeScreenPaths,
   fitView,
   grabRadius,
+  gripPoints,
+  gripsShown,
+  handleAt,
+  GRIP_MIN_SCREEN_HEIGHT,
   pinchView,
   pinchStep,
   toScreen,
+  resizeWidth,
   toWorld,
   type CardBox,
 } from "./geometry.ts";
+import { NODE_MAX_SIZE, NODE_MIN_WIDTH } from "../../../lib/note-canvas.ts";
 
 const box = (id: string, x: number, y: number, w = 200, h = 80): CardBox => ({ id, x, y, w, h });
 
@@ -198,3 +204,66 @@ test("pellizco: si el segundo dedo vuelve, sigue desde donde está, sin saltos",
   ({ view, anchor } = pinchStep(anchor, view, { x: 130, y: 110 }, 1.5, 2)); // y sigue pellizcando: la escala cuenta desde ahí
   assert.ok(Math.abs(view.z - one.z * 1.25) < 1e-9, `z=${view.z}`);
 });
+
+// ── Ancho ────────────────────────────────────────────────────────────────────
+
+const W = { min: NODE_MIN_WIDTH, max: NODE_MAX_SIZE };
+
+test("ancho: el ancho queda en la grilla aunque la tarjeta no esté en ella, como en la web", () => {
+  assert.deepEqual(resizeWidth({ x: 1850, w: 280 }, "right", -100, W.min, W.max), { x: 1850, w: 184 });
+  const left = resizeWidth({ x: 1850, w: 280 }, "left", 100, W.min, W.max);
+  assert.deepEqual(left, { x: 1946, w: 184 });
+});
+
+test("ancho: la manija derecha mueve solo el borde derecho, sobre la grilla", () => {
+  assert.deepEqual(resizeWidth({ x: 40, w: 280 }, "right", 37, W.min, W.max), { x: 40, w: 320 });
+  assert.deepEqual(resizeWidth({ x: 40, w: 280 }, "right", -45, W.min, W.max), { x: 40, w: 232 });
+});
+
+test("ancho: la manija izquierda mueve x y deja quieto el borde derecho", () => {
+  const r = resizeWidth({ x: 40, w: 280 }, "left", -61, W.min, W.max);
+  assert.deepEqual(r, { x: -24, w: 344 });
+  assert.equal(r.x + r.w, 40 + 280);
+  const narrow = resizeWidth({ x: 40, w: 280 }, "left", 50, W.min, W.max);
+  assert.equal(narrow.x + narrow.w, 320);
+  assert.equal(narrow.x % 8, 0);
+});
+
+test("ancho: nunca menos que el mínimo de la web ni más que el máximo, de ningún lado", () => {
+  assert.equal(resizeWidth({ x: 0, w: 280 }, "right", -1000, W.min, W.max).w, NODE_MIN_WIDTH);
+  assert.equal(resizeWidth({ x: 0, w: 280 }, "right", 99999, W.min, W.max).w, NODE_MAX_SIZE);
+  const left = resizeWidth({ x: 0, w: 280 }, "left", 1000, W.min, W.max);
+  assert.deepEqual(left, { x: 280 - NODE_MIN_WIDTH, w: NODE_MIN_WIDTH });
+  const wide = resizeWidth({ x: 0, w: 280 }, "left", -99999, W.min, W.max);
+  assert.deepEqual(wide, { x: 280 - NODE_MAX_SIZE, w: NODE_MAX_SIZE });
+});
+
+test("las manijas van en las esquinas de abajo, lejos de los puntos del medio de cada lado", () => {
+  const b = box("a", 0, 0, 200, 46);
+  assert.deepEqual(gripPoints(b), [
+    { side: "left", x: 0, y: 46 },
+    { side: "right", x: 200, y: 46 },
+  ]);
+});
+
+test("un toque en una manija la agarra; en un punto, el punto — gana el más cercano", () => {
+  const b = box("a", 0, 0, 200, 100);
+  const v = { x: 0, y: 0, z: 1 };
+  assert.deepEqual(handleAt(b, v, 202, 98, 26, 24), { kind: "grip", side: "right" });
+  assert.deepEqual(handleAt(b, v, -3, 101, 26, 24), { kind: "grip", side: "left" });
+  assert.deepEqual(handleAt(b, v, 201, 52, 26, 24), { kind: "dot", side: "right" });
+  assert.deepEqual(handleAt(b, v, 100, 2, 26, 24), { kind: "dot", side: "top" });
+  assert.equal(handleAt(b, v, 100, 50, 26, 24), null);
+});
+
+test("con la tarjeta muy baja en pantalla, las manijas no se muestran ni se agarran", () => {
+  const b = box("a", 0, 0, 200, 46);
+  const far = { x: 0, y: 0, z: 0.5 };
+  assert.equal(gripsShown(b, far), false);
+  assert.equal(handleAt(b, far, 100, 23, 26, 24)?.kind ?? null, "dot");
+  assert.equal(handleAt(b, far, 101, 24, 26, 24)?.kind, "dot");
+  const near = { x: 0, y: 0, z: GRIP_MIN_SCREEN_HEIGHT / 46 };
+  assert.equal(gripsShown(b, near), true);
+  assert.deepEqual(handleAt(b, near, 200 * near.z + 1, 46 * near.z + 1, 26, 24), { kind: "grip", side: "right" });
+});
+
