@@ -141,7 +141,6 @@ guardan como **UTC midnight**.
 | ------------------ | ------------------------------------------------------------------------ |
 | `Settings`         | Configuración global (singleton, `CHECK (id = 'singleton')`): días de anticipación de las alertas y `corporate_excluded_client_ids`, los clientes que quedan fuera de la rentabilidad corporativa (dashboard y `/api/metrics`) |
 | `MobileDevice` | Token nativo de FCM de un teléfono, uno por `ApiToken` (FK con `ON DELETE CASCADE`); cerrar sesión o revocar lo borra. Destino de los push |
-| `PushSubscription` | **Fuera del schema** desde 2026-09-28 (fase 1 de su borrado): la tabla sigue en la base, sin uso; la migración que la dropea va en el deploy siguiente, con `ACEPTO PERDER ESTOS DATOS` |
 
 ### Suscripciones
 

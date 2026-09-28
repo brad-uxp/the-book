@@ -1,0 +1,11 @@
+-- Phase 2 of the two-phase drop of PushSubscription (web push).
+--
+-- ACEPTO PERDER ESTOS DATOS: the table held the browser endpoints of the web
+-- push retired with the PWA on 2026-09-27. The VAPID keys that made those
+-- endpoints usable were deleted from Railway the same day, so the rows cannot
+-- deliver anything and nothing reads them: the model left schema.prisma in
+-- the previous deploy (phase 1, with 20260928200000_mobile_devices), so no
+-- running code touches the table during this one. Native push lives in
+-- MobileDevice. Approved by the owner on 2026-09-28. Not recoverable except
+-- from a database backup — and there is nothing worth recovering.
+DROP TABLE "PushSubscription";

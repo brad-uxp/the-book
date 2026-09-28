@@ -218,18 +218,6 @@ model Notification {
 }
 
 // ============================================================
-// Push Subscriptions (Web Push) — being dropped
-// ============================================================
-
-// PushSubscription (web push, removed with the PWA on 2026-09-27) left this
-// schema on 2026-09-28: phase 1 of its two-phase drop. The TABLE is still in
-// the database, untouched, so the running code never meets a missing table
-// during the deploy. Phase 2 — the next deploy — is a migration that drops
-// it, carrying `ACEPTO PERDER ESTOS DATOS` (the rows are old browser push
-// endpoints, useless without the VAPID keys deleted the same day). Native
-// push lives in MobileDevice, next to ApiToken.
-
-// ============================================================
 // Settings
 // ============================================================
 

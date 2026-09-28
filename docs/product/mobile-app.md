@@ -295,10 +295,7 @@ real necesita la clave de producción —; queda para la prueba del dueño. MIUI
 (Xiaomi) puede además frenar apps en segundo plano: si los avisos no llegan con la app
 cerrada, poner book. en *Sin restricciones* de batería.
 
-**`PushSubscription`** (web push retirada): fase 1 hecha — salió de `schema.prisma` en este
-cambio; la tabla sigue intacta en la base. **Fase 2, en el deploy siguiente**: una
-migración `DROP TABLE "PushSubscription"` con el comentario `ACEPTO PERDER ESTOS DATOS` (son
-endpoints de navegador inútiles sin las claves VAPID, borradas el 2026-09-27).
+**`PushSubscription`** (web push retirada): borrada en dos fases — salió de `schema.prisma` en el deploy de la 0.5.0 y la migración `20260929120000_drop_push_subscription` dropeó la tabla en el siguiente, con `ACEPTO PERDER ESTOS DATOS` (eran endpoints de navegador inútiles sin las llaves VAPID, borradas el 2026-09-27).
 
 ## Sincronización
 
