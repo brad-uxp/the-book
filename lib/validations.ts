@@ -14,6 +14,18 @@ import {
 } from "./note-canvas";
 
 /**
+ * Text Postgres can store. A text column refuses the NUL character (\u0000)
+ * with an error the API would otherwise answer as a 500 — and a sync push
+ * would stop at, again and again, on every retry of the phone's queue.
+ */
+const NoNul = (s: string) => !s.includes("\u0000");
+const NUL_MESSAGE = "Contains a NUL character";
+const Text = () => z.string().refine(NoNul, NUL_MESSAGE);
+
+/** A Postgres `integer`: past these, the write fails in the database instead of here. */
+const Int32 = z.number().int().min(-2_147_483_648).max(2_147_483_647);
+
+/**
  * A URL safe to put in an href or an img src. Plain z.string() would accept
  * `javascript:…`, which these fields are rendered into directly.
  */
@@ -196,11 +208,10 @@ export type InvoiceInput = z.infer<typeof InvoiceSchema>;
 // ─── Issues ──────────────────────────────────────────────────────────────────
 
 export const IssueSchema = z.object({
-  title: z
-    .string()
+  title: Text()
     .min(1, "Title is required")
     .max(ISSUE_TITLE_MAX, `At most ${ISSUE_TITLE_MAX} characters`),
-  client_id: z.string().nullable().optional(),
+  client_id: Text().nullable().optional(),
   category: z.enum(["task", "note"]).default("task"),
   /** Only meaningful for a note; a canvas task is refused by the route. */
   note_format: z.enum(NOTE_FORMATS).default("text"),
@@ -209,8 +220,8 @@ export const IssueSchema = z.object({
     .default("pending"),
   progress: z.number().int().min(0).max(100).default(0),
   due_date: DateString.nullable().optional(),
-  description: z.string().max(RICH_TEXT_MAX, "Too long").default(""),
-  sort_order: z.number().int().default(0),
+  description: Text().max(RICH_TEXT_MAX, "Too long").default(""),
+  sort_order: Int32.default(0),
 });
 
 export type IssueInput = z.infer<typeof IssueSchema>;
@@ -229,7 +240,7 @@ export const IssueCreateSchema = IssueSchema.extend({ id: z.uuid().optional() })
  * halfway through.
  */
 export const BulkDeleteIssuesSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, "Nothing selected").max(500),
+  ids: z.array(Text().min(1)).min(1, "Nothing selected").max(500),
 });
 
 export type BulkDeleteIssuesInput = z.infer<typeof BulkDeleteIssuesSchema>;
@@ -255,7 +266,7 @@ const NodeHeight = z.number().min(NODE_MIN_HEIGHT).max(NODE_MAX_SIZE);
  */
 const CanvasColorKey = z.enum(CANVAS_COLOR_KEYS as [string, ...string[]]);
 
-const NodeContent = z.string().max(NODE_CONTENT_MAX);
+const NodeContent = Text().max(NODE_CONTENT_MAX);
 
 /**
  * A new idea. The id may come from the client: a node is drawn and typed into
@@ -291,7 +302,7 @@ export const CanvasLayoutSchema = z.object({
   nodes: z
     .array(
       z.object({
-        id: z.string().min(1),
+        id: Text().min(1),
         x: CanvasCoord,
         y: CanvasCoord,
         width: NodeWidth.optional(),
@@ -311,8 +322,8 @@ export const CanvasLayoutSchema = z.object({
 export const CanvasEdgeSchema = z
   .object({
     id: z.uuid().optional(),
-    source_id: z.string().min(1),
-    target_id: z.string().min(1),
+    source_id: Text().min(1),
+    target_id: Text().min(1),
   })
   .refine((d) => d.source_id !== d.target_id, {
     message: "An idea cannot connect to itself",
@@ -342,14 +353,14 @@ export const SyncMutationSchema = z.object({
   mutation_id: z.uuid(),
   entity: z.enum(["issue", "canvas_node", "canvas_edge"]),
   op: z.enum(["upsert", "delete"]),
-  id: z.string().min(1).max(64),
-  base_updated_at: z.string().max(40).nullable().optional(),
+  id: Text().min(1).max(64),
+  base_updated_at: Text().max(40).nullable().optional(),
   base_hash: z
     .string()
     .regex(/^[0-9a-f]{64}$/, "Must be a sha256 in hex")
     .nullable()
     .optional(),
-  title_hint: z.string().max(ISSUE_TITLE_MAX).optional(),
+  title_hint: Text().max(ISSUE_TITLE_MAX).optional(),
   fields: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -358,7 +369,7 @@ export const SyncIssueFieldsSchema = IssueSchema.partial().strict();
 
 export const SyncNodeFieldsSchema = z
   .object({
-    issue_id: z.string().min(1).max(64),
+    issue_id: Text().min(1).max(64),
     content: NodeContent,
     color: CanvasColorKey.nullable(),
     x: CanvasCoord,
@@ -371,9 +382,9 @@ export const SyncNodeFieldsSchema = z
 
 export const SyncEdgeFieldsSchema = z
   .object({
-    issue_id: z.string().min(1).max(64),
-    source_id: z.string().min(1).max(64),
-    target_id: z.string().min(1).max(64),
+    issue_id: Text().min(1).max(64),
+    source_id: Text().min(1).max(64),
+    target_id: Text().min(1).max(64),
   })
   .strict()
   .refine((d) => d.source_id !== d.target_id, {

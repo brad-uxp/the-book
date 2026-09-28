@@ -373,6 +373,72 @@ async function recordResult(item: { mutation_id: string }, result: SyncResult): 
   }
 }
 
+// ─── Failures ────────────────────────────────────────────────────────────────
+
+/** Prisma's codes for a database that is unreachable, overloaded or busy — not for a bad change. */
+const TRANSIENT_PRISMA_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024", "P2028", "P2034", "P2037"]);
+
+/** The pg driver adapter's names for the same (lib @prisma/adapter-pg). */
+const TRANSIENT_ADAPTER_KINDS = new Set([
+  "DatabaseNotReachable",
+  "ConnectionClosed",
+  "SocketTimeout",
+  "TooManyConnections",
+  "TransactionWriteConflict",
+  "TlsConnectionError",
+]);
+
+/** Postgres SQLSTATEs: connection problems, serialization and deadlock, shutdown, out of resources. */
+const TRANSIENT_SQLSTATE = /^(08|40001$|40P01$|57P0|53)/;
+
+const TRANSIENT_MESSAGE =
+  /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|connection (terminated|closed|lost|refused|reset)|Connection terminated|timeout exceeded when trying to connect|Can't reach database|too many (clients|connections)/i;
+
+/**
+ * Whether a failure is the database's — worth retrying the same change later —
+ * rather than the change's own. Prisma wraps the driver's error at varying
+ * depths, so every layer is looked at.
+ */
+export function isTransientDbError(err: unknown): boolean {
+  const layers: unknown[] = [];
+  let e: unknown = err;
+  for (let i = 0; e && i < 5; i++) {
+    layers.push(e);
+    const meta = (e as { meta?: { driverAdapterError?: unknown } }).meta;
+    if (meta?.driverAdapterError) layers.push(meta.driverAdapterError);
+    e = (e as { cause?: unknown }).cause;
+  }
+  return layers.some((layer) => {
+    const l = layer as { code?: unknown; kind?: unknown; message?: unknown; cause?: { kind?: unknown; code?: unknown } };
+    const code = typeof l.code === "string" ? l.code : undefined;
+    const kind = typeof l.kind === "string" ? l.kind : typeof l.cause?.kind === "string" ? l.cause.kind : undefined;
+    const sqlstate = kind === "postgres" ? (l.code ?? l.cause?.code) : undefined;
+    return (
+      (code !== undefined && TRANSIENT_PRISMA_CODES.has(code)) ||
+      (kind !== undefined && TRANSIENT_ADAPTER_KINDS.has(kind)) ||
+      (typeof sqlstate === "string" && TRANSIENT_SQLSTATE.test(sqlstate)) ||
+      (typeof l.message === "string" && TRANSIENT_MESSAGE.test(l.message))
+    );
+  });
+}
+
+/**
+ * The answer to a change that failed on its own — a bug, or data the checks
+ * let through that the database refused. Answered and recorded like any
+ * refusal, so the phone takes it off its queue instead of sending it first,
+ * forever, on every push. With the server's row when it can be read, so the
+ * phone can keep its words aside (as a copy) and show the server's version.
+ */
+async function answerFailure(item: { mutation_id: string }): Promise<SyncResult> {
+  const result: SyncResult = { mutation_id: item.mutation_id, status: "rejected", reason: "server_error" };
+  const parsed = SyncMutationSchema.safeParse(item);
+  if (parsed.success) {
+    result.row = await currentRow(parsed.data as SyncMutation).catch(() => undefined);
+    if (result.row === undefined) delete result.row;
+  }
+  return recordResult(item, result);
+}
+
 /** The size of an answer as it goes out, in bytes of JSON. */
 function answerBytes(result: SyncResult): number {
   return Buffer.byteLength(JSON.stringify(result), "utf8");
@@ -380,13 +446,14 @@ function answerBytes(result: SyncResult): number {
 
 /**
  * Applies a push, in order, each change in its own transaction together with
- * the record of its answer.
+ * the record of its answer. A change that fails on its own is answered
+ * `rejected: server_error` and the push goes on.
  *
  * Stops early, answering what it has done (`more`), once the answers pass a
  * few megabytes or the push has run for ~10 s (SYNC_PUSH_BUDGET): the phone
- * sends the rest right away. Also stops at the first failure that is not the
- * change's own (the database unreachable); then the phone retries later.
- * Either way the changes without an answer are sent again, in order.
+ * sends the rest right away. Also stops at the first failure of the database
+ * itself (unreachable, overloaded); then the phone retries later. Either way
+ * the changes without an answer are sent again, in order.
  */
 export async function pushNotes(
   raw: { mutation_id: string }[],
@@ -397,14 +464,25 @@ export async function pushNotes(
   const started = now();
   let bytes = 0;
   for (const [i, item] of raw.entries()) {
+    let result: SyncResult;
     try {
-      const result = await pushOne(item, actor);
-      results.push(result);
-      bytes += answerBytes(result);
+      result = await pushOne(item, actor);
     } catch (err) {
-      console.error("[sync] push stopped at", item.mutation_id, err);
-      return { results, more: false };
+      if (isTransientDbError(err)) {
+        console.error("[sync] push stopped at", item.mutation_id, err);
+        return { results, more: false };
+      }
+      console.error("[sync] change failed, answered server_error:", item.mutation_id, err);
+      try {
+        result = await answerFailure(item);
+      } catch (again) {
+        // Not even the answer could be written: the database is the problem.
+        console.error("[sync] push stopped at", item.mutation_id, again);
+        return { results, more: false };
+      }
     }
+    results.push(result);
+    bytes += answerBytes(result);
     const last = i === raw.length - 1;
     if (!last && (bytes >= SYNC_PUSH_BUDGET.bytes || now() - started >= SYNC_PUSH_BUDGET.ms)) {
       return { results, more: true };

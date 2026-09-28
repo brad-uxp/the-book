@@ -182,6 +182,34 @@ describe("POST /api/sync/notes — idempotencia y orden", () => {
     expect(tx).toHaveBeenCalledTimes(1);
   });
 
+  it("un cambio que falla por sí mismo se responde server_error y el push sigue: la cola del teléfono no se atasca", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const row = issueRow(ID, "2026-09-28T10:00:00Z");
+    vi.mocked(prisma.issue.findUnique).mockResolvedValueOnce(row as never);
+    tx.mockRejectedValueOnce(
+      Object.assign(new Error("invalid byte sequence for encoding UTF8: 0x00"), {
+        name: "PrismaClientKnownRequestError",
+        code: "P2010",
+        meta: { driverAdapterError: { cause: { kind: "postgres", code: "22021" } } },
+      })
+    );
+    tx.mockImplementationOnce((async (fn: (t: unknown) => unknown) =>
+      fn({ syncMutation: { create: vi.fn(), update: vi.fn() }, issue: { findUnique: vi.fn(async () => null) } })) as never);
+    const res = await push({
+      mutations: [
+        { mutation_id: MID(1), entity: "issue", op: "upsert", id: ID, fields: { title: "t" } },
+        { mutation_id: MID(2), entity: "issue", op: "delete", id: ID },
+      ],
+    });
+    const { results, more } = await res.json();
+    expect(more).toBeUndefined();
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ mutation_id: MID(1), status: "rejected", reason: "server_error", row: { id: ID } });
+    expect(results[1]).toMatchObject({ mutation_id: MID(2), status: "applied" });
+    // Queda guardado: un reintento recibe lo mismo en vez de volver a fallar.
+    expect(record).toHaveBeenCalledWith({ data: { mutation_id: MID(1), result: { status: "rejected", reason: "server_error" } } });
+  });
+
   it("la auditoría se escribe después del commit, nunca por un cambio deshecho", async () => {
     const before = issueRow(ID, "2026-09-28T10:00:00Z");
     tx.mockImplementation((async (fn: (t: unknown) => Promise<unknown>) => {

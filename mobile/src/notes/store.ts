@@ -109,10 +109,12 @@ export async function editIssue(
     else if (row.sync_error === TEXT_TOO_LONG) next.sync_error = null;
 
     if (!row.announced) {
-      // A new note becomes real with its first words; until then it stays here.
-      if (!isBlankNote(next.title, next.description) && !tooLong) {
+      // A new note becomes real with its first words; until then it stays
+      // here. One too long to send shows in the list all the same; its create
+      // goes out with the first edit that brings it under the limit.
+      if (!isBlankNote(next.title, next.description)) {
         next.announced = 1;
-        await repo.enqueue(db, create(next));
+        if (!tooLong) await repo.enqueue(db, create(next));
       }
       await repo.putIssue(db, next);
       return true;

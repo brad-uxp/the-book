@@ -13,7 +13,8 @@ import { getDb, write } from "@/db/database";
 import * as repo from "@/db/repo";
 import { ApiError, apiRequest } from "@/lib/api";
 import { dropBlankDrafts, finalizeDeletes } from "@/notes/store";
-import { TEXT_TOO_LONG, mergeIssue, resultEffect } from "./merge";
+import { TEXT_TOO_LONG, mergeIssue, refusedTextCopy, resultEffect } from "./merge";
+import { newId } from "@/lib/hash";
 import { backoffMs, type PendingMutation } from "./outbox";
 
 /**
@@ -233,6 +234,9 @@ export class SyncEngine {
         const queue = await repo.queueFor(db, m.entity, m.entity_id);
 
         if (m.entity === "issue") {
+          // Words the server refused are kept aside before its row replaces them.
+          const copy = refusedTextCopy(result, m, await repo.getIssue(db, m.entity_id), newId(), new Date().toISOString());
+          if (copy) await repo.putIssue(db, copy);
           const effect = resultEffect(result, m.op, queue);
           if (effect.kind === "row") {
             const merged = mergeIssue(await repo.getIssue(db, m.entity_id), effect.row, queue);

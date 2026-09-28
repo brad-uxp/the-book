@@ -95,6 +95,34 @@ describe("límites de texto (los mismos en REST y en la sync)", () => {
   });
 });
 
+describe("lo que Postgres no guarda se rechaza acá, no en la base", () => {
+  const NUL = "a\u0000b";
+  const m = { mutation_id: "00000000-0000-4000-8000-000000000001", entity: "issue", op: "upsert", id: "x" };
+
+  it("un NUL en cualquier texto de una issue o de la sync", () => {
+    expect(IssueSchema.safeParse({ title: NUL }).success).toBe(false);
+    expect(IssueSchema.safeParse({ title: "x", description: `<p>${NUL}</p>` }).success).toBe(false);
+    expect(IssueSchema.safeParse({ title: "x", client_id: NUL }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ description: NUL }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, id: NUL }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, title_hint: NUL }).success).toBe(false);
+    expect(SyncMutationSchema.safeParse({ ...m, base_updated_at: NUL }).success).toBe(false);
+    expect(CanvasNodePatchSchema.safeParse({ content: NUL }).success).toBe(false);
+    expect(CanvasEdgeSchema.safeParse({ source_id: NUL, target_id: "b" }).success).toBe(false);
+  });
+
+  it("sort_order cabe en un integer de Postgres", () => {
+    expect(IssueSchema.safeParse({ title: "x", sort_order: 2_147_483_647 }).success).toBe(true);
+    expect(IssueSchema.safeParse({ title: "x", sort_order: 2_147_483_648 }).success).toBe(false);
+    expect(IssueSchema.safeParse({ title: "x", sort_order: -2_147_483_649 }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ sort_order: 2 ** 40 }).success).toBe(false);
+  });
+
+  it("el texto común (acentos, emojis, saltos) sigue pasando", () => {
+    expect(IssueSchema.safeParse({ title: "Pérez ✓ 🚀", description: "<p>línea\nsiguiente</p>" }).success).toBe(true);
+  });
+});
+
 describe("CanvasNodeSchema", () => {
   it("un nodo nuevo solo necesita dónde va", () => {
     const parsed = CanvasNodeSchema.safeParse({ x: 0, y: 0 });
