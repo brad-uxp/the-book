@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Alert, Linking } from "react-native";
 import { useRouter } from "expo-router";
-import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { getDb } from "@/db/database";
@@ -9,7 +8,9 @@ import { getIssue } from "@/db/repo";
 import { ApiError, apiRequest } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { kindOf } from "@/lib/issues";
+import { installedVersion } from "../../modules/app-update";
 import { targetFor } from "./payload";
+import { deviceAppVersion } from "./version";
 import { ensureChannel } from "./task";
 
 /**
@@ -23,8 +24,11 @@ const ASKED_KEY = "book.push-asked";
 const REGISTERED_KEY = "book.push-registered";
 
 function appVersion(): string | undefined {
-  const v = Constants.expoConfig?.version;
-  return v && /^[0-9A-Za-z.+-]{1,32}$/.test(v) ? v : undefined;
+  try {
+    return deviceAppVersion(installedVersion());
+  } catch {
+    return undefined;
+  }
 }
 
 /** Registers this phone's FCM token with the server. Best effort. */
