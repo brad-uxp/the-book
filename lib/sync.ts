@@ -373,12 +373,29 @@ export function planIssueUpsert(current: IssueNow | null, change: Change<IssuePa
   });
   if (!shape.ok) return { action: "reject", reason: "shape" };
 
+  // A canvas shows no description. Text written into one — the phone edited
+  // this as a text note while the web turned it into a canvas — would be
+  // saved where nobody sees it, so it is kept as a copy instead.
+  if (
+    current.note_format === "canvas" &&
+    f.description !== undefined &&
+    !isBlankHtml(f.description)
+  ) {
+    const { description, ...rest } = f;
+    return { action: "update", data: rest, conflictText: description };
+  }
+
   if (
     f.description !== undefined &&
     textChangedElsewhere(current.description, f.description, change.base_hash)
   ) {
     const { description, ...rest } = f;
-    if (shape.seedFromDescription) return { action: "update", data: rest };
+    // Converting to a canvas, the phone moves its text into an idea and sends
+    // an empty description: dropping that is safe, the server seeds the canvas
+    // with its own text. Any other text is the phone's and must survive.
+    if (shape.seedFromDescription && isBlankHtml(description)) {
+      return { action: "update", data: rest };
+    }
     return { action: "update", data: rest, conflictText: description };
   }
   return { action: "update", data: f };

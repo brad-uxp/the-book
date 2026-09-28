@@ -274,6 +274,30 @@ describe("planIssueUpsert", () => {
     ).toEqual({ action: "update", data: { note_format: "canvas" } });
   });
 
+  it("convertir con texto propio cuando el servidor cambió el suyo: el del teléfono queda como copia", () => {
+    expect(
+      planIssueUpsert(
+        { ...note, description: "<p>web</p>" },
+        { base_updated_at: "x", base_hash: textHash("<p>a</p>"), fields: { note_format: "canvas", description: "<p>teléfono</p>" } }
+      )
+    ).toEqual({ action: "update", data: { note_format: "canvas" }, conflictText: "<p>teléfono</p>" });
+  });
+
+  it("texto escrito en una nota que la web ya convirtió en canvas: no va a la descripción, queda como copia", () => {
+    const canvas = { ...note, note_format: "canvas" as const, description: "" };
+    expect(
+      planIssueUpsert(canvas, { base_updated_at: "x", base_hash: textHash(""), fields: { description: "<p>hola</p>", status: "done" } })
+    ).toEqual({ action: "update", data: { status: "done" }, conflictText: "<p>hola</p>" });
+  });
+
+  it("una descripción vacía sobre un canvas se escribe tal cual (no hay nada que perder)", () => {
+    const canvas = { ...note, note_format: "canvas" as const, description: "" };
+    expect(planIssueUpsert(canvas, { base_updated_at: "x", base_hash: textHash(""), fields: { description: "" } })).toEqual({
+      action: "update",
+      data: { description: "" },
+    });
+  });
+
   it("crear un canvas desde el teléfono", () => {
     expect(planIssueUpsert(null, { fields: { title: "c", category: "note", note_format: "canvas" } })).toEqual({
       action: "create",
