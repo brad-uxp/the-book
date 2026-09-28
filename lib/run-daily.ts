@@ -7,6 +7,7 @@ import {
 } from "@/lib/cron-helpers";
 import { syncPurgeCutoffs } from "@/lib/sync";
 import type { NotificationType } from "@/app/generated/prisma/client";
+import { pushToAll } from "@/lib/push";
 
 /**
  * Core of the daily job. Pure of any HTTP concern so it can be invoked both by
@@ -59,53 +60,89 @@ export async function runDailyJob(): Promise<string[]> {
     `  [cleanup] Deleted ${purgedTombstones.count} sync tombstones (60 days) and ${purgedMutations.count} sync answers (30 days)`
   );
 
-  await runSubscriptions(today, daysSub, log);
-  await runSalaries(today, daysSalary, log);
-  await runIncreaseReminders(today, log);
-  await runInvoices(today, daysInvoice, log);
-  await runIssues(today, log);
+  // The ids of the notifications this run CREATED — not the ones a re-run
+  // finds already there — are the ones the phone gets pushed.
+  const created: string[] = [];
+  await runSubscriptions(today, daysSub, log, created);
+  await runSalaries(today, daysSalary, log, created);
+  await runIncreaseReminders(today, log, created);
+  await runInvoices(today, daysInvoice, log, created);
+  await runIssues(today, log, created);
 
-  // Delivery is the in-app notification centre only. Web push went with the
-  // PWA (2026-09-27); phones get notified again once the React Native app
-  // brings native push.
+  await pushCreated(created, log);
 
   log.push("[cron/daily] Done.");
   return log;
 }
 
+/**
+ * Native push for each new notification: a data-only "notification <id>";
+ * the phone fetches the title and body from the API. Best effort — a push
+ * that fails is logged, never fails the job.
+ */
+async function pushCreated(created: string[], log: string[]) {
+  if (created.length === 0) return;
+  let sent = 0;
+  let removed = 0;
+  let failed = 0;
+  for (const id of created) {
+    try {
+      const outcome = await pushToAll({ kind: "notification", id });
+      if (outcome.off) {
+        log.push(`  [push] off (FCM not configured): ${created.length} notification(s) not pushed`);
+        return;
+      }
+      sent += outcome.sent;
+      removed += outcome.removed;
+      failed += outcome.failed;
+    } catch (err) {
+      failed++;
+      console.error("[cron/daily] push:", err instanceof Error ? err.message : err);
+    }
+  }
+  log.push(`  [push] ${created.length} new notification(s): ${sent} sent, ${removed} device(s) gone, ${failed} failed`);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function upsertNotification(data: {
-  type: NotificationType;
-  title: string;
-  body: string;
-  entity_type: string;
-  entity_id: string;
-  event_date: Date;
-}) {
-  await prisma.notification.upsert({
-    where: {
-      type_entity_id_event_date: {
+/**
+ * Creates the notification unless (type, entity_id, event_date) already has
+ * one — the job's idempotency. Records the id in `created` only when this call
+ * made the row, so a re-run the same day pushes nothing twice.
+ */
+async function upsertNotification(
+  created: string[],
+  data: {
+    type: NotificationType;
+    title: string;
+    body: string;
+    entity_type: string;
+    entity_id: string;
+    event_date: Date;
+  }
+) {
+  try {
+    const row = await prisma.notification.create({
+      data: {
         type: data.type,
+        title: data.title,
+        body: data.body,
+        entity_type: data.entity_type,
         entity_id: data.entity_id,
         event_date: data.event_date,
       },
-    },
-    update: {},
-    create: {
-      type: data.type,
-      title: data.title,
-      body: data.body,
-      entity_type: data.entity_type,
-      entity_id: data.entity_id,
-      event_date: data.event_date,
-    },
-  });
+      select: { id: true },
+    });
+    created.push(row.id);
+  } catch (err) {
+    // P2002: already notified today (the unique index). Anything else is real.
+    if ((err as { code?: unknown } | null)?.code !== "P2002") throw err;
+  }
 }
 
 // ─── Subscriptions ────────────────────────────────────────────────────────────
 
-async function runSubscriptions(today: Date, daysBefore: number, log: string[]) {
+async function runSubscriptions(today: Date, daysBefore: number, log: string[], created: string[]) {
   const subscriptions = await prisma.subscription.findMany({
     where: { status: "active" },
   });
@@ -114,6 +151,7 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
     for (const event of subscriptionEvents(sub, today, daysBefore)) {
       if (event.kind === "auto_upcoming") {
         await upsertNotification(
+          created,
           buildSubscriptionNotification({
             type: "subscription_auto_upcoming",
             sub,
@@ -130,6 +168,7 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
 
       if (event.kind === "manual_due") {
         await upsertNotification(
+          created,
           buildSubscriptionNotification({
             type: "subscription_manual_due",
             sub,
@@ -166,6 +205,7 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
       }
 
       await upsertNotification(
+        created,
         buildSubscriptionNotification({
           type: "subscription_auto_paid",
           sub,
@@ -179,7 +219,7 @@ async function runSubscriptions(today: Date, daysBefore: number, log: string[]) 
 
 // ─── Salaries ─────────────────────────────────────────────────────────────────
 
-async function runSalaries(today: Date, daysBefore: number, log: string[]) {
+async function runSalaries(today: Date, daysBefore: number, log: string[], created: string[]) {
   const people = await prisma.person.findMany({
     where: { status: "active" },
   });
@@ -194,7 +234,7 @@ async function runSalaries(today: Date, daysBefore: number, log: string[]) {
     const { hit, dueDate } = advanceNotice(today, daysBefore, person.payday_day);
 
     if (hit) {
-      await upsertNotification({
+      await upsertNotification(created, {
         type: "salary_manual_due" as NotificationType,
         title: `Salary due ${when}: ${person.name}`,
         body: `Monthly salary payment for ${person.name} is due ${when} (${dueDate.toISOString().slice(0, 10)}).`,
@@ -209,7 +249,7 @@ async function runSalaries(today: Date, daysBefore: number, log: string[]) {
 
 // ─── Salary Increase Reminders ────────────────────────────────────────────────
 
-async function runIncreaseReminders(today: Date, log: string[]) {
+async function runIncreaseReminders(today: Date, log: string[], created: string[]) {
   const reminders = await prisma.salaryIncreaseReminder.findMany({
     where: {
       status: "scheduled",
@@ -220,7 +260,7 @@ async function runIncreaseReminders(today: Date, log: string[]) {
 
   for (const reminder of reminders) {
     if (isSameDay(today, reminder.effective_date)) {
-      await upsertNotification({
+      await upsertNotification(created, {
         type: "salary_increase_due" as NotificationType,
         title: `Salary increase due: ${reminder.person.name}`,
         body: `Suggested new salary: $${(reminder.suggested_new_base_cents / 100).toFixed(2)}`,
@@ -237,7 +277,7 @@ async function runIncreaseReminders(today: Date, log: string[]) {
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
-async function runInvoices(today: Date, daysBefore: number, log: string[]) {
+async function runInvoices(today: Date, daysBefore: number, log: string[], created: string[]) {
   const invoices = await prisma.invoice.findMany({
     where: { status: { not: "paid" } },
     include: { client: true },
@@ -245,7 +285,7 @@ async function runInvoices(today: Date, daysBefore: number, log: string[]) {
 
   for (const invoice of invoices) {
     if (invoice.reminder_date && isSameDay(today, invoice.reminder_date)) {
-      await upsertNotification({
+      await upsertNotification(created, {
         type: "invoice_reminder_due" as NotificationType,
         title: `Invoice reminder: ${invoice.client.name}`,
         body: `Invoice${invoice.invoice_number ? ` #${invoice.invoice_number}` : ""} of $${((invoice.amount_cents + invoice.fee_cents) / 100).toFixed(2)} — reminder date reached.`,
@@ -261,7 +301,7 @@ async function runInvoices(today: Date, daysBefore: number, log: string[]) {
       const dueMsg = daysBefore === 0
         ? "is due today."
         : `is due in ${daysBefore} day${daysBefore !== 1 ? "s" : ""}.`;
-      await upsertNotification({
+      await upsertNotification(created, {
         type: "invoice_due" as NotificationType,
         title: `Invoice due: ${invoice.client.name}`,
         body: `Invoice${invoice.invoice_number ? ` #${invoice.invoice_number}` : ""} of $${((invoice.amount_cents + invoice.fee_cents) / 100).toFixed(2)} ${dueMsg}`,
@@ -276,7 +316,7 @@ async function runInvoices(today: Date, daysBefore: number, log: string[]) {
 
 // ─── Issues ──────────────────────────────────────────────────────────────────
 
-async function runIssues(today: Date, log: string[]) {
+async function runIssues(today: Date, log: string[], created: string[]) {
   const tomorrow = addDaysUTC(today, 1);
 
   const issues = await prisma.issue.findMany({
@@ -292,7 +332,7 @@ async function runIssues(today: Date, log: string[]) {
 
     // Due tomorrow
     if (isSameDay(tomorrow, issue.due_date)) {
-      await upsertNotification({
+      await upsertNotification(created, {
         type: "issue_due_tomorrow" as NotificationType,
         title: `Task due tomorrow: ${issue.title}`,
         body: `"${issue.title}" is due tomorrow (${issue.due_date.toISOString().slice(0, 10)}).`,
@@ -305,7 +345,7 @@ async function runIssues(today: Date, log: string[]) {
 
     // Due today
     if (isSameDay(today, issue.due_date)) {
-      await upsertNotification({
+      await upsertNotification(created, {
         type: "issue_due_today" as NotificationType,
         title: `Task due today: ${issue.title}`,
         body: `"${issue.title}" is due today.`,
