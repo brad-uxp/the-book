@@ -16,6 +16,7 @@ const CreateTokenSchema = z.object({
 const PUBLIC_FIELDS = {
   id: true,
   name: true,
+  kind: true,
   token_prefix: true,
   created_at: true,
   last_used_at: true,

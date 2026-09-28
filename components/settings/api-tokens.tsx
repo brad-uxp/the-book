@@ -24,6 +24,7 @@ import { usePolling } from "@/hooks/use-polling";
 interface ApiToken {
   id: string;
   name: string;
+  kind: "mobile" | "automation";
   token_prefix: string;
   created_at: string;
   last_used_at: string | null;
@@ -191,6 +192,11 @@ export function ApiTokens() {
                     <Badge variant={status.variant} className="text-[10px]">
                       {status.label}
                     </Badge>
+                    {t.kind === "mobile" && (
+                      <Badge variant="secondary" className="text-[10px]" title="Minted by the app's sign-in; the only kind the phone's sync accepts">
+                        Phone
+                      </Badge>
+                    )}
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                     {t.token_prefix}…

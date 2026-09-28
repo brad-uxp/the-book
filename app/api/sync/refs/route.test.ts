@@ -14,22 +14,22 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
-  requireSession: vi.fn(),
+  requireSyncSession: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
 
 import { GET } from "./route";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/api";
+import { requireSyncSession } from "@/lib/api";
 
 beforeEach(() => {
-  vi.mocked(requireSession).mockResolvedValue(null);
+  vi.mocked(requireSyncSession).mockResolvedValue(null);
 });
 
 describe("GET /api/sync/refs", () => {
   it("sin credencial no lee nada", async () => {
-    vi.mocked(requireSession).mockResolvedValueOnce(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
+    vi.mocked(requireSyncSession).mockResolvedValueOnce(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
     expect((await GET()).status).toBe(401);
   });
 

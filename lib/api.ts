@@ -8,13 +8,14 @@ import {
   checkToken,
   prefixOf,
   tokenActor,
+  type TokenKind,
 } from "@/lib/api-tokens";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 /** Who is making the current request. */
 export type Actor =
   | { kind: "user"; label: string }
-  | { kind: "token"; id: string; label: string };
+  | { kind: "token"; id: string; label: string; tokenKind: TokenKind };
 
 /**
  * Resolves the caller from either credential the API accepts: a NextAuth
@@ -44,7 +45,7 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
       .update({ where: { id: verified.id }, data: { last_used_at: new Date() } })
       .catch((err) => console.error("[api-token] last_used_at:", err));
 
-    return { kind: "token", id: verified.id, label: tokenActor(verified.name) };
+    return { kind: "token", id: verified.id, label: tokenActor(verified.name), tokenKind: verified.kind };
   }
 
   const session = await auth().catch(() => null);
@@ -105,6 +106,26 @@ export async function requireUserSession(): Promise<NextResponse | null> {
   if (actor.kind !== "user") {
     return NextResponse.json(
       { error: "This endpoint requires an interactive session" },
+      { status: 403 }
+    );
+  }
+  return null;
+}
+
+/**
+ * Authorization for the phone's sync (/api/sync/*): the browser's user, or a
+ * token the app's sign-in minted. Not a hand-made automation token: it
+ * reaches the same notes through the issue routes already, and those tokens
+ * — pasted into scripts and agents — are the ones most likely to leak; the
+ * sync is the costliest endpoint to leave open to them.
+ */
+export async function requireSyncSession(): Promise<NextResponse | null> {
+  const denied = await requireSession();
+  if (denied) return denied;
+  const actor = await resolveActor();
+  if (actor?.kind === "token" && actor.tokenKind !== "mobile") {
+    return NextResponse.json(
+      { error: "Sync is only for the book. app; use the issue routes with this token" },
       { status: 403 }
     );
   }

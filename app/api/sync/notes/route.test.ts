@@ -16,15 +16,15 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn(async () => "token:mobile · Pixel") }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
-  requireSession: vi.fn(),
-  resolveActor: vi.fn(async () => ({ kind: "token", id: "tok-phone", label: "token:mobile · Pixel" })),
+  requireSyncSession: vi.fn(),
+  resolveActor: vi.fn(async () => ({ kind: "token", id: "tok-phone", label: "token:mobile · Pixel", tokenKind: "mobile" })),
 }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
 
 import { GET, POST } from "./route";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
-import { requireSession } from "@/lib/api";
+import { requireSyncSession } from "@/lib/api";
 import { SYNC_MUTATIONS_PER_MINUTE, SYNC_PAGE_LIMITS, encodeCursor } from "@/lib/sync";
 import { resetRateLimits } from "@/lib/rate-limit";
 
@@ -66,14 +66,14 @@ const issueRow = (id: string, updated: string) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimits();
-  vi.mocked(requireSession).mockResolvedValue(null);
+  vi.mocked(requireSyncSession).mockResolvedValue(null);
   stored.mockResolvedValue(null);
   record.mockResolvedValue({} as never);
 });
 
 describe("auth", () => {
   it("sin credencial, ni pull ni push tocan la base", async () => {
-    vi.mocked(requireSession).mockResolvedValue(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
+    vi.mocked(requireSyncSession).mockResolvedValue(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
     expect((await pull()).status).toBe(401);
     expect((await push({ mutations: [{ mutation_id: MID(1) }] })).status).toBe(401);
     expect(tx).not.toHaveBeenCalled();

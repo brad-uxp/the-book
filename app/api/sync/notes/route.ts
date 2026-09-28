@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSession, readJsonLimited, invalid, resolveActor, type Actor } from "@/lib/api";
+import { requireSyncSession, readJsonLimited, invalid, resolveActor, type Actor } from "@/lib/api";
 import { getActorEmail } from "@/lib/audit";
 import { withKeyLock } from "@/lib/keyed-lock";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -17,15 +17,15 @@ function syncKey(actor: Actor | null): string {
  * The phone's offline notes: pull what changed, push what it changed.
  * The protocol is lib/sync-protocol.ts; the rules lib/sync.ts.
  *
- * Any caller the API accepts may use it — the phone's token, another token, a
- * browser session. It reads and writes nothing the issue routes do not; every
- * write goes through the same services and lands in the audit log as the
- * caller.
+ * The phone's token or a browser session may use it — not a hand-made
+ * automation token (requireSyncSession). It reads and writes nothing the
+ * issue routes do not; every write goes through the same services and lands
+ * in the audit log as the caller.
  */
 
 /** One page of what changed since `?since=<cursor>` (none: everything). */
 export async function GET(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSyncSession();
   if (denied) return denied;
 
   const page = await pullNotes(req.nextUrl.searchParams.get("since"));
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
  * them a few megabytes at most.
  */
 export async function POST(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSyncSession();
   if (denied) return denied;
 
   const body = await readJsonLimited(req, SYNC_PUSH_MAX_BYTES);

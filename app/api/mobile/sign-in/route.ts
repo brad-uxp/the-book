@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const created = await prisma.apiToken.create({
-      data: { name, token_prefix: prefix, token_hash: hash, expires_at: expiresAt },
+      data: { name, kind: "mobile", token_prefix: prefix, token_hash: hash, expires_at: expiresAt },
       select: { id: true, name: true, token_prefix: true, expires_at: true },
     });
 
