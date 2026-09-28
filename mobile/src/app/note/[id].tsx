@@ -89,6 +89,10 @@ export default function NoteScreen() {
   // the next save's `previousDescription` (see editIssue).
   const pendingBody = useRef<string | null>(null);
   const savedBody = useRef<string>("");
+  // Every text this screen loaded or saved. A stale read of one of them — a
+  // save still on its way to the store, or the server's answer to an earlier
+  // push — is this screen's own words, never a change made elsewhere.
+  const ownBodies = useRef<Set<string>>(new Set());
   const pendingTitle = useRef<string | null>(null);
   const titleFocused = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,6 +107,7 @@ export default function NoteScreen() {
       edit.description = pendingBody.current;
       previous = savedBody.current;
       savedBody.current = pendingBody.current;
+      ownBodies.current.add(pendingBody.current);
     }
     pendingTitle.current = null;
     pendingBody.current = null;
@@ -124,18 +129,27 @@ export default function NoteScreen() {
     // the point, not an accident.
     if (doc === null) {
       savedBody.current = issue.description;
+      ownBodies.current.add(issue.description);
       setDoc({ key: 0, html: issue.description }); // eslint-disable-line react-hooks/set-state-in-effect
-    } else if (issue.description !== savedBody.current && pendingBody.current === null) {
-      // Changed elsewhere and nothing unsaved here: show the new text. With
-      // unsaved typing it waits — the save then goes up as a conflict, and
-      // the server keeps both.
+    } else if (
+      issue.description !== savedBody.current &&
+      !ownBodies.current.has(issue.description) &&
+      pendingBody.current === null &&
+      !bodyFocused
+    ) {
+      // Changed elsewhere, and nothing is being typed here: show the new
+      // text. While the text has focus it waits — the editor may hold
+      // keystrokes it has not handed over yet, and reloading would drop
+      // them; a save that meets a change made elsewhere goes up as a
+      // conflict, and the server keeps both.
       savedBody.current = issue.description;
+      ownBodies.current.add(issue.description);
       setDoc((d) => ({ key: (d?.key ?? 0) + 1, html: issue.description }));
     }
     if (title === null || (!titleFocused.current && pendingTitle.current === null && issue.title !== title)) {
       setTitle(issue.title);
     }
-  }, [issue, doc, title]);
+  }, [issue, doc, title, bodyFocused]);
 
   // Leaving: save what is pending, and drop a new note left empty.
   useEffect(() => {
