@@ -1,9 +1,15 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, usePalette } from "@/lib/theme";
 
-/** A bottom sheet: a scrim that closes it, a grab bar, a title and its content. */
+/**
+ * A bottom sheet: a scrim that closes it, a grab bar, a title and its content.
+ *
+ * The app is edge to edge, so the keyboard does not shrink the modal's window:
+ * without the KeyboardAvoidingView a sheet with a text field (Register
+ * payment) ends up entirely under the keyboard, Save button included.
+ */
 export function Sheet({
   visible,
   title,
@@ -19,12 +25,14 @@ export function Sheet({
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-      <View style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
-        <View style={[styles.grab, { backgroundColor: c.line }]} />
-        <Text style={[styles.title, { color: c.ink }]}>{title}</Text>
-        {children}
-      </View>
+      <KeyboardAvoidingView style={styles.fill} behavior="padding">
+        <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+        <View style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
+          <View style={[styles.grab, { backgroundColor: c.line }]} />
+          <Text style={[styles.title, { color: c.ink }]}>{title}</Text>
+          {children}
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -68,6 +76,7 @@ export function SheetOption({
 }
 
 const styles = StyleSheet.create({
+  fill: { flex: 1 },
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.38)" },
   sheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 12, paddingTop: 8, maxHeight: "80%" },
   grab: { width: 38, height: 5, borderRadius: 3, alignSelf: "center", marginBottom: 10 },
