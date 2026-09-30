@@ -621,6 +621,24 @@ export function RichTextEditor({
     [editor]
   );
 
+  // Tab nests a list item and Shift-Tab lifts it back. ProseMirror takes the
+  // key, but a Radix dialog or sheet traps focus on its own, without looking
+  // at defaultPrevented: with the editor as its last field, it sent the focus
+  // round to the first one — the title — and the next words were typed there.
+  // So a Tab the editor used goes no further. This listener comes after
+  // ProseMirror's own on the same element, so it sees whether it was taken.
+  useEffect(() => {
+    const editorEl = editor?.view?.dom;
+    if (!editorEl) return;
+
+    const keepTab = (e: KeyboardEvent) => {
+      if (e.key === "Tab" && e.defaultPrevented) e.stopPropagation();
+    };
+
+    editorEl.addEventListener("keydown", keepTab);
+    return () => editorEl.removeEventListener("keydown", keepTab);
+  }, [editor]);
+
   // Mention click popovers
   const [clickedMention, setClickedMention] = useState<{
     id: string;

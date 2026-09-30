@@ -136,6 +136,71 @@ describe("the web and the phone write the same HTML", () => {
   });
 });
 
+/**
+ * The keys that shape a note's structure. These broke once with no change to
+ * our code: a TipTap upgrade left two copies of prosemirror-model installed
+ * (@tiptap/pm on the new one, prosemirror-state and the list commands on the
+ * old), and every list command threw "Can not convert <> to a Fragment" —
+ * Enter in a list, Tab, "- ". Both editors bundle the same node_modules, so
+ * the web and the phone broke together. If these fail after a dependency
+ * change, look for a duplicated prosemirror-* in pnpm-lock.yaml first.
+ */
+describe("typing structure: Enter and lists", () => {
+  // A list that ends the note gets an empty paragraph after it (StarterKit's
+  // trailing node), so there is always a line to click below it.
+  const cases: [name: string, html: string, keys: string[], expected: string][] = [
+    ["Enter splits a paragraph", "<p>hello world</p>", ["Enter"], "<p>hello </p><p>world</p>"],
+    ["Shift-Enter breaks the line", "<p>hello world</p>", ["Shift-Enter"], "<p>hello <br>world</p>"],
+    ["Enter starts a new item", "<ul><li><p>one</p></li></ul>", ["Enter"], "<ul><li><p>one</p></li><li><p></p></li></ul><p></p>"],
+    ["Enter on an empty item leaves the list", "<ul><li><p>one</p></li></ul>", ["Enter", "Enter"], "<ul><li><p>one</p></li></ul><p></p><p></p>"],
+    ["Enter in an ordered list", "<ol><li><p>one</p></li></ol>", ["Enter"], "<ol><li><p>one</p></li><li><p></p></li></ol><p></p>"],
+    ["Tab nests an item", "<ul><li><p>one</p></li><li><p>two</p></li></ul>", ["Tab"], "<ul><li><p>one</p><ul><li><p>two</p></li></ul></li></ul><p></p>"],
+    ["Shift-Tab lifts it back", "<ul><li><p>one</p><ul><li><p>two</p></li></ul></li></ul>", ["Shift-Tab"], "<ul><li><p>one</p></li><li><p>two</p></li></ul><p></p>"],
+  ];
+
+  it.each(cases)("%s", (_name, html, keys, expected) => {
+    for (const make of [web, phone]) {
+      // "hello world": the cursor after "hello "; lists: at the end.
+      const editor = open(make(), html);
+      editor.commands.focus(html.startsWith("<p>") ? 7 : "end");
+      for (const key of keys) expect(editor.commands.keyboardShortcut(key)).toBe(true);
+      expect(editor.getHTML()).toBe(expected);
+    }
+  });
+
+  it("the toolbar's list buttons turn a paragraph into a list and back", () => {
+    for (const make of [web, phone]) {
+      const editor = open(make(), "<p>one</p>");
+      editor.commands.focus("end");
+      expect(editor.chain().focus().toggleBulletList().run()).toBe(true);
+      expect(editor.getHTML()).toBe("<ul><li><p>one</p></li></ul><p></p>");
+      expect(editor.chain().focus().toggleOrderedList().run()).toBe(true);
+      expect(editor.getHTML()).toBe("<ol><li><p>one</p></li></ol><p></p>");
+      expect(editor.chain().focus().toggleOrderedList().run()).toBe(true);
+      expect(editor.getHTML()).toBe("<p>one</p><p></p>");
+    }
+  });
+
+  it.each([
+    ["- ", "bulletList"],
+    ["* ", "bulletList"],
+    ["1. ", "orderedList"],
+  ])('"%s" at the start of a line starts a list', (typed, list) => {
+    for (const make of [web, phone]) {
+      const editor = open(make(), "<p></p>");
+      editor.commands.focus("end");
+      const { view } = editor;
+      // Typed the way a keyboard types: through the view, so input rules run.
+      for (const char of typed) {
+        const { from, to } = view.state.selection;
+        const handled = view.someProp("handleTextInput", (f) => f(view, from, to, char, () => view.state.tr.insertText(char, from, to)));
+        if (!handled) view.dispatch(view.state.tr.insertText(char, from, to));
+      }
+      expect(editor.isActive(list)).toBe(true);
+    }
+  });
+});
+
 describe("syncMentionLabels", () => {
   const doc = `<p>${person("p-ana", "Ana")} ${person("p-bob", "Bob")} ${invoice("inv-7", "Inv 7: Acme — $1.00")}</p>`;
 
