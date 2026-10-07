@@ -40,9 +40,9 @@ export const STATUSES = ["pending", "in_progress", "blocked", "done"] as const;
 export type IssueStatus = (typeof STATUSES)[number];
 
 export const COLUMNS: { id: IssueStatus; label: string; color: string }[] = [
-  { id: "pending", label: "Pending", color: "#94a3b8" },
   { id: "in_progress", label: "In Progress", color: "#3b82f6" },
   { id: "blocked", label: "Blocked", color: "#f97316" },
+  { id: "pending", label: "Backlog", color: "#94a3b8" },
   { id: "done", label: "Done", color: "#10b981" },
 ];
 
