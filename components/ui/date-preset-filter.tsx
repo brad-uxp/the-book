@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { MonthPicker } from "@/components/ui/month-picker";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -94,21 +95,41 @@ export function DatePresetFilter({
           <div className="mt-1 border-t pt-2 px-1 space-y-2">
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">From</p>
-              <input
-                type={isMonth ? "month" : "date"}
-                value={customFrom}
-                onChange={(e) => onCustomFromChange(e.target.value)}
-                className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
-              />
+              {isMonth ? (
+                <MonthPicker
+                  value={customFrom}
+                  onChange={onCustomFromChange}
+                  placeholder="Any month"
+                  clearable
+                  className="h-8 px-2 text-xs md:text-xs"
+                />
+              ) : (
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => onCustomFromChange(e.target.value)}
+                  className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
+                />
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">To</p>
-              <input
-                type={isMonth ? "month" : "date"}
-                value={customTo}
-                onChange={(e) => onCustomToChange(e.target.value)}
-                className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
-              />
+              {isMonth ? (
+                <MonthPicker
+                  value={customTo}
+                  onChange={onCustomToChange}
+                  placeholder="Any month"
+                  clearable
+                  className="h-8 px-2 text-xs md:text-xs"
+                />
+              ) : (
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => onCustomToChange(e.target.value)}
+                  className="h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
+                />
+              )}
             </div>
           </div>
         )}

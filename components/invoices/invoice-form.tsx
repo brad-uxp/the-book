@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { MonthPicker } from "@/components/ui/month-picker";
 import {
   Select,
   SelectContent,
@@ -367,7 +368,7 @@ export function InvoiceForm({
               <FormItem>
                 <FormLabel>Month</FormLabel>
                 <FormControl>
-                  <Input type="month" {...field} />
+                  <MonthPicker {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
