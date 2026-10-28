@@ -45,6 +45,12 @@ test("sin cambios en cola, la fila del servidor reemplaza la del teléfono", () 
   assert.equal(m.search, "server title server");
 });
 
+test("una épica en review del servidor se guarda tal cual", () => {
+  const m = mergeIssue(local, { ...server, category: "task", status: "review" }, []);
+  if (m === "skip") return assert.fail();
+  assert.equal(m.status, "review");
+});
+
 test("con un cambio en cola, sus campos quedan como los tiene el teléfono", () => {
   const m = mergeIssue(local, { ...server, status: "blocked" }, [queued({ description: "<p>phone</p>" })]);
   if (m === "skip") return assert.fail();

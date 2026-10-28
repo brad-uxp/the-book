@@ -36,11 +36,13 @@ import { useClients, useIssue } from "@/notes/hooks";
 import { MentionSheet, useMentionRefs } from "@/components/MentionSheet";
 import { convertToCanvas, deleteIssue, discardIfBlank, editIssue, undoDelete, type IssueEdit } from "@/notes/store";
 import { TEXT_TOO_LONG } from "@/sync/merge";
+import type { IssueStatus } from "@shared/issues";
 
 /** Typing is saved this long after the last keystroke — and at once on leaving. */
 const SAVE_DELAY_MS = 300;
 
-const STATUSES = ["pending", "in_progress", "blocked", "done"] as const;
+/** What the status row offers. An issue in a status not listed (a newer server's) shows none picked. */
+const STATUSES = ["pending", "in_progress", "review", "blocked", "done"] as const satisfies readonly IssueStatus[];
 
 /** YYYY-MM-DD of a picked day, stored as the server stores due dates: UTC midnight. */
 function dueFromPicker(d: Date): string {

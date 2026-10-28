@@ -62,8 +62,9 @@ export const NoteCard = memo(function NoteCard({
         <View style={styles.meta}>
           {kind === "task" ? (
             <View style={[styles.pill, { backgroundColor: c.surface }]}>
-              <View style={[styles.dot, { backgroundColor: statusColor[issue.status] }]} />
-              <Text style={[styles.pillText, { color: c.ink }]}>{statusLabel[issue.status]}</Text>
+              {/* A status this build does not know (a newer server's) still shows, by name. */}
+              <View style={[styles.dot, { backgroundColor: statusColor[issue.status] ?? c.faint }]} />
+              <Text style={[styles.pillText, { color: c.ink }]}>{statusLabel[issue.status] ?? issue.status}</Text>
             </View>
           ) : null}
           {due ? (
