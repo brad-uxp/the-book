@@ -1,7 +1,8 @@
 # AccountBook — API
 
 REST API over the same handlers the web UI uses, at `https://book.bolstro.com`.
-Every route is available to machine clients; there is no reduced surface.
+Every route is available to an `automation` token; the other kinds of token
+reach less (see below).
 
 ## Authentication
 
@@ -21,8 +22,8 @@ curl https://book.bolstro.com/api/invoices \
   -H "Authorization: Bearer $THEBOOK_TOKEN"
 ```
 
-A token has **the same access as the account owner**, including `DELETE`.
-Two things it deliberately cannot do:
+An `automation` token (the default kind) has **the same access as the account
+owner**, including `DELETE`. Things it deliberately cannot do:
 
 - **Manage tokens.** `/api/settings/tokens` returns 403 for a token. A
   credential that can mint credentials cannot be revoked, so that stays
@@ -36,6 +37,28 @@ Two things it deliberately cannot do:
 Every mutation is recorded in the audit log as `token:<name>`, distinct from
 the human's email. That is what makes "did I do this or did the agent?"
 answerable — visible under `/admin-logs`.
+
+### Agent tokens
+
+An **agent token** (`ApiToken.kind = agent`, minted in Settings → API tokens,
+kind "Agent") is for an AI agent working the owner's epics: it takes one,
+works, and hands it back in `review` with a note. It works an issue; it does
+not own it. The rules are enforced by the server (`lib/issues-service.ts`),
+not by the agent's prompt:
+
+| | |
+|---|---|
+| Reaches | `GET /api/issues`, `GET/PATCH /api/issues/{id}`, and **tasks only**: notes are left out of the list and are a `404` by id. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
+| May write | `agent_note`, `progress`, and `status` to `in_progress`, `review` or `blocked`. |
+| `403` | `status: "done"` (only the owner archives) or `"pending"`; any other field (`title`, `description`, `due_date`, `category`, `client_id`, `note_format`, `sort_order`), even alongside allowed ones; `POST` (create) and `DELETE`; any write to an archived issue (a `done` task), including reopening it; any write to a note. |
+
+A refused `PATCH` writes nothing. Writes are audited as `token:<name>` and
+count against the same 300 requests/minute. An agent token lasts at most 30
+days (Settings proposes 14).
+
+The web does not refresh @person and #invoice chips inside `agent_note` (it
+does in descriptions): a chip an agent planted would otherwise come back with
+the live label — an invoice's amount — saved by the owner's session.
 
 ### The mobile app's sign-in
 
@@ -136,8 +159,17 @@ derived, not a stored field.
 | GET/PATCH/DELETE | `/api/issues/{id}` |
 | GET | `/api/issues/linked-counts` |
 
-`category` is `task` or `note`; `status` is `pending`, `in_progress`,
-`blocked` or `done`; `progress` is 0–100.
+`category` is `task` or `note`; `status` is `pending` (the board's Backlog),
+`in_progress`, `review` (the owner's turn: an agent's questions or delivery),
+`blocked` or `done` (archived); `progress` is 0–100.
+
+`agent_note` is an agent's latest pass on the issue and the owner's answers
+to it, inline: HTML, like `description`, and up to the same 200 000
+characters. `PATCH` accepts it; `POST` and the phone's sync do not carry it.
+When an **agent** token writes it, the server also keeps that note and the
+description as they stood (`IssueAgentState`), so what the owner changes
+afterwards can be told apart. The agent's log, folder and session link live
+there too; they have no REST route — the MCP server (planned) writes them.
 
 `note_format` is `text` (default: the note is its `description`) or `canvas`
 (the note is a canvas of connected ideas, and `description` is unused). Only a
@@ -389,5 +421,7 @@ curl -s -X POST "$BASE/api/invoices" \
   clients call server-side, where CORS does not apply, and the wildcard that
   used to be there would let a leaked token be used from any web page.
 - If an agent builds requests from content it did not author — invoices, email,
-  PDFs — treat that content as untrusted input. This token can delete records,
-  and the audit log is what lets you find and undo the damage, not prevent it.
+  PDFs — treat that content as untrusted input. An automation token can delete
+  records, and the audit log is what lets you find and undo the damage, not
+  prevent it. An agent that only works issues should get an **agent** token
+  instead: the server holds it to its own fields.

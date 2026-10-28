@@ -183,7 +183,8 @@ guardan como **UTC midnight**.
 | Modelo         | Descripción                                                          |
 | -------------- | -------------------------------------------------------------------- |
 | `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
-| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`) |
+| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. Estados (`ISSUE_STATUSES` en `lib/issues.ts`, compartido con el teléfono): `pending` (Backlog), `in_progress`, `review` (le toca a Brad: preguntas o entrega de un agente), `blocked`, `done`. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`). `agent_note`: HTML de TipTap, la última pasada de un agente y las respuestas de Brad, inline; no viaja en la sync del teléfono |
+| `IssueAgentState` | 1:1 con `Issue` (PK `issue_id`, `ON DELETE CASCADE`): lo que un agente guarda entre pasadas — bitácora en markdown, carpeta, link de sesión — y, puestos por el servidor cuando un agente escribe su nota, esa nota (`last_note`) y la descripción de ese momento (`description_seen`). Tabla aparte para no mover `Task.updated_at`, por el que tira la sync. Se escribe solo vía `lib/issues-service.ts` (sin ruta REST todavía) |
 | `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
 | `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
 | `SyncTombstone`| Un borrado de issue, idea o conexión, para que el teléfono se entere. Lo escriben **solo triggers** `AFTER DELETE` (cubren cascadas y cualquier otra vía); se purga a los 60 días |
@@ -195,7 +196,7 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
-| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings) o `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings; solo llega a las rutas de issues, y ahí `lib/issues-service.ts` lo limita a `agent_note`, `progress` y `status` ∈ {in_progress, review, blocked}) |
 | `MobileRelease` | Versión publicada de la app Android (versión, `version_code` único y creciente, sha256, tamaño, clave en R2, notas, `published_at`) para las actualizaciones sin cable |
 
 ### Invariantes que la base enforza
@@ -238,7 +239,13 @@ está en [`API.md`](./API.md). La gestión de tokens (`/api/settings/tokens`) es
 la excepción: exige sesión interactiva, porque un token que puede emitir tokens
 no se puede revocar. Y la sync del teléfono (`/api/sync/*`) acepta la sesión del
 navegador o un token `mobile` (los que emite el login de la app), no los tokens
-`automation` hechos a mano en Settings (`requireSyncSession`).
+`automation` hechos a mano en Settings (`requireSyncSession`). Un token `agent`
+recibe 403 en toda ruta salvo `GET /api/issues` y `GET/PATCH/DELETE /api/issues/[id]`
+y `POST /api/issues` (`requireSession({ agent: true })`), y ahí solo ve tareas
+(las notas no salen en la lista y por id son 404). El servicio rechaza con 403
+crear, borrar, `done`, `pending`, cualquier otro campo, escribir una nota y
+escribir una tarea archivada. Dura 30 días como mucho. Detalle en
+[`API.md`](./API.md#agent-tokens).
 
 | Recurso           | Métodos         | Ruta                                 |
 | ----------------- | --------------- | ------------------------------------ |
@@ -400,12 +407,16 @@ automáticamente; el `build` genera el cliente Prisma por su cuenta.
 ## Seguridad
 
 - **Headers HTTP**: X-Robots-Tag (noindex), X-Frame-Options DENY, HSTS con
-  preload, CSP, Permissions-Policy
+  preload, CSP, Permissions-Policy, Cross-Origin-Opener-Policy `same-origin`
+  (una página que la app abre en otro sitio no recibe `window.opener`)
 - **Autorización en dos capas**: `proxy.ts` en el borde y `requireSession()` en
   cada handler. El chequeo valida el email contra `ALLOWED_EMAILS`, no la mera
   presencia de `req.auth` — un error de configuración de Auth.js hace que
   `req.auth` sea un objeto truthy, y gatear sobre eso abre toda la API
 - **Sesión de 12 h**, con re-validación de la allowlist en cada refresh
+- **Tokens por tipo, cerrados por defecto**: `requireSession()` rechaza los
+  tokens `release` y `agent` salvo donde la ruta los pide; lo que un `agent`
+  puede escribir lo decide `lib/issues-service.ts`, no la ruta ni el prompt
 - **Cron protegido** con Bearer token
 - **Object keys de R2 validadas** contra el formato exacto que emite
   `buildInvoiceKey`, y su pertenencia verificada al escribir y al firmar
