@@ -1,7 +1,8 @@
 # Agentes sobre theBook: épicas con estado de revisión y un MCP propio
 
-> Estado: **F1 hecha** (2026-10-28, en `dev`, sin desplegar). F2–F6 propuestas. Se ejecuta
-> por fases, cada una en su propia sesión, con este documento como brief.
+> Estado: **F1 hecha y desplegada** (2026-10-28: `main` en `431ed79`, Android 0.6.0 publicada).
+> F2–F6 propuestas. Se ejecuta por fases, cada una en su propia sesión, con este documento como
+> brief.
 
 ## 1. Qué cambia y por qué
 
@@ -103,7 +104,9 @@ L ≈ 1–2 días.
 #### Cómo quedó F1 (supuestos y decisiones tomadas al implementar)
 
 Commits en `dev`: `4511c52` (modelo, permisos, API, web), `44d33f1` (Android 0.6.0,
-versionCode 10, sin publicar) y `a51e6f4` (lo que pidió la revisión de seguridad).
+versionCode 10) y `a51e6f4` (lo que pidió la revisión de seguridad). Desplegado junto con
+`431ed79` (Next.js 16.4.3 por dos advisories críticos de RCE). En producción las dos migraciones
+se aplicaron sin incidentes y la 0.6.0 quedó publicada como actualización in-app.
 
 - **Board**: In Progress, **Review**, Blocked, Backlog. Review va pegado a In Progress porque es
   el paso siguiente del flujo y lo que más pide atención. Color violeta (`#8b5cf6`), igual en el
