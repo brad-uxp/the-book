@@ -342,6 +342,9 @@ model FeePayment {
 enum IssueStatus {
   pending
   in_progress
+  /// The owner's turn: an agent left questions or a delivery in agent_note.
+  /// An agent may set it; only the owner moves an issue to `done`.
+  review
   blocked
   done
 
@@ -375,13 +378,18 @@ model Issue {
   progress    Int           @default(0)
   due_date    DateTime?
   description String        @default("") @db.Text
+  /// TipTap HTML, like the description. An agent's latest pass — questions or
+  /// what it delivered — and the owner's answers, inline. Not on the phone's
+  /// sync (lib/sync-server.ts selects its columns).
+  agent_note  String        @default("") @db.Text
   sort_order  Int           @default(0)
   created_at  DateTime      @default(now())
   updated_at  DateTime      @updatedAt
 
-  client       Client?      @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  client       Client?          @relation(fields: [client_id], references: [id], onDelete: SetNull)
   canvas_nodes CanvasNode[]
   canvas_edges CanvasEdge[]
+  agent_state  IssueAgentState?
 
   @@index([status])
   @@index([client_id])
@@ -452,6 +460,34 @@ model CanvasEdge {
   /// "What changed since" for the phone's sync: a connection's sides and ends
   /// can change after it is made.
   @@index([updated_at, id])
+}
+
+/**
+ * What an agent keeps about one issue between its passes
+ * (docs/product/features/agentes-y-mcp.md). A table of its own, not columns
+ * on Task, so that writing it never moves Task.updated_at: the phone's sync
+ * pulls by that, and the log changes far more often than anything it shows.
+ * Written only through lib/issues-service.ts.
+ */
+model IssueAgentState {
+  issue_id         String   @id
+  /// Markdown. The agent's running log of the work, hidden by default.
+  log              String   @default("") @db.Text
+  /// agent_note as an agent last wrote it (TipTap HTML, as on Task), kept by
+  /// the server: what the owner's answers are told apart from. Null until an
+  /// agent's first note.
+  last_note        String?  @db.Text
+  /// The description (TipTap HTML) as it stood when an agent last wrote its
+  /// note: what the owner's later edits are told apart from. Null until then.
+  description_seen String?  @db.Text
+  /// The folder the agent works in, on the owner's machine.
+  work_dir         String?
+  /// A link to the agent's latest session.
+  session_url      String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now()) @updatedAt
+
+  issue Issue @relation(fields: [issue_id], references: [id], onDelete: Cascade)
 }
 
 // ============================================================
@@ -534,11 +570,13 @@ model AuditLog {
  */
 /// What a token is for. `mobile`: minted by the app's Google sign-in — the
 /// only kind the phone's sync accepts. `automation`: made by hand in
-/// Settings, for scripts and agents.
+/// Settings, for scripts. `release` and `agent`: also made in Settings, each
+/// for one job only (lib/api.ts).
 enum ApiTokenKind {
   mobile
   automation
   release // publishes app builds (POST /api/mobile/releases); nothing else
+  agent // an agent working issues: its note, log, progress and some statuses (lib/issues-service.ts); nothing else
 }
 
 model ApiToken {

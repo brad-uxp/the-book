@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { checkShapeChange, isBlankHtml, type IssueShape } from "./notes";
 import { ISSUE_TITLE_MAX } from "./text-limits";
+import type { IssueStatus } from "./issues";
 import type { SyncMutation } from "./sync-protocol";
 
 // ─── Retention ───────────────────────────────────────────────────────────────
@@ -302,7 +303,7 @@ export interface IssuePatch {
   client_id?: string | null;
   category?: "task" | "note";
   note_format?: "text" | "canvas";
-  status?: "pending" | "in_progress" | "blocked" | "done";
+  status?: IssueStatus;
   progress?: number;
   due_date?: string | null;
   description?: string;

@@ -24,7 +24,7 @@ import {
 import { formatDateShort } from "@/lib/dates";
 import { MiniCalendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { ARCHIVED_STATUS } from "@/lib/issues";
+import { ARCHIVED_STATUS, type IssueStatus } from "@/lib/issues";
 import type { NoteFormat } from "@/lib/notes";
 
 // ── Shared types ─────────────────────────────────────────────────────────────
@@ -36,11 +36,16 @@ export interface Client {
   default_referrer_id?: string | null;
 }
 
-export const STATUSES = ["pending", "in_progress", "blocked", "done"] as const;
-export type IssueStatus = (typeof STATUSES)[number];
+export type { IssueStatus } from "@/lib/issues";
 
+/**
+ * Every status, in the order the board reads: what is being worked, what is
+ * the owner's turn (an agent's questions or delivery), what waits on someone
+ * else, what has not started.
+ */
 export const COLUMNS: { id: IssueStatus; label: string; color: string }[] = [
   { id: "in_progress", label: "In Progress", color: "#3b82f6" },
+  { id: "review", label: "Review", color: "#8b5cf6" },
   { id: "blocked", label: "Blocked", color: "#f97316" },
   { id: "pending", label: "Backlog", color: "#94a3b8" },
   { id: "done", label: "Done", color: "#10b981" },
@@ -69,6 +74,8 @@ export interface Issue {
   progress: number;
   due_date: string | null;
   description: string;
+  /** An agent's latest pass, and the owner's answers. Absent where a view loads only what it shows (a canvas has none). */
+  agent_note?: string;
 }
 
 // ── InlineProgress ───────────────────────────────────────────────────────────

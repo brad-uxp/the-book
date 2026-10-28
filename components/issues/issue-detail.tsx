@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Maximize2, Minimize2 } from "lucide-react";
+import { X, Maximize2, Minimize2, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -10,6 +10,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { isBlankHtml } from "@/lib/notes";
 import {
   type Issue,
   type Client,
@@ -57,6 +58,9 @@ export function IssueDetail({
   }, [expanded]);
 
   const now = useNow();
+  const agentNote = issue?.agent_note ?? "";
+  // An agent works tasks; a note shows the field only if one wrote there anyway.
+  const showAgentNote = !!issue && (issue.category === "task" || !isBlankHtml(agentNote));
 
   const isDueSoon = (dateStr: string | null) => {
     if (!dateStr || !now) return false;
@@ -220,6 +224,30 @@ export function IssueDetail({
                   className="min-h-[200px] text-sm"
                 />
               </div>
+
+              {/* Agent note: an agent's latest pass; the owner answers inline */}
+              {showAgentNote && (
+                <div className="px-12 pb-8">
+                  <div className="border-t pt-5">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <Bot className="h-3.5 w-3.5" />
+                      Agent note
+                    </div>
+                    {/* The toolbar reaches 1.5rem above itself (it sticks with a
+                        padded background); this padding is the room it takes. */}
+                    <div className="pt-6">
+                      <RichTextEditor
+                        docKey={`${issue.id}:agent_note`}
+                        value={agentNote}
+                        onChange={(html) => onUpdate(issue.id, { agent_note: html })}
+                        placeholder="An agent's questions or delivery show here. Answer inline."
+                        toolbar
+                        className="min-h-[120px] text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

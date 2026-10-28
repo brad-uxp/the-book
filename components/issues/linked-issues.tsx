@@ -7,6 +7,7 @@ import { isCanvasNote } from "@/lib/notes";
 const STATUS_COLORS: Record<string, string> = {
   pending: "#94a3b8",
   in_progress: "#3b82f6",
+  review: "#8b5cf6",
   blocked: "#f97316",
   done: "#10b981",
 };

@@ -15,3 +15,9 @@ export const ISSUE_TITLE_MAX = 500;
 
 /** A rich text: an issue's description, an idea's content. Characters of HTML. */
 export const RICH_TEXT_MAX = 200_000;
+
+/** An agent's log on an issue (IssueAgentState.log). Characters of markdown. */
+export const AGENT_LOG_MAX = 200_000;
+
+/** The folder an agent works in, or the link to its session. */
+export const AGENT_REF_MAX = 2_000;

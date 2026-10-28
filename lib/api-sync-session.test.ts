@@ -25,13 +25,15 @@ vi.mock("@/auth", () => ({
   isAllowedSession: (s: unknown) => !!s,
 }));
 
-import { requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
+import { getWriter, requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
 import { resetRateLimits } from "./rate-limit";
 
-function withToken(kind: "mobile" | "automation" | "release") {
+const TOKEN_NAMES = { mobile: "mobile · Pixel", automation: "script", release: "book-release", agent: "claude-agent" } as const;
+
+function withToken(kind: keyof typeof TOKEN_NAMES) {
   const { token, prefix, hash } = generateToken();
   state.authorization = `Bearer ${token}`;
-  state.record = { id: `tok-${kind}`, name: kind === "mobile" ? "mobile · Pixel" : kind === "release" ? "book-release" : "script", kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
+  state.record = { id: `tok-${kind}`, name: TOKEN_NAMES[kind], kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
 }
 
 beforeEach(() => {
@@ -76,6 +78,14 @@ describe("matriz de acceso por tipo de credencial", () => {
     ["automation", "requireSession", requireSession, null],
     ["automation", "requireAppSession", requireAppSession, 403],
     ["automation", "requireReleaseToken", requireReleaseToken, 403],
+    // Un agente solo llega a las rutas de issues, que lo piden explícitamente.
+    ["agent", "requireSession (toda la API)", requireSession, 403],
+    ["agent", "requireSession({ agent: true }) (issues)", () => requireSession({ agent: true }), null],
+    ["agent", "requireSyncSession", requireSyncSession, 403],
+    ["agent", "requireAppSession", requireAppSession, 403],
+    ["agent", "requireUserSession (Settings, tokens)", requireUserSession, 403],
+    ["agent", "requireReleaseToken", requireReleaseToken, 403],
+    ["release", "requireSession({ agent: true })", () => requireSession({ agent: true }), 403],
   ] as const;
 
   it.each(cases)("token %s → %s → %s", async (kind, _label, guard, expected) => {
@@ -95,3 +105,21 @@ describe("matriz de acceso por tipo de credencial", () => {
   });
 });
 
+
+describe("getWriter", () => {
+  it("un token agent escribe como agente; el resto, como dueño", async () => {
+    withToken("agent");
+    expect(await getWriter()).toEqual({ actor: "token:claude-agent", access: "agent" });
+    withToken("automation");
+    expect(await getWriter()).toEqual({ actor: "token:script", access: "owner" });
+    withToken("mobile");
+    expect((await getWriter()).access).toBe("owner");
+  });
+
+  it("la sesión del navegador es el dueño; sin quien llame, el acceso mínimo", async () => {
+    state.session = { user: { email: "owner@example.com" } };
+    expect(await getWriter()).toEqual({ actor: "owner@example.com", access: "owner" });
+    state.session = null;
+    expect(await getWriter()).toEqual({ actor: null, access: "agent" });
+  });
+});

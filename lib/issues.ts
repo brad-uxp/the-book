@@ -1,4 +1,20 @@
 /**
+ * Every status an issue can have — the IssueStatus enum. No imports in this
+ * file: the phone reads it through `@shared/issues`, and the sync's wire
+ * format types its rows with it, so a status added here reaches every place
+ * that has to know about it.
+ *
+ *  - pending: not started (the board says Backlog).
+ *  - in_progress: being worked, by an agent or the owner.
+ *  - review: the owner's turn — an agent left questions or a delivery in the
+ *    issue's agent_note.
+ *  - blocked: waiting on someone else.
+ *  - done: archived. Only the owner sets it (lib/issues-service.ts).
+ */
+export const ISSUE_STATUSES = ["pending", "in_progress", "review", "blocked", "done"] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+
+/**
  * What "archived" means, in one place.
  *
  * `done` stopped being a column you look at and became the archive: the board

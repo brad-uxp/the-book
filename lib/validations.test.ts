@@ -9,9 +9,11 @@ import {
   MetricsQuerySchema,
   SettingsPatchSchema,
   SyncIssueFieldsSchema,
+  IssueUpdateSchema,
+  IssueAgentStateSchema,
   SyncMutationSchema,
 } from "./validations";
-import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
+import { AGENT_LOG_MAX, ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import { CANVAS_BOUND } from "./canvas-geometry";
 import {
   LAYOUT_BATCH_MAX,
@@ -66,6 +68,28 @@ describe("IssueSchema — note_format", () => {
     expect(
       IssueSchema.safeParse({ title: "x", note_format: "whiteboard" }).success
     ).toBe(false);
+  });
+});
+
+describe("épicas de agentes: review y agent_note", () => {
+  it("review es un estado, en REST y en la sync", () => {
+    expect(IssueUpdateSchema.safeParse({ status: "review" }).success).toBe(true);
+    expect(SyncIssueFieldsSchema.safeParse({ status: "review" }).success).toBe(true);
+    expect(IssueUpdateSchema.safeParse({ status: "waiting" }).success).toBe(false);
+  });
+
+  it("agent_note va por PATCH, con el límite de un texto, y nunca por la sync", () => {
+    expect(IssueUpdateSchema.safeParse({ agent_note: "<p>ok</p>" }).success).toBe(true);
+    expect(IssueUpdateSchema.safeParse({ agent_note: "x".repeat(RICH_TEXT_MAX + 1) }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ agent_note: "<p>ok</p>" }).success).toBe(false);
+  });
+
+  it("el estado del agente: solo bitácora, carpeta y sesión; lo que guarda el servidor no se manda", () => {
+    expect(IssueAgentStateSchema.safeParse({ log: "- step", work_dir: "/x", session_url: "https://claude.ai/code/1" }).success).toBe(true);
+    expect(IssueAgentStateSchema.safeParse({ last_note: "<p>forged</p>" }).success).toBe(false);
+    expect(IssueAgentStateSchema.safeParse({ description_seen: "" }).success).toBe(false);
+    expect(IssueAgentStateSchema.safeParse({ session_url: "javascript:alert(1)" }).success).toBe(false);
+    expect(IssueAgentStateSchema.safeParse({ log: "x".repeat(AGENT_LOG_MAX + 1) }).success).toBe(false);
   });
 });
 

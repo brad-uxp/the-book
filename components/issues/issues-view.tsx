@@ -194,18 +194,24 @@ export function IssuesView({
       prev && prev.id === id ? { ...prev, ...patch } : prev
     );
 
-    const isDescriptionOnly =
-      Object.keys(patch).length === 1 && "description" in patch;
-    const delay = isDescriptionOnly ? 500 : 0;
+    // Typing in one of the two texts is saved once it pauses. Each text waits
+    // on its own timer, and nothing else waits at all: a timer shared by the
+    // issue would let a status change, or typing in the other text, cancel a
+    // save still pending.
+    const keys = Object.keys(patch);
+    const text = keys.length === 1 && (keys[0] === "description" || keys[0] === "agent_note") ? keys[0] : null;
+    const timerKey = text ? `${id}:${text}` : null;
+    const delay = text ? 500 : 0;
 
-    if (debounceRef.current[id]) clearTimeout(debounceRef.current[id]);
-    debounceRef.current[id] = setTimeout(() => {
+    if (timerKey && debounceRef.current[timerKey]) clearTimeout(debounceRef.current[timerKey]);
+    const timer = setTimeout(() => {
       fetch(`/api/issues/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       }).catch(console.error);
     }, delay);
+    if (timerKey) debounceRef.current[timerKey] = timer;
   };
 
   const createIssue = async (
@@ -315,7 +321,8 @@ export function IssuesView({
    */
   const handleConvertToCanvas = async (issue: Issue) => {
     const latest = issues.find((i) => i.id === issue.id) ?? issue;
-    if (debounceRef.current[issue.id]) clearTimeout(debounceRef.current[issue.id]);
+    const pending = debounceRef.current[`${issue.id}:description`];
+    if (pending) clearTimeout(pending);
 
     setConvertingToCanvas(true);
     try {

@@ -2,12 +2,13 @@
  * The wire format of the phone's note sync — GET/POST /api/sync/notes and
  * GET /api/sync/refs.
  *
- * No imports, on purpose: the mobile app reads these types through
+ * No imports but types, on purpose: the mobile app reads these types through
  * `@shared/sync-protocol`, so both ends are checked against one definition.
  * The rules live in lib/sync.ts; the database side in lib/sync-server.ts.
  */
 
 import type { Side } from "./canvas-geometry";
+import type { IssueStatus } from "./issues";
 
 export type SyncEntity = "issue" | "canvas_node" | "canvas_edge";
 
@@ -22,7 +23,7 @@ export interface SyncIssueRow {
   client_id: string | null;
   category: "task" | "note";
   note_format: "text" | "canvas";
-  status: "pending" | "in_progress" | "blocked" | "done";
+  status: IssueStatus;
   progress: number;
   due_date: string | null;
   description: string;

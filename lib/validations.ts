@@ -3,9 +3,10 @@ import { RELEASE_MAX_BYTES, isReleaseVersion, isSha256Hex } from "./mobile-relea
 import { isInvoiceKey } from "./r2";
 import { CANVAS_BOUND, SIDES } from "./canvas-geometry";
 import { CANVAS_COLOR_KEYS } from "./canvas-palette";
+import { ISSUE_STATUSES } from "./issues";
 import { NOTE_FORMATS } from "./notes";
 import { SYNC_PUSH_MAX } from "./sync-protocol";
-import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
+import { AGENT_LOG_MAX, AGENT_REF_MAX, ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import {
   LAYOUT_BATCH_MAX,
   NODE_CONTENT_MAX,
@@ -216,9 +217,7 @@ export const IssueSchema = z.object({
   category: z.enum(["task", "note"]).default("task"),
   /** Only meaningful for a note; a canvas task is refused by the route. */
   note_format: z.enum(NOTE_FORMATS).default("text"),
-  status: z
-    .enum(["pending", "in_progress", "blocked", "done"])
-    .default("pending"),
+  status: z.enum(ISSUE_STATUSES).default("pending"),
   progress: z.number().int().min(0).max(100).default(0),
   due_date: DateString.nullable().optional(),
   description: Text().max(RICH_TEXT_MAX, "Too long").default(""),
@@ -234,6 +233,31 @@ export type IssueInput = z.infer<typeof IssueSchema>;
  * never an overwrite.
  */
 export const IssueCreateSchema = IssueSchema.extend({ id: z.uuid().optional() });
+
+/**
+ * An edit of an issue (PATCH /api/issues/:id): any field, plus the agent's
+ * note. The note is not part of IssueSchema, so neither creating an issue nor
+ * the phone's sync (SyncIssueFieldsSchema) carries it.
+ */
+export const IssueUpdateSchema = IssueSchema.partial().extend({
+  agent_note: Text().max(RICH_TEXT_MAX, "Too long").optional(),
+});
+
+/**
+ * What an agent keeps about an issue between passes (IssueAgentState). Only
+ * these: the note it last wrote and the description it last saw are kept by
+ * the server, never sent.
+ */
+export const IssueAgentStateSchema = z
+  .object({
+    log: Text().max(AGENT_LOG_MAX, "Too long"),
+    work_dir: Text().max(AGENT_REF_MAX).nullable(),
+    session_url: SafeUrl.pipe(z.string().max(AGENT_REF_MAX)).nullable(),
+  })
+  .partial()
+  .strict();
+
+export type IssueAgentStateInput = z.infer<typeof IssueAgentStateSchema>;
 
 /**
  * Ids to remove from the archive. Bounded because this is the one route that

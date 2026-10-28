@@ -11,6 +11,7 @@ import {
   type TokenKind,
 } from "@/lib/api-tokens";
 import { checkRateLimit } from "@/lib/rate-limit";
+import type { Writer } from "@/lib/issues-service";
 
 /** Who is making the current request. */
 export type Actor =
@@ -66,8 +67,13 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
  *
  *   const denied = await requireSession();
  *   if (denied) return denied;
+ *
+ * An agent token is refused unless the route passes `{ agent: true }` — only
+ * the issue routes do, and there lib/issues-service.ts decides what it may
+ * write. Refusing by default means a new route never opens the books to it
+ * by forgetting to.
  */
-export async function requireSession(): Promise<NextResponse | null> {
+export async function requireSession(opts: { agent?: boolean } = {}): Promise<NextResponse | null> {
   const actor = await resolveActor();
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -79,6 +85,16 @@ export async function requireSession(): Promise<NextResponse | null> {
   if (actor.kind === "token" && actor.tokenKind === "release") {
     return NextResponse.json(
       { error: "A release token can only publish app builds" },
+      { status: 403 }
+    );
+  }
+
+  // An agent token works issues and nothing else: no finances, no settings,
+  // no tokens. It lives in an agent's config, where a prompt it reads can
+  // try to steer it.
+  if (actor.kind === "token" && actor.tokenKind === "agent" && !opts.agent) {
+    return NextResponse.json(
+      { error: "An agent token can only reach issues" },
       { status: 403 }
     );
   }
@@ -99,6 +115,17 @@ export async function requireSession(): Promise<NextResponse | null> {
   }
 
   return null;
+}
+
+/**
+ * The caller as lib/issues-service.ts needs it: a label for the log, and what
+ * it may change. Only an agent token is held to an agent's fields; with no
+ * caller at all (which requireSession has already refused) it gets no more.
+ */
+export async function getWriter(): Promise<Writer> {
+  const actor = await resolveActor().catch(() => null);
+  const owner = actor !== null && !(actor.kind === "token" && actor.tokenKind === "agent");
+  return { actor: actor?.label ?? null, access: owner ? "owner" : "agent" };
 }
 
 /**

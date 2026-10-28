@@ -574,7 +574,8 @@ async function pushOne(m: SyncMutation, actor: string | null): Promise<SyncResul
   if (stored) return answerAgain(m, stored);
 
   try {
-    return await inTransaction(actor, async (tx, ctx) => {
+    // The owner's: requireSyncSession lets in only the browser and the phone.
+    return await inTransaction({ actor, access: "owner" }, async (tx, ctx) => {
       // Claimed first: a concurrent retry of the same change waits on this
       // key and then finds the answer, instead of applying it a second time.
       await tx.syncMutation.create({

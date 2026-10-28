@@ -24,7 +24,7 @@ import { usePolling } from "@/hooks/use-polling";
 interface ApiToken {
   id: string;
   name: string;
-  kind: "mobile" | "automation" | "release";
+  kind: "mobile" | "automation" | "release" | "agent";
   token_prefix: string;
   created_at: string;
   last_used_at: string | null;
@@ -45,7 +45,7 @@ export function ApiTokens() {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [name, setName] = useState("");
   const [days, setDays] = useState(String(DEFAULT_EXPIRY_DAYS));
-  const [kind, setKind] = useState<"automation" | "release">("automation");
+  const [kind, setKind] = useState<"automation" | "release" | "agent">("automation");
   const [creating, setCreating] = useState(false);
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -174,11 +174,12 @@ export function ApiTokens() {
           <select
             id="token_kind"
             value={kind}
-            onChange={(e) => setKind(e.target.value as "automation" | "release")}
+            onChange={(e) => setKind(e.target.value as "automation" | "release" | "agent")}
             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           >
             <option value="automation">Automation</option>
             <option value="release">App release</option>
+            <option value="agent">Agent</option>
           </select>
         </div>
         <Button type="button" onClick={create} disabled={creating}>
@@ -215,6 +216,11 @@ export function ApiTokens() {
                     {t.kind === "release" && (
                       <Badge variant="secondary" className="text-[10px]" title="Publishes Android app builds; refused everywhere else">
                         App release
+                      </Badge>
+                    )}
+                    {t.kind === "agent" && (
+                      <Badge variant="secondary" className="text-[10px]" title="Reads issues and writes an agent's note, progress and status; never done, never deletes; refused everywhere else">
+                        Agent
                       </Badge>
                     )}
                   </div>

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CanvasNodePatchSchema } from "@/lib/validations";
-import { getActorEmail } from "@/lib/audit";
-import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
+import { getWriter, requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
 import { deleteNode, updateNode } from "@/lib/canvas-service";
 import { inTransaction } from "@/lib/issues-service";
 
@@ -63,7 +62,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id, nodeId } = await params;
 
   try {
-    await inTransaction(await getActorEmail(), (tx, ctx) =>
+    await inTransaction(await getWriter(), (tx, ctx) =>
       deleteNode(tx, id, nodeId, ctx)
     );
     return NextResponse.json({ ok: true });

@@ -65,9 +65,10 @@ export function prefixOf(raw: string): string | null {
 
 /**
  * What a token is for (the ApiTokenKind enum): the phone's sign-in, a script,
- * or the release script publishing app builds (and nothing else).
+ * the release script publishing app builds (and nothing else), or an agent
+ * working issues (and nothing else — lib/api.ts, lib/issues-service.ts).
  */
-export type TokenKind = "mobile" | "automation" | "release";
+export type TokenKind = "mobile" | "automation" | "release" | "agent";
 
 /** The stored columns this module needs to judge a token. */
 export interface TokenRecord {

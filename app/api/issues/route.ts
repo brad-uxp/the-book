@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { IssueCreateSchema } from "@/lib/validations";
-import { getActorEmail } from "@/lib/audit";
-import { requireSession, toApiResponse } from "@/lib/api";
+import { getWriter, requireSession, toApiResponse } from "@/lib/api";
 import { mentionNeedle } from "@/lib/mentions";
 import { createIssue, inTransaction } from "@/lib/issues-service";
 
 export async function GET(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSession({ agent: true });
   if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const personId = searchParams.get("personId");
@@ -39,8 +38,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(issues);
 }
 
+/** An agent token reaches this only to be refused by createIssue (403). */
 export async function POST(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSession({ agent: true });
   if (denied) return denied;
   const body = await req.json();
   const parsed = IssueCreateSchema.safeParse(body);
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await inTransaction(await getActorEmail(), (tx, ctx) =>
+    const result = await inTransaction(await getWriter(), (tx, ctx) =>
       createIssue(tx, parsed.data, ctx)
     );
     if (!result.ok) {

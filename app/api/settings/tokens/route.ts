@@ -12,7 +12,9 @@ const CreateTokenSchema = z.object({
   expires_in_days: z.number().int().min(1).max(365).default(DEFAULT_EXPIRY_DAYS),
   // `mobile` is never minted here: only the app's own sign-in makes those.
   // `release` can publish app builds and reach nothing else (lib/api.ts).
-  kind: z.enum(["automation", "release"]).default("automation"),
+  // `agent` reaches only the issues, and writes only an agent's fields on
+  // them (lib/issues-service.ts).
+  kind: z.enum(["automation", "release", "agent"]).default("automation"),
 });
 
 /** Never selects token_hash — the secret must not be readable after creation. */
