@@ -52,5 +52,5 @@ overrides:
   qs: ^6.16.0 # prototype-pollution / DoS in query parsing
   postcss-selector-parser@^7: ^7.1.6 # low-severity advisory
   # jspdf (invoice PDFs, client side).
-  dompurify: ^3.4.16 # several sanitizer bypasses
+  dompurify: ^3.4.17 # sanitizer bypasses (SAFE_FOR_TEMPLATES, IN_PLACE hooks)
   fflate: ^0.8.3 # decompression advisory
