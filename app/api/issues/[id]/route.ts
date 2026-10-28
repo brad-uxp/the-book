@@ -25,7 +25,9 @@ export async function GET(
     where: { id },
     include: { client: true },
   });
-  if (!issue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // A note does not exist for an agent: it sees tasks only.
+  const hidden = issue?.category !== "task" && (await getWriter()).access === "agent";
+  if (!issue || hidden) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json(issue);
 }

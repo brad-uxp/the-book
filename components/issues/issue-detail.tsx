@@ -242,6 +242,7 @@ export function IssueDetail({
                         onChange={(html) => onUpdate(issue.id, { agent_note: html })}
                         placeholder="An agent's questions or delivery show here. Answer inline."
                         toolbar
+                        refreshMentions={false}
                         className="min-h-[120px] text-sm"
                       />
                     </div>

@@ -19,6 +19,9 @@ const PREFIX_LENGTH = 11;
 
 export const DEFAULT_EXPIRY_DAYS = 90;
 
+/** The longest an `agent` token may last (Settings proposes 14 days for one). */
+export const AGENT_TOKEN_MAX_DAYS = 30;
+
 export interface GeneratedToken {
   /** The full secret. Shown to the user once and never recoverable. */
   token: string;

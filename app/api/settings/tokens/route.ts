@@ -3,19 +3,26 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireUserSession, readJson, invalid, toApiResponse } from "@/lib/api";
-import { generateToken, DEFAULT_EXPIRY_DAYS } from "@/lib/api-tokens";
+import { generateToken, AGENT_TOKEN_MAX_DAYS, DEFAULT_EXPIRY_DAYS } from "@/lib/api-tokens";
 
 export const runtime = "nodejs";
 
-const CreateTokenSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(60),
-  expires_in_days: z.number().int().min(1).max(365).default(DEFAULT_EXPIRY_DAYS),
-  // `mobile` is never minted here: only the app's own sign-in makes those.
-  // `release` can publish app builds and reach nothing else (lib/api.ts).
-  // `agent` reaches only the issues, and writes only an agent's fields on
-  // them (lib/issues-service.ts).
-  kind: z.enum(["automation", "release", "agent"]).default("automation"),
-});
+const CreateTokenSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required").max(60),
+    expires_in_days: z.number().int().min(1).max(365).default(DEFAULT_EXPIRY_DAYS),
+    // `mobile` is never minted here: only the app's own sign-in makes those.
+    // `release` can publish app builds and reach nothing else (lib/api.ts).
+    // `agent` reaches only the issues, and writes only an agent's fields on
+    // them (lib/issues-service.ts).
+    kind: z.enum(["automation", "release", "agent"]).default("automation"),
+  })
+  // An agent's token sits in its config in plain text, read by a model that
+  // reads untrusted text: it should not outlive the work by months.
+  .refine((t) => t.kind !== "agent" || t.expires_in_days <= AGENT_TOKEN_MAX_DAYS, {
+    message: `An agent token lasts at most ${AGENT_TOKEN_MAX_DAYS} days`,
+    path: ["expires_in_days"],
+  });
 
 /** Never selects token_hash — the secret must not be readable after creation. */
 const PUBLIC_FIELDS = {

@@ -269,6 +269,18 @@ describe("actor agent", () => {
       expect(audits).toEqual([]);
     });
 
+    it("escribir en una nota: las notas son de Brad", async () => {
+      const db = taskDb({ ...before, category: "note" });
+      expect(await updateIssue(db as unknown as Db, "i1", { agent_note: "<p>hi</p>" }, agent)).toEqual({
+        ok: false,
+        status: 403,
+        error: "An agent works tasks, not notes",
+      });
+      expect(await updateAgentState(db as unknown as Db, "i1", { log: "x" }, agent)).toMatchObject({ ok: false, status: 403 });
+      expect(db.issue.update).not.toHaveBeenCalled();
+      expect(db.issueAgentState.upsert).not.toHaveBeenCalled();
+    });
+
     it("reabrir ni escribir una épica archivada", async () => {
       const db = taskDb({ ...task, status: "done" });
       expect(await updateIssue(db as unknown as Db, "i1", { status: "in_progress" }, agent)).toMatchObject({ ok: false, status: 403 });

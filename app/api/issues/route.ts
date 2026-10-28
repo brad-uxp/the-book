@@ -20,14 +20,18 @@ export async function GET(req: NextRequest) {
       : null;
 
   // A mention can live in the description or in any idea of a canvas note.
-  const where = needle
-    ? {
-        OR: [
-          { description: { contains: needle } },
-          { canvas_nodes: { some: { content: { contains: needle } } } },
-        ],
-      }
-    : {};
+  // An agent sees tasks only: notes are the owner's own (lib/issues-service.ts).
+  const where = {
+    ...(needle
+      ? {
+          OR: [
+            { description: { contains: needle } },
+            { canvas_nodes: { some: { content: { contains: needle } } } },
+          ],
+        }
+      : {}),
+    ...((await getWriter()).access === "agent" ? { category: "task" as const } : {}),
+  };
 
   const issues = await prisma.issue.findMany({
     where,

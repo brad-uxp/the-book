@@ -361,6 +361,14 @@ interface RichTextEditorProps {
   /** The fixed formatting bar above the text. The bubble menu is always on. */
   toolbar?: boolean;
   /**
+   * Bring @person and #invoice chips in line with the people and invoices
+   * lists — and save that. On by default. Off for text an agent writes: a
+   * chip it planted would come back with the live label (an invoice's amount,
+   * whether a person exists), saved by the owner's session for the agent to
+   * read.
+   */
+  refreshMentions?: boolean;
+  /**
    * Escape pressed with no @/# suggestion list open. The editor has to be the
    * one to say so: ProseMirror marks every Escape as handled, and once the
    * suggestion plugin has closed its list there is no telling afterwards
@@ -401,6 +409,7 @@ export function RichTextEditor({
   editable = true,
   autoFocus = false,
   toolbar = false,
+  refreshMentions = true,
   onEscape,
   overlays = "inline",
   className,
@@ -692,24 +701,24 @@ export function RichTextEditor({
   // Keep person chips in line with the people list: renamed, or marked
   // deleted. Only once the list has loaded — see syncMentionLabels.
   useEffect(() => {
-    if (!editor || !peopleFetched) return;
+    if (!editor || !refreshMentions || !peopleFetched) return;
     const tr = syncMentionLabels(
       editor.state,
       MENTION_NODE.person,
       (id) => people.find((p) => p.id === id)?.name ?? null
     );
     if (tr) editor.view.dispatch(tr);
-  }, [editor, people, peopleFetched, docKey]);
+  }, [editor, refreshMentions, people, peopleFetched, docKey]);
 
   // The same for invoice chips.
   useEffect(() => {
-    if (!editor || !invoicesFetched) return;
+    if (!editor || !refreshMentions || !invoicesFetched) return;
     const tr = syncMentionLabels(editor.state, MENTION_NODE.invoice, (id) => {
       const inv = invoices.find((i) => i.id === id);
       return inv ? formatInvoiceLabel(inv) : null;
     });
     if (tr) editor.view.dispatch(tr);
-  }, [editor, invoices, invoicesFetched, docKey]);
+  }, [editor, refreshMentions, invoices, invoicesFetched, docKey]);
 
   const floating =
     mentionSuggestion || invoiceSuggestion || clickedMention || clickedInvoice ? (

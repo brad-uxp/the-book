@@ -33,6 +33,7 @@ interface ApiToken {
 }
 
 const DEFAULT_EXPIRY_DAYS = 90;
+const AGENT_TOKEN_DAYS = 14;
 
 function statusOf(t: ApiToken): { label: string; variant: "default" | "secondary" | "destructive" } {
   if (t.revoked_at) return { label: "Revoked", variant: "destructive" };
@@ -76,7 +77,11 @@ export function ApiTokens() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error?.formErrors?.[0] ?? "Could not create the token");
+        toast.error(
+          err.error?.formErrors?.[0] ??
+            err.error?.fieldErrors?.expires_in_days?.[0] ??
+            "Could not create the token"
+        );
         return;
       }
       const created = await res.json();
@@ -174,7 +179,12 @@ export function ApiTokens() {
           <select
             id="token_kind"
             value={kind}
-            onChange={(e) => setKind(e.target.value as "automation" | "release" | "agent")}
+            onChange={(e) => {
+              const next = e.target.value as "automation" | "release" | "agent";
+              setKind(next);
+              // An agent token lasts 30 days at most (the API refuses more); 14 fits a pass.
+              if (next === "agent") setDays(String(AGENT_TOKEN_DAYS));
+            }}
             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           >
             <option value="automation">Automation</option>

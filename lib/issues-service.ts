@@ -113,6 +113,19 @@ function agentPatchRefusal(patch: IssueUpdate): string | null {
 const ARCHIVED_REFUSAL = "This issue is archived; only the owner can reopen it";
 
 /**
+ * An agent works epics, which are tasks. A note is the owner's own writing:
+ * the issue routes do not even show one to an agent, and it writes none.
+ */
+const NOTE_REFUSAL = "An agent works tasks, not notes";
+
+/** Why an agent may not write to this issue at all, or null when it may. */
+function agentIssueRefusal(issue: { category: string; status: string }): string | null {
+  if (issue.category !== "task") return NOTE_REFUSAL;
+  if (isArchived(issue)) return ARCHIVED_REFUSAL;
+  return null;
+}
+
+/**
  * The keys of `raw` that the client actually sent, with their parsed values.
  *
  * Zod's .default() fills in values even under .partial(), which would
@@ -204,8 +217,8 @@ export async function createIssue(db: Db, input: IssueCreate, ctx: WriteContext)
  * in the same transaction, so the words are never in neither place (see
  * lib/notes.ts for which shape changes exist).
  *
- * An agent may change only its note, the progress and some statuses, and
- * nothing once the issue is archived. When an agent writes its note, the
+ * An agent may change only its note, the progress and some statuses, only on
+ * a task, and nothing once it is archived. When an agent writes its note, the
  * server keeps that note and the description as they stand
  * (IssueAgentState): what the owner changes after is measured against them.
  */
@@ -233,7 +246,10 @@ export async function updateIssue(db: Db, id: string, patch: IssueUpdate, ctx: W
 
   const before = await db.issue.findUnique({ where: { id } });
   if (!before) return { ok: false, status: 404, error: "Not found" } as const;
-  if (ctx.access === "agent" && isArchived(before)) return forbidden(ARCHIVED_REFUSAL);
+  if (ctx.access === "agent") {
+    const refusal = agentIssueRefusal(before);
+    if (refusal) return forbidden(refusal);
+  }
 
   // Checked against the row as stored, since the client may send only one
   // half of the shape.
@@ -316,7 +332,7 @@ export interface AgentStatePatch {
 /**
  * Writes what an agent keeps about an issue between passes: its log, its
  * folder, its session — the fields present in `patch`, and only those. The
- * owner may write them too; an agent, not once the issue is archived.
+ * owner may write them too; an agent, only on a task not yet archived.
  *
  * The note an agent last wrote and the description it last saw are not
  * here: updateIssue keeps them when an agent writes its note, so they always
@@ -328,7 +344,10 @@ export async function updateAgentState(db: Db, issueId: string, patch: AgentStat
     select: { title: true, category: true, status: true },
   });
   if (!issue) return { ok: false, status: 404, error: "Not found" } as const;
-  if (ctx.access === "agent" && isArchived(issue)) return forbidden(ARCHIVED_REFUSAL);
+  if (ctx.access === "agent") {
+    const refusal = agentIssueRefusal(issue);
+    if (refusal) return forbidden(refusal);
+  }
 
   const data: Prisma.IssueAgentStateUpdateWithoutIssueInput = {};
   if (Object.hasOwn(patch, "log")) data.log = patch.log;
