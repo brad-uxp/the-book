@@ -43,6 +43,7 @@ import {
   deleteIssue,
   type Db,
   type WriteContext,
+  type Writer,
 } from "@/lib/issues-service";
 import {
   canvasOf,
@@ -50,6 +51,7 @@ import {
   createNode,
   deleteEdge,
   deleteNode,
+  updateEdge,
   updateNode,
 } from "@/lib/canvas-service";
 
@@ -525,7 +527,7 @@ function answerBytes(result: SyncResult): number {
  */
 export async function pushNotes(
   raw: { mutation_id: string }[],
-  actor: string | null,
+  writer: Writer,
   now: () => number = Date.now
 ): Promise<{ results: SyncResult[]; more: boolean }> {
   const results: SyncResult[] = [];
@@ -543,7 +545,7 @@ export async function pushNotes(
     } else {
       const m = parsed.data as SyncMutation;
       try {
-        result = await pushOne(m, actor);
+        result = await pushOne(m, writer);
       } catch (err) {
         if (isTransientDbError(err)) {
           console.error("[sync] push stopped at", m.mutation_id, err);
@@ -569,13 +571,14 @@ export async function pushNotes(
   return { results, more: false };
 }
 
-async function pushOne(m: SyncMutation, actor: string | null): Promise<SyncResult> {
+async function pushOne(m: SyncMutation, writer: Writer): Promise<SyncResult> {
   const stored = await storedAnswer(m.mutation_id);
   if (stored) return answerAgain(m, stored);
 
   try {
-    // The owner's: requireSyncSession lets in only the browser and the phone.
-    return await inTransaction({ actor, access: "owner" }, async (tx, ctx) => {
+    // The caller as it is: requireSyncSession lets in only the browser and
+    // the phone, both the owner, and the services hold their own rules anyway.
+    return await inTransaction(writer, async (tx, ctx) => {
       // Claimed first: a concurrent retry of the same change waits on this
       // key and then finds the answer, instead of applying it a second time.
       await tx.syncMutation.create({
@@ -635,7 +638,7 @@ async function lockRow(tx: Db, table: "Task" | "CanvasNode", id: string): Promis
 function apply(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
   if (m.entity === "issue") return m.op === "delete" ? deleteIssueChange(tx, m, ctx) : upsertIssue(tx, m, ctx);
   if (m.entity === "canvas_node") return m.op === "delete" ? deleteNodeChange(tx, m, ctx) : upsertNode(tx, m, ctx);
-  return m.op === "delete" ? deleteEdgeChange(tx, m) : upsertEdge(tx, m);
+  return m.op === "delete" ? deleteEdgeChange(tx, m, ctx) : upsertEdge(tx, m, ctx);
 }
 
 const answer = (m: SyncMutation, rest: Omit<SyncResult, "mutation_id">): SyncResult => ({
@@ -765,15 +768,15 @@ async function upsertNode(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<S
 
     case "create": {
       if (!UUID.test(m.id)) return answer(m, { status: "rejected", reason: "invalid", row: null });
-      await createNode(tx, { ...plan.data, id: m.id });
+      await createNode(tx, { ...plan.data, id: m.id }, ctx);
       return answer(m, { status: "applied", row: await currentRow(m, tx) });
     }
 
     case "update": {
-      if (Object.keys(plan.data).length > 0) await updateNode(tx, current!.issue_id, m.id, plan.data);
+      if (Object.keys(plan.data).length > 0) await updateNode(tx, current!.issue_id, m.id, plan.data, ctx);
       const row = await currentRow(m, tx);
       if (!plan.conflictCopy) return answer(m, { status: "applied", row });
-      const copy = await createNode(tx, plan.conflictCopy);
+      const copy = await createNode(tx, plan.conflictCopy, ctx);
       return answer(m, { status: "conflict_copy", reason: "text_changed_on_server", row, conflict_copy_id: copy.id });
     }
   }
@@ -789,7 +792,7 @@ async function deleteNodeChange(tx: Db, m: SyncMutation, ctx: WriteContext): Pro
   return answer(m, { status: "applied", row: null });
 }
 
-async function upsertEdge(tx: Db, m: SyncMutation): Promise<SyncResult> {
+async function upsertEdge(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
   const current = await tx.canvasEdge.findUnique({ where: { id: m.id }, select: EDGE_SELECT });
   if (current) {
     // An existing connection: the phone changes its sides only (last write
@@ -800,8 +803,8 @@ async function upsertEdge(tx: Db, m: SyncMutation): Promise<SyncResult> {
     );
     if (!sides.success) return answer(m, { status: "rejected", reason: "invalid", row: toEdgeRow(current) });
     if (Object.keys(sides.data).length === 0) return answer(m, { status: "applied", row: toEdgeRow(current) });
-    const row = await tx.canvasEdge.update({ where: { id: m.id }, data: sides.data, select: EDGE_SELECT });
-    return answer(m, { status: "applied", row: toEdgeRow(row) });
+    await updateEdge(tx, current.issue_id, m.id, sides.data, ctx);
+    return answer(m, { status: "applied", row: await currentRow(m, tx) });
   }
 
   const parsed = SyncEdgeFieldsSchema.safeParse(m.fields ?? {});
@@ -820,13 +823,13 @@ async function upsertEdge(tx: Db, m: SyncMutation): Promise<SyncResult> {
   const ends = await tx.canvasNode.count({ where: { issue_id, id: { in: [source_id, target_id] } } });
   if (ends < 2) return answer(m, { status: "deleted", reason: "endpoint_missing" });
 
-  await createEdge(tx, { id: m.id, issue_id, source_id, target_id, source_side, target_side });
+  await createEdge(tx, { id: m.id, issue_id, source_id, target_id, source_side, target_side }, ctx);
   return answer(m, { status: "applied", row: await currentRow(m, tx) });
 }
 
-async function deleteEdgeChange(tx: Db, m: SyncMutation): Promise<SyncResult> {
+async function deleteEdgeChange(tx: Db, m: SyncMutation, ctx: WriteContext): Promise<SyncResult> {
   const current = await tx.canvasEdge.findUnique({ where: { id: m.id }, select: EDGE_SELECT });
   if (!current) return answer(m, { status: "applied", reason: "already_deleted", row: null });
-  await deleteEdge(tx, current.issue_id, m.id);
+  await deleteEdge(tx, current.issue_id, m.id, ctx);
   return answer(m, { status: "applied", row: null });
 }

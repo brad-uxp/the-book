@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CanvasNodeSchema } from "@/lib/validations";
-import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
+import { getWriter, requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
 import { findCanvasNote } from "@/lib/note-canvas-server";
 import { createNode } from "@/lib/canvas-service";
 
@@ -30,7 +30,7 @@ export async function POST(
   if (note instanceof NextResponse) return note;
 
   try {
-    const node = await createNode(prisma, { ...parsed.data, issue_id: id });
+    const node = await createNode(prisma, { ...parsed.data, issue_id: id }, await getWriter());
     return NextResponse.json(node, { status: 201 });
   } catch (err) {
     return toApiResponse(err);

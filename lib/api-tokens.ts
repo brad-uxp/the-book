@@ -106,7 +106,12 @@ export function checkToken(
   return { id: record.id, name: record.name, kind: record.kind };
 }
 
-/** How an API token appears in the audit log, distinct from a human actor. */
-export function tokenActor(name: string): string {
-  return `token:${name}`;
+/**
+ * How an API token appears in the audit log, distinct from a human actor:
+ * `token:<kind>:<name> (<prefix>)`. The kind says what it was allowed to do —
+ * an agent's writes stand out from a script's — and the prefix, which
+ * Settings shows, tells apart two tokens given the same name.
+ */
+export function tokenActor(token: { name: string; kind: TokenKind; prefix: string }): string {
+  return `token:${token.kind}:${token.name} (${token.prefix})`;
 }

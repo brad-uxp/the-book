@@ -17,7 +17,8 @@ vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn(async ()
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   requireSyncSession: vi.fn(),
-  resolveActor: vi.fn(async () => ({ kind: "token", id: "tok-phone", label: "token:mobile · Pixel", tokenKind: "mobile" })),
+  getWriter: vi.fn(async () => ({ actor: "token:mobile:mobile · Pixel (tb_phone01)", access: "owner" })),
+  resolveActor: vi.fn(async () => ({ kind: "token", id: "tok-phone", name: "mobile · Pixel", label: "token:mobile · Pixel", tokenKind: "mobile" })),
 }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
 

@@ -30,6 +30,12 @@
 - **PostgreSQL 18** como base de datos
 - **NextAuth 5 (beta)** — autenticación con Google OAuth, single-user
 - **Cloudflare R2** (S3-compatible) — adjuntos de facturas vía URLs presignadas
+- **MCP propio** en `/api/mcp` (`@modelcontextprotocol/server` v2, Streamable HTTP
+  sin estado): las herramientas de issues con las que un agente trabaja una épica,
+  con token `agent`. El agente lee y escribe markdown; la conversión a HTML de
+  TipTap es del servidor (`lib/rich-text/markdown.ts`, con `@tiptap/html` +
+  happy-dom). Plan y fases en
+  [`docs/product/features/agentes-y-mcp.md`](./docs/product/features/agentes-y-mcp.md)
 
 > **No hay email.** Existió y se eliminó: Nodemailer y Gmail SMTP son de una
 > versión anterior. El **login mobile viejo** (`POST /api/auth/mobile`) también se
@@ -63,7 +69,7 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 54 rutas API (REST) — ver tabla abajo
+│   ├── api/                          # 58 rutas API (REST + el MCP) — ver tabla abajo
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -90,7 +96,9 @@ TheBook/
 │   ├── notifications/  settings/  admin-logs/
 ├── lib/
 │   ├── api.ts                        # requireSession, mapeo de errores, readJson
-│   ├── issues-service.ts  canvas-service.ts  # Escrituras de issues e ideas: reglas + auditoría, para las rutas REST y la sync
+│   ├── issues-service.ts  canvas-service.ts  # Escrituras de issues e ideas: reglas + auditoría, para las rutas REST, la sync y el MCP
+│   ├── mcp-issues.ts  mcp-auth.ts     # El MCP de issues para agentes (/api/mcp) y su 401 con WWW-Authenticate
+│   ├── rich-text/markdown.ts         # Markdown ↔ HTML de TipTap y diffs, para el MCP (solo servidor, testeada)
 │   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
 │   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
 │   ├── currency.ts                   # Centavos ↔ display (testeada)
@@ -184,7 +192,7 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------- |
 | `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
 | `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. Estados (`ISSUE_STATUSES` en `lib/issues.ts`, compartido con el teléfono): `pending` (Backlog), `in_progress`, `review` (le toca a Brad: preguntas o entrega de un agente), `blocked`, `done`. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`). `agent_note`: HTML de TipTap, la última pasada de un agente y las respuestas de Brad, inline; no viaja en la sync del teléfono |
-| `IssueAgentState` | 1:1 con `Issue` (PK `issue_id`, `ON DELETE CASCADE`): lo que un agente guarda entre pasadas — bitácora en markdown, carpeta, link de sesión — y, puestos por el servidor cuando un agente escribe su nota, esa nota (`last_note`) y la descripción de ese momento (`description_seen`). Tabla aparte para no mover `Task.updated_at`, por el que tira la sync. Se escribe solo vía `lib/issues-service.ts` (sin ruta REST todavía) |
+| `IssueAgentState` | 1:1 con `Issue` (PK `issue_id`, `ON DELETE CASCADE`): lo que un agente guarda entre pasadas — bitácora en markdown, carpeta, link de sesión — y, puestos por el servidor cuando un agente escribe su nota, esa nota (`last_note`) y la descripción de ese momento (`description_seen`). Tabla aparte para no mover `Task.updated_at`, por el que tira la sync. Se escribe solo vía `lib/issues-service.ts`: lo escribe el MCP (la bitácora se agrega en el servidor y recorta lo más viejo pasado `AGENT_LOG_MAX`); sin ruta REST |
 | `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
 | `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
 | `SyncTombstone`| Un borrado de issue, idea o conexión, para que el teléfono se entere. Lo escriben **solo triggers** `AFTER DELETE` (cubren cascadas y cualquier otra vía); se purga a los 60 días |
@@ -196,7 +204,7 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
-| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings; solo llega a las rutas de issues, y ahí `lib/issues-service.ts` lo limita a `agent_note`, `progress` y `status` ∈ {in_progress, review, blocked}) |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings; solo llega a las rutas de issues y al MCP, y ahí `lib/issues-service.ts` lo limita a `agent_note`, `progress`, `status` ∈ {in_progress, review, blocked} y su estado de agente) |
 | `MobileRelease` | Versión publicada de la app Android (versión, `version_code` único y creciente, sha256, tamaño, clave en R2, notas, `published_at`) para las actualizaciones sin cable |
 
 ### Invariantes que la base enforza
@@ -226,7 +234,7 @@ editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (51)
+## Rutas API (58)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]`, `cron/daily` (protegida con `CRON_SECRET`) y las dos
@@ -246,6 +254,13 @@ y `POST /api/issues` (`requireSession({ agent: true })`), y ahí solo ve tareas
 crear, borrar, `done`, `pending`, cualquier otro campo, escribir una nota y
 escribir una tarea archivada. Dura 30 días como mucho. Detalle en
 [`API.md`](./API.md#agent-tokens).
+
+`/api/mcp` es el revés: **solo** acepta un token `agent` (`requireAgentToken`;
+cualquier otro tipo, 403; sin Bearer válido, 401 con `WWW-Authenticate`, que es
+lo que F3 extiende a OAuth). Cinco herramientas sobre `lib/issues-service.ts`:
+`issues_list`, `issue_get`, `issue_update_note` (con versión base: 409 si Brad
+cambió la nota o la descripción), `issue_update_state` e `issue_write_log`.
+Detalle en [`API.md`](./API.md#the-mcp-apimcp).
 
 | Recurso           | Métodos         | Ruta                                 |
 | ----------------- | --------------- | ------------------------------------ |
@@ -287,19 +302,25 @@ escribir una tarea archivada. Dura 30 días como mucho. Detalle en
 | Canvas conexiones | POST            | `/api/issues/[id]/canvas/edges`      |
 | Canvas conexión   | PATCH, DELETE   | `/api/issues/[id]/canvas/edges/[edgeId]` |
 | Notifications     | GET/PATCH       | `/api/notifications`                 |
+| Notification      | GET             | `/api/notifications/[id]`            |
 | Notif. count      | GET             | `/api/notifications/count`           |
 | Mark all read     | POST            | `/api/notifications/mark-all-read`   |
 | Audit Logs        | GET             | `/api/audit-logs`                    |
 | Settings          | GET/PATCH       | `/api/settings`                      |
+| API tokens        | GET/POST        | `/api/settings/tokens` (solo sesión) |
+| API token         | DELETE          | `/api/settings/tokens/[id]` (solo sesión) |
 | Metrics           | GET             | `/api/metrics`                       |
 | Mobile nonce      | POST (público)  | `/api/mobile/nonce`                  |
 | Mobile sign-in    | POST (público)  | `/api/mobile/sign-in`                |
 | Mobile sign-out   | POST            | `/api/mobile/sign-out`               |
+| Mobile devices    | POST/DELETE     | `/api/mobile/devices`                |
+| Push de prueba    | POST            | `/api/mobile/devices/test`           |
 | App releases      | POST            | `/api/mobile/releases` (token release) |
 | Publicar release  | POST            | `/api/mobile/releases/[code]/publish` (token release) |
 | Última versión    | GET             | `/api/mobile/releases/latest`        |
 | Sync notas        | GET/POST        | `/api/sync/notes`                    |
 | Sync refs         | GET             | `/api/sync/refs`                     |
+| MCP (agentes)     | POST            | `/api/mcp` (solo token agent)        |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---
@@ -348,7 +369,7 @@ teléfono por FCM como mensaje solo de datos; best effort, nunca tumba el job.
 | Settings singleton          | Una fila, con CHECK en la base                                         |
 | Métricas                    | `lib/metrics.ts` único: dashboard y `/api/metrics` usan las mismas fórmulas |
 | Auth single-user            | `ALLOWED_EMAILS` en `auth.ts`, re-chequeado en cada refresh del token  |
-| Escrituras de issues        | `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST y la sync del teléfono pasan por el mismo código; la auditoría se escribe después del commit |
+| Escrituras de issues        | `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST, la sync del teléfono y el MCP pasan por el mismo código, que chequea quién escribe por su cuenta; la auditoría se escribe después del commit |
 | Sync del teléfono           | Pull por cursor con ventana de 2 min; push idempotente por `mutation_id`; última escritura gana por campo, salvo el texto: en conflicto, copia |
 
 ---
@@ -416,7 +437,17 @@ automáticamente; el `build` genera el cliente Prisma por su cuenta.
 - **Sesión de 12 h**, con re-validación de la allowlist en cada refresh
 - **Tokens por tipo, cerrados por defecto**: `requireSession()` rechaza los
   tokens `release` y `agent` salvo donde la ruta los pide; lo que un `agent`
-  puede escribir lo decide `lib/issues-service.ts`, no la ruta ni el prompt
+  puede escribir lo decide `lib/issues-service.ts`, no la ruta ni el prompt.
+  `canvas-service` y la sync también rechazan a un `agent` por su cuenta
+- **Escrituras del agente atómicas**: el chequeo de "tarea, no archivada" (y la
+  versión base de la nota) va en el `WHERE` del `updateMany`, y el estado del
+  agente bloquea la fila de la tarea (`FOR UPDATE`): Brad archivando en el
+  mismo instante nunca queda deshecho
+- **Lo que escribe un agente nunca es un chip**: su markdown se convierte con el
+  esquema de TipTap sin los nodos de mención, así que `@`, `#` y cualquier HTML
+  quedan como texto (F1: plantar el chip de una factura para leer su monto)
+- **Auditoría por token**: `token:<kind>:<name> (<prefix>)` y, en cada update, los
+  campos que cambiaron (`changed`), nunca el texto
 - **Cron protegido** con Bearer token
 - **Object keys de R2 validadas** contra el formato exacto que emite
   `buildInvoiceKey`, y su pertenencia verificada al escribir y al firmar

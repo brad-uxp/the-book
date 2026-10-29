@@ -1,6 +1,7 @@
 import { auth, isAllowedSession } from "@/auth";
 import { NextResponse } from "next/server";
 import { isMobilePublicPath } from "@/lib/mobile-auth";
+import { MCP_PATH, mcpUnauthorized } from "@/lib/mcp-auth";
 
 export const proxy = auth(async (req) => {
   const { pathname } = req.nextUrl;
@@ -38,7 +39,10 @@ export const proxy = auth(async (req) => {
     return NextResponse.next();
   }
 
-  // Not authenticated
+  // Not authenticated. The MCP says how to authenticate, as clients expect.
+  if (pathname === MCP_PATH) {
+    return mcpUnauthorized(authorization !== null);
+  }
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,10 +1,14 @@
+import { formatInTimeZone } from "date-fns-tz";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
+import { TZ } from "@/lib/dates";
 import { ARCHIVED_STATUS, isArchived, type IssueStatus } from "@/lib/issues";
 import { checkShapeChange, isBlankHtml } from "@/lib/notes";
 import { SEED_NODE_HEIGHT, SEED_NODE_WIDTH } from "@/lib/note-canvas";
-import type { IssuePatch } from "@/lib/sync";
+import { agentHtml } from "@/lib/rich-text/markdown";
+import { textHash, type IssuePatch } from "@/lib/sync";
+import { AGENT_LOG_MAX, RICH_TEXT_MAX } from "@/lib/text-limits";
 
 /**
  * Writing issues: create, edit, delete — the rules and the audit trail in one
@@ -34,7 +38,7 @@ export type AuditEntry = Parameters<typeof auditLog>[0];
 export type Access = "owner" | "agent";
 
 export interface Writer {
-  /** Who is writing: an email, or `token:<name>` for an API token (the phone). */
+  /** Who is writing: an email, or `token:<kind>:<name> (<prefix>)` for an API token. */
   actor: string | null;
   access: Access;
 }
@@ -91,7 +95,7 @@ const AGENT_FIELDS: ReadonlySet<string> = new Set(["agent_note", "progress", "st
  * and it is this check, not an agent's prompt, that keeps it so. Never
  * `pending` either: the backlog is the owner's to fill.
  */
-export const AGENT_STATUSES: readonly IssueStatus[] = ["in_progress", "review", "blocked"];
+export const AGENT_STATUSES = ["in_progress", "review", "blocked"] as const satisfies readonly IssueStatus[];
 
 function forbidden(error: string) {
   return { ok: false, status: 403, error } as const;
@@ -101,7 +105,7 @@ function forbidden(error: string) {
 function agentPatchRefusal(patch: IssueUpdate): string | null {
   const others = Object.keys(patch).filter((key) => !AGENT_FIELDS.has(key));
   if (others.length > 0) return `An agent cannot change ${others.join(", ")}`;
-  if (patch.status !== undefined && !AGENT_STATUSES.includes(patch.status)) {
+  if (patch.status !== undefined && !(AGENT_STATUSES as readonly IssueStatus[]).includes(patch.status)) {
     return patch.status === ARCHIVED_STATUS
       ? "Only the owner can mark an issue done"
       : `An agent cannot set the status to ${patch.status}`;
@@ -123,6 +127,39 @@ function agentIssueRefusal(issue: { category: string; status: string }): string 
   if (issue.category !== "task") return NOTE_REFUSAL;
   if (isArchived(issue)) return ARCHIVED_REFUSAL;
   return null;
+}
+
+/** agentIssueRefusal as a where-clause, for the write itself to check again. */
+const AGENT_WRITABLE = { category: "task", status: { not: ARCHIVED_STATUS } } as const;
+
+const CONFLICT = {
+  ok: false,
+  status: 409,
+  error: "The note or the description changed since you read it",
+} as const;
+
+/**
+ * The version of an issue an agent read: its note and its description, each
+ * as a short textHash. An agent writes its note with the version it read;
+ * if the owner changed either since, the write is a 409 and the agent reads
+ * again — so its note never overwrites an answer it has not seen, and the
+ * description it is recorded as having seen is the one it actually read.
+ * Never `updated_at`: any edit at all moves it.
+ */
+export function agentBase(issue: { agent_note: string; description: string }): string {
+  return `${textHash(issue.agent_note).slice(0, 16)}.${textHash(issue.description).slice(0, 16)}`;
+}
+
+/**
+ * Reads an issue and locks its row until the transaction ends (call it inside
+ * inTransaction), so what is checked about it still holds when the write
+ * lands: the owner archiving it in the same instant waits, or is seen.
+ */
+async function lockIssue(db: Db, id: string) {
+  const rows = await db.$queryRaw<{ title: string; category: string; status: string }[]>`
+    SELECT title, category::text AS category, status::text AS status
+    FROM "Task" WHERE id = ${id} FOR UPDATE`;
+  return rows[0] ?? null;
 }
 
 /**
@@ -218,12 +255,23 @@ export async function createIssue(db: Db, input: IssueCreate, ctx: WriteContext)
  * lib/notes.ts for which shape changes exist).
  *
  * An agent may change only its note, the progress and some statuses, only on
- * a task, and nothing once it is archived. When an agent writes its note, the
- * server keeps that note and the description as they stand
- * (IssueAgentState): what the owner changes after is measured against them.
+ * a task, and nothing once it is archived — checked first, and again inside
+ * the write itself, so the owner archiving it in the same instant is never
+ * undone. With `opts.base` (agentBase), an agent's write also lands only if
+ * the note and the description are still the ones it read (409 otherwise).
+ * When an agent writes its note, the server keeps that note and the
+ * description as they stand (IssueAgentState): what the owner changes after
+ * is measured against them.
  */
-export async function updateIssue(db: Db, id: string, patch: IssueUpdate, ctx: WriteContext) {
-  if (ctx.access === "agent") {
+export async function updateIssue(
+  db: Db,
+  id: string,
+  patch: IssueUpdate,
+  ctx: WriteContext,
+  opts: { base?: string } = {}
+) {
+  const agent = ctx.access === "agent";
+  if (agent) {
     const refusal = agentPatchRefusal(patch);
     if (refusal) return forbidden(refusal);
   }
@@ -241,14 +289,23 @@ export async function updateIssue(db: Db, id: string, patch: IssueUpdate, ctx: W
   if (has("progress")) data.progress = patch.progress;
   if (has("due_date")) data.due_date = patch.due_date ? new Date(patch.due_date) : null;
   if (has("description")) data.description = patch.description;
-  if (has("agent_note")) data.agent_note = patch.agent_note;
+  if (has("agent_note")) {
+    // An agent's note is held to the editor's schema without chips, however
+    // it arrived: the MCP sends it so already, the REST API takes HTML — and
+    // a chip an agent planted would come back with an invoice's amount.
+    data.agent_note = agent ? agentHtml(patch.agent_note ?? "") : patch.agent_note;
+    if (agent && (data.agent_note as string).length > RICH_TEXT_MAX) {
+      return { ok: false, status: 400, error: "Note too long" } as const;
+    }
+  }
   if (has("sort_order")) data.sort_order = patch.sort_order;
 
   const before = await db.issue.findUnique({ where: { id } });
   if (!before) return { ok: false, status: 404, error: "Not found" } as const;
-  if (ctx.access === "agent") {
+  if (agent) {
     const refusal = agentIssueRefusal(before);
     if (refusal) return forbidden(refusal);
+    if (opts.base !== undefined && opts.base !== agentBase(before)) return CONFLICT;
   }
 
   // Checked against the row as stored, since the client may send only one
@@ -270,13 +327,36 @@ export async function updateIssue(db: Db, id: string, patch: IssueUpdate, ctx: W
     data.description = "";
   }
 
-  const issue = await db.issue.update({ where: { id }, data, include: { client: true } });
+  let issue;
+  if (agent) {
+    // The checks above, made again by the write: if the owner archived the
+    // issue, or changed what the agent read, between the read and here, no
+    // row matches and nothing is written. An agent writes scalars only
+    // (AGENT_FIELDS), so updateMany takes its data as it is.
+    const { count } = await db.issue.updateMany({
+      where: {
+        id,
+        ...AGENT_WRITABLE,
+        ...(opts.base !== undefined ? { agent_note: before.agent_note, description: before.description } : {}),
+      },
+      data: data as Prisma.IssueUpdateManyMutationInput,
+    });
+    if (count === 0) {
+      const now = await db.issue.findUnique({ where: { id }, select: { category: true, status: true } });
+      if (!now) return { ok: false, status: 404, error: "Not found" } as const;
+      const refusal = agentIssueRefusal(now);
+      return refusal ? forbidden(refusal) : CONFLICT;
+    }
+    issue = await db.issue.findUniqueOrThrow({ where: { id }, include: { client: true } });
+  } else {
+    issue = await db.issue.update({ where: { id }, data, include: { client: true } });
+  }
   if (seed !== null) {
     await db.canvasNode.create({
       data: { issue_id: id, content: seed, x: 0, y: 0, width: SEED_NODE_WIDTH, height: SEED_NODE_HEIGHT },
     });
   }
-  if (ctx.access === "agent" && has("agent_note")) {
+  if (agent && has("agent_note")) {
     const seen = { last_note: issue.agent_note, description_seen: issue.description };
     await db.issueAgentState.upsert({
       where: { issue_id: id },
@@ -292,7 +372,9 @@ export async function updateIssue(db: Db, id: string, patch: IssueUpdate, ctx: W
     action: "update",
     actor_email: ctx.actor,
     before: auditState(before),
-    after: auditState(issue),
+    // Which fields were written: a write of the note alone (or the
+    // description) leaves before and after the same otherwise.
+    after: { ...auditState(issue), changed: Object.keys(patch) },
   });
 
   return { ok: true, value: issue } as const;
@@ -336,13 +418,10 @@ export interface AgentStatePatch {
  *
  * The note an agent last wrote and the description it last saw are not
  * here: updateIssue keeps them when an agent writes its note, so they always
- * say what the server actually had.
+ * say what the server actually had. To add to the log, appendAgentLog.
  */
 export async function updateAgentState(db: Db, issueId: string, patch: AgentStatePatch, ctx: WriteContext) {
-  const issue = await db.issue.findUnique({
-    where: { id: issueId },
-    select: { title: true, category: true, status: true },
-  });
+  const issue = await lockIssue(db, issueId);
   if (!issue) return { ok: false, status: 404, error: "Not found" } as const;
   if (ctx.access === "agent") {
     const refusal = agentIssueRefusal(issue);
@@ -371,4 +450,57 @@ export async function updateAgentState(db: Db, issueId: string, patch: AgentStat
   });
 
   return { ok: true, value: state } as const;
+}
+
+/**
+ * Adds one entry to an issue's log, stamped with the time in Montevideo, and
+ * drops the oldest whole lines once the log passes `max` (AGENT_LOG_MAX). The
+ * server adds, so an agent never reads the whole log back to write a line,
+ * and a long epic never hits the limit halfway: it forgets its beginning.
+ *
+ * The issue's row stays locked until the transaction ends, so two entries
+ * written at once both land, in order. Same rules as updateAgentState.
+ */
+export async function appendAgentLog(
+  db: Db,
+  issueId: string,
+  entry: string,
+  ctx: WriteContext,
+  { now = new Date(), max = AGENT_LOG_MAX }: { now?: Date; max?: number } = {}
+) {
+  const issue = await lockIssue(db, issueId);
+  if (!issue) return { ok: false, status: 404, error: "Not found" } as const;
+  if (ctx.access === "agent") {
+    const refusal = agentIssueRefusal(issue);
+    if (refusal) return forbidden(refusal);
+  }
+
+  const line = `[${formatInTimeZone(now, TZ, "yyyy-MM-dd HH:mm")}] ${entry.trim()}`;
+  const current = await db.issueAgentState.findUnique({ where: { issue_id: issueId }, select: { log: true } });
+  const log = trimLog(current?.log ? `${current.log}\n${line}` : line, max);
+  await db.issueAgentState.upsert({
+    where: { issue_id: issueId },
+    create: { issue_id: issueId, log },
+    update: { log },
+  });
+
+  ctx.audit({
+    entity_type: "issue",
+    entity_id: issueId,
+    entity_name: issue.title,
+    action: "update",
+    actor_email: ctx.actor,
+    after: { agent_state: { changed: ["log"] } },
+  });
+
+  return { ok: true, value: { log } } as const;
+}
+
+/** The last `max` characters of a log, from the start of a line. */
+export function trimLog(log: string, max: number): string {
+  if (log.length <= max) return log;
+  const start = log.length - max;
+  if (log[start - 1] === "\n") return log.slice(start);
+  const cut = log.indexOf("\n", start);
+  return cut === -1 ? log.slice(start) : log.slice(cut + 1);
 }

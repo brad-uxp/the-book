@@ -24,7 +24,7 @@ const post = (body?: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireSession).mockResolvedValue(null);
-  vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-phone", label: "token:mobile", tokenKind: "mobile" });
+  vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-phone", name: "mobile", label: "token:mobile", tokenKind: "mobile" });
 });
 afterEach(() => vi.useRealTimers());
 
@@ -65,7 +65,7 @@ describe("POST /api/mobile/devices/test", () => {
   });
 
   it("solo el token del teléfono", async () => {
-    vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-bot", label: "token:agent", tokenKind: "automation" });
+    vi.mocked(resolveActor).mockResolvedValue({ kind: "token", id: "tok-bot", name: "agent", label: "token:agent", tokenKind: "automation" });
     expect((await post()).status).toBe(403);
     expect(pushToToken).not.toHaveBeenCalled();
   });

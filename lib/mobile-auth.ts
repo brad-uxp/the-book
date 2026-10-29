@@ -69,7 +69,7 @@ export function mobileAuthorizedParties(env: {
 
 /**
  * The name the token shows in Settings → API tokens, and in the audit log as
- * `token:<name>`. Says it is the phone, and which one.
+ * `token:mobile:<name> (<prefix>)`. Says it is the phone, and which one.
  */
 export function mobileTokenName(deviceName: string): string {
   const device = deviceName.replace(/\s+/g, " ").trim() || "Android";

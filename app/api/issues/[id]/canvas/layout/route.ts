@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CanvasLayoutSchema } from "@/lib/validations";
-import { requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
+import { getWriter, requireSession, readJson, invalid, toApiResponse } from "@/lib/api";
 import { updateLayout } from "@/lib/canvas-service";
 
 /**
@@ -26,7 +26,7 @@ export async function PATCH(
   if (!parsed.success) return invalid(parsed.error);
 
   try {
-    const updated = await updateLayout(id, parsed.data.nodes);
+    const updated = await updateLayout(id, parsed.data.nodes, await getWriter());
     return NextResponse.json({ updated });
   } catch (err) {
     return toApiResponse(err);

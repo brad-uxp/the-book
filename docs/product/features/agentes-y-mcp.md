@@ -1,8 +1,8 @@
 # Agentes sobre theBook: épicas con estado de revisión y un MCP propio
 
 > Estado: **F1 hecha y desplegada** (2026-10-28: `main` en `431ed79`, Android 0.6.0 publicada).
-> F2–F6 propuestas. Se ejecuta por fases, cada una en su propia sesión, con este documento como
-> brief.
+> **F2 hecha** (2026-10-28, en `dev`; ver "Cómo quedó F2"). F3–F6 propuestas. Se ejecuta por
+> fases, cada una en su propia sesión, con este documento como brief.
 
 ## 1. Qué cambia y por qué
 
@@ -174,7 +174,7 @@ se aplicaron sin incidentes y la 0.6.0 quedó publicada como actualización in-a
   en markdown, pasando los dos lados por el mismo conversor: TipTap puede reserializar el mismo
   texto distinto.
 
-### F2 — MCP de issues con token provisorio (M)
+### F2 — MCP de issues con token provisorio (M) — ✅ hecha (2026-10-28)
 
 - `/api/mcp` (Streamable HTTP, sin estado) con cinco herramientas:
   - `issues_list` (filas compactas);
@@ -190,6 +190,97 @@ se aplicaron sin incidentes y la 0.6.0 quedó publicada como actualización in-a
   - `issue_update_state(status="done")` devuelve error;
   - la auditoría registra `token:agent`;
   - `/api/mcp` sin Bearer válido da 401.
+
+#### Cómo quedó F2 (supuestos y decisiones tomadas al implementar)
+
+- **SDK v2, no v1.** `@modelcontextprotocol/server` 2.4.0 en vez de `@modelcontextprotocol/sdk`:
+  el v1 trae express, hono, cors y otros 14 paquetes; el v2 depende solo de zod.
+  `createMcpHandler` da un `fetch` web-standard que entra tal cual en el route handler de Next
+  (`app/api/mcp/route.ts`). Sin estado: un servidor nuevo por request, que cierra sobre el
+  `Writer` del que llama. Sirve el protocolo de 2025 (lo que habla Claude Code hoy, por el
+  *stateless fallback* del SDK, que responde por SSE) y el de 2026-07-28. Solo `POST`.
+- **Auth.** `requireAgentToken()` (`lib/api.ts`): solo un token `agent`; otro tipo, 403; sin
+  Bearer válido, 401 con `WWW-Authenticate` (`lib/mcp-auth.ts`, que usa también `proxy.ts`).
+  El `Writer` del MCP se fija en `agent` aunque el token ya lo sea. Body con `readJsonLimited`
+  (1 MiB) y el mismo rate limit de 300/min.
+- **Herramientas** en `lib/mcp-issues.ts`, todas sobre `lib/issues-service.ts`. Lecturas con
+  Prisma directo, como las rutas REST, y siempre `category = task`. Respuestas en JSON compacto;
+  las negativas, como error de herramienta que empieza con el status (`409: …`).
+  `issue_update_state` con `done`/`pending` lo rechaza el esquema de la herramienta con un
+  mensaje claro, y el servicio igual devolvería 403.
+- **Versión base** = `agentBase()`: 16 hex de `textHash(agent_note)` + `.` + 16 de
+  `textHash(description)`. La escritura del agente en `updateIssue` es un `updateMany` con
+  `category = task`, `status ≠ done` y, con base, la nota y la descripción leídas en el
+  `WHERE`; count 0 → se relee para decir 404, 403 o 409. Eso cierra también la carrera de
+  "archivada" del pendiente de F1.
+- **Estado del agente** (bitácora, carpeta, sesión): la condición no puede ir en el `WHERE`
+  (es otra tabla), así que `updateAgentState` y la nueva `appendAgentLog` bloquean la fila de la
+  tarea con `SELECT … FOR UPDATE`. El mismo bloqueo serializa dos entradas de bitácora
+  simultáneas (verificado contra Postgres real). Cada entrada lleva la hora de Montevideo
+  (`[2026-10-28 12:04] …`), hasta `AGENT_LOG_ENTRY_MAX` (4 000); pasado `AGENT_LOG_MAX` se
+  olvidan las líneas más viejas, enteras (`trimLog`).
+- **Markdown ↔ HTML** en `lib/rich-text/markdown.ts`, con `@tiptap/html/server` (happy-dom con
+  JS, CSS, iframes y estilos desactivados) y `@tiptap/markdown`, sobre el mismo esquema que el
+  editor (`richTextExtensions`): el HTML que se guarda es el que el editor guardaría, y pasa dos
+  veces por sus reglas de parseo. Para escribir se usa el esquema **sin** los dos nodos de chip,
+  así que `@`, `#` y el HTML crudo quedan como texto. Rarezas de TipTap, aceptadas porque la
+  vuelta las deshace: `&`, `<` y `>` salen como entidades, el subrayado como `++u++` y el
+  resaltado como `==h==`; un párrafo que empieza como un bloque (`# x`, `1. x`) se lee como ese
+  bloque (las reglas de entrada del editor lo convierten al escribirlo; solo pasa con texto
+  pegado).
+- **Diffs** unificados, con 2 líneas de contexto (una línea de cada dos es la vacía entre
+  párrafos). Sin atajo de "reescrito": F5 mide los tokens antes de optimizar.
+- **Auditoría.** El actor de todo token pasa a ser `token:<kind>:<name> (<prefix>)` (el prefijo
+  es el que muestra Settings, y distingue nombres repetidos), y cada update guarda `changed`
+  con los campos escritos, nunca el texto. Vale para el dueño también.
+- **El servicio chequea el acceso por su cuenta.** `canvas-service` recibe el `Writer` en cada
+  escritura y rechaza a un `agent` (tira, porque ninguna ruta debería llegar con uno), y la
+  sync usa el `Writer` real en vez de un `access: "owner"` fijo.
+- **Dependencias.** `happy-dom` pasó a producción, en 21.0.4: la 20.x tiene advisories altos de
+  SSRF y ejecución de código al parsear HTML no confiable que solo arregla la 21 (por fuera del
+  rango de *peer* `^20.8.9` de `@tiptap/html`; los tests de conversión pasan). Nuevas:
+  `@tiptap/html`, `@tiptap/markdown` (trae `marked`) y `diff`.
+- **Sin cambios en el contrato REST de F1**: un `PATCH` de `agent_note` con token `agent` sigue
+  sin versión base. Solo el MCP la exige. Lo que sí cambió: el servicio pasa todo `agent_note`
+  escrito por un `agent` por `agentHtml` (el esquema del editor sin chips), venga del MCP o del
+  REST, así que plantar un chip o HTML arbitrario por REST ya no funciona.
+
+**Revisión de `security-auditor`** (2026-10-28): sin críticos ni altos. Corregido antes del
+commit:
+
+- Batches de JSON-RPC (el protocolo de 2025 los permitía: cien llamadas por el precio de una
+  contra el rate limit) → 400.
+- `agent_note` en HTML crudo por REST → `agentHtml` en el servicio (arriba).
+- happy-dom hace fetch de `<link rel=preload as=fetch>` en una ventana viva, y los settings de
+  `@tiptap/html/server` no lo cubren. Un documento de `DOMParser` es inerte (probado), pero el
+  parseo usa ahora una ventana propia con un interceptor de fetch que lo deniega todo;
+  `markdown-network.test.ts` prueba 17 vectores contra un servidor que cuenta requests. Más
+  happy-dom 21.0.4.
+- Excepciones de una herramienta → `500: Internal error` (el SDK mandaba el mensaje, que puede
+  traer la consulta de Prisma); ids con caracteres raros, `status` sin tope y diffs sin límite
+  (`maxEditLength` 1 000, 200 ms) → acotados; `subscriptions/listen` apagado
+  (`maxSubscriptions: 0`); la sync cambia los lados de una conexión por `canvas-service`.
+
+Residuales:
+
+- Los rechazos del agente (403, 409) no se auditan; solo las escrituras.
+- `zod` < 4.6.6 (advisory alto de memoria con colecciones grandes) lo cierra el commit de
+  dependencias que sigue; el body de 1 MiB y los `.max` ya acotan lo que llega.
+- **Para F4**: la nota, la bitácora y la descripción son texto que el agente lee y que otro
+  pudo escribir (inyección persistente). El protocolo de la skill `epica` tiene que tratarlas
+  como datos, no como instrucciones.
+
+**Para F3**:
+
+- El desafío vive en un solo lugar, `mcpUnauthorized()` en `lib/mcp-auth.ts`: agregarle
+  `resource_metadata="https://book.bolstro.com/.well-known/oauth-protected-resource/api/mcp"`.
+- `proxy.ts` hoy contesta él mismo el 401 de `/api/mcp` y redirige a `/login` todo lo que no es
+  `/api/*`: hay que abrir `/.well-known/oauth-*` y el endpoint de token.
+- `bearerFromHeader` y el proxy solo reconocen Bearer `tb_…`. Si los access tokens de OAuth son
+  `ApiToken` kind `agent` con ese mismo formato, `requireAgentToken` no cambia; si no, cambian
+  los dos. La audiencia (`resource`) se verifica en `requireAgentToken`.
+- Al terminar: `claude mcp remove thebook -s user` y revocar el token provisorio en Settings
+  (si no, las herramientas aparecen duplicadas).
 
 ### F3 — OAuth: theBook como servidor de autorización (L)
 

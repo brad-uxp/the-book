@@ -16,10 +16,10 @@ import { forgetDevice, registerDevice } from "@/lib/push";
 
 const TOKEN = "cM7dQwX0Rk2:APA91bH-example_fcm_registration_token_1234567890";
 
-const mobile: Actor = { kind: "token", id: "tok-phone", label: "token:mobile · Redmi", tokenKind: "mobile" };
-const automation: Actor = { kind: "token", id: "tok-bot", label: "token:agent", tokenKind: "automation" };
+const mobile: Actor = { kind: "token", id: "tok-phone", name: "mobile · Redmi", label: "token:mobile · Redmi", tokenKind: "mobile" };
+const automation: Actor = { kind: "token", id: "tok-bot", name: "agent", label: "token:agent", tokenKind: "automation" };
 // The in-app updater adds a `release` kind; it must not reach devices either.
-const release = { kind: "token", id: "tok-rel", label: "token:release", tokenKind: "release" } as unknown as Actor;
+const release = { kind: "token", id: "tok-rel", name: "release", label: "token:release", tokenKind: "release" } as unknown as Actor;
 const browser: Actor = { kind: "user", label: "owner@example.com" };
 
 const post = (body: unknown) =>

@@ -38,7 +38,7 @@ export async function POST() {
       auditLog({
         entity_type: "api_token",
         entity_id: actor.id,
-        entity_name: actor.label.replace(/^token:/, ""),
+        entity_name: actor.name,
         action: "delete",
         actor_email: actor.label,
         before: { revoked_by: "itself (mobile sign-out)" },

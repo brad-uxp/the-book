@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { isCanvasNote, isBlankHtml } from "@/lib/notes";
 import { plainTextSnippet } from "@/lib/mentions";
 import { EDGE_SELECT, NODE_SELECT } from "@/lib/note-canvas-server";
-import type { Db, WriteContext } from "@/lib/issues-service";
+import type { Db, WriteContext, Writer } from "@/lib/issues-service";
 import type { Side } from "@/lib/canvas-geometry";
 
 /**
@@ -19,7 +19,17 @@ import type { Side } from "@/lib/canvas-geometry";
  * connection that already exists, P2003 for a connection whose end is not an
  * idea of that canvas (the compound foreign keys refuse it), P2025 for a row
  * that is not there.
+ *
+ * Every write takes the writer and refuses an agent: a canvas is a note, and
+ * an agent works tasks (lib/issues-service.ts). Its token never reaches these
+ * routes — requireSession refuses it — but the rule holds here too, whichever
+ * way a write comes in; refuseAgent throws, since no caller should get here.
  */
+
+/** An agent writes no idea and no connection. */
+function refuseAgent(writer: Writer) {
+  if (writer.access === "agent") throw new Error("An agent works tasks, not notes");
+}
 
 /** The note an idea belongs to, and whether it is a canvas; null when there is no such issue. */
 export async function canvasOf(
@@ -47,7 +57,8 @@ export interface NodeCreate {
 }
 
 /** Creates an idea. The caller has checked that `issue_id` is a canvas note. */
-export function createNode(db: Db, data: NodeCreate) {
+export function createNode(db: Db, data: NodeCreate, writer: Writer) {
+  refuseAgent(writer);
   return db.canvasNode.create({
     data: {
       ...(data.id ? { id: data.id } : {}),
@@ -77,7 +88,8 @@ export interface NodeEdit {
  * so a node id from another canvas is a P2025 rather than an edit to someone
  * else's idea.
  */
-export function updateNode(db: Db, issueId: string, nodeId: string, data: NodeEdit) {
+export function updateNode(db: Db, issueId: string, nodeId: string, data: NodeEdit, writer: Writer) {
+  refuseAgent(writer);
   const has = (key: keyof NodeEdit) => Object.hasOwn(data, key);
   return db.canvasNode.update({
     where: { id: nodeId, issue_id: issueId },
@@ -104,8 +116,10 @@ export function updateNode(db: Db, issueId: string, nodeId: string, data: NodeEd
  */
 export async function updateLayout(
   issueId: string,
-  nodes: { id: string; x: number; y: number; width?: number; height?: number }[]
+  nodes: { id: string; x: number; y: number; width?: number; height?: number }[],
+  writer: Writer
 ): Promise<number> {
+  refuseAgent(writer);
   // Last write wins for a repeated id, so the batch holds one update each.
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const results = await prisma.$transaction(
@@ -130,6 +144,7 @@ export async function updateLayout(
  * unless it had no words: a card created and abandoned unwritten is noise.
  */
 export async function deleteNode(db: Db, issueId: string, nodeId: string, ctx: WriteContext) {
+  refuseAgent(ctx);
   // Read first: after the delete the edges are gone with it, and a record of
   // a removed idea should say what it was connected to.
   const edges = await db.canvasEdge.findMany({
@@ -167,7 +182,8 @@ export interface EdgeCreate {
 }
 
 /** No check-then-insert: the database refuses a duplicate or a foreign end. */
-export function createEdge(db: Db, data: EdgeCreate) {
+export function createEdge(db: Db, data: EdgeCreate, writer: Writer) {
+  refuseAgent(writer);
   return db.canvasEdge.create({
     data: {
       ...(data.id ? { id: data.id } : {}),
@@ -201,7 +217,8 @@ export class SelfLinkError extends Error {
  * canvas (the compound foreign keys, P2003), and must not duplicate another
  * connection (the unique index, P2002).
  */
-export async function updateEdge(db: Db, issueId: string, edgeId: string, data: EdgeUpdate) {
+export async function updateEdge(db: Db, issueId: string, edgeId: string, data: EdgeUpdate, writer: Writer) {
+  refuseAgent(writer);
   if (data.source_id !== undefined || data.target_id !== undefined) {
     const current = await db.canvasEdge.findFirst({
       where: { id: edgeId, issue_id: issueId },
@@ -219,6 +236,7 @@ export async function updateEdge(db: Db, issueId: string, edgeId: string, data: 
 }
 
 /** Scoped by issue_id: an edge of another canvas is a P2025 from here. */
-export function deleteEdge(db: Db, issueId: string, edgeId: string) {
+export function deleteEdge(db: Db, issueId: string, edgeId: string, writer: Writer) {
+  refuseAgent(writer);
   return db.canvasEdge.delete({ where: { id: edgeId, issue_id: issueId } });
 }

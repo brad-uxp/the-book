@@ -10,13 +10,14 @@ import {
   tokenActor,
   type TokenKind,
 } from "@/lib/api-tokens";
+import { mcpUnauthorized } from "@/lib/mcp-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { Writer } from "@/lib/issues-service";
 
 /** Who is making the current request. */
 export type Actor =
   | { kind: "user"; label: string }
-  | { kind: "token"; id: string; label: string; tokenKind: TokenKind };
+  | { kind: "token"; id: string; name: string; label: string; tokenKind: TokenKind };
 
 /**
  * Resolves the caller from either credential the API accepts: a NextAuth
@@ -46,7 +47,13 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
       .update({ where: { id: verified.id }, data: { last_used_at: new Date() } })
       .catch((err) => console.error("[api-token] last_used_at:", err));
 
-    return { kind: "token", id: verified.id, label: tokenActor(verified.name), tokenKind: verified.kind };
+    return {
+      kind: "token",
+      id: verified.id,
+      name: verified.name,
+      label: tokenActor({ name: verified.name, kind: verified.kind, prefix }),
+      tokenKind: verified.kind,
+    };
   }
 
   const session = await auth().catch(() => null);
@@ -191,6 +198,30 @@ export async function requireReleaseToken(): Promise<NextResponse | null> {
       { error: "Publishing app builds needs a release token" },
       { status: 403 }
     );
+  }
+  const verdict = checkRateLimit(actor.id);
+  if (!verdict.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } }
+    );
+  }
+  return null;
+}
+
+/**
+ * Authorization for the MCP (/api/mcp): an agent token, and nothing else.
+ * The MCP is the agents' way in and holds every caller to an agent's rules
+ * (lib/issues-service.ts); the owner and the scripts have the REST API.
+ * Without a valid Bearer the 401 carries the challenge MCP clients read
+ * (lib/mcp-auth.ts) — a browser session is not one.
+ */
+export async function requireAgentToken(): Promise<Response | null> {
+  const presented = (await headers()).has("authorization");
+  const actor = await resolveActor();
+  if (!actor || actor.kind !== "token") return mcpUnauthorized(presented);
+  if (actor.tokenKind !== "agent") {
+    return NextResponse.json({ error: "The MCP takes an agent token" }, { status: 403 });
   }
   const verdict = checkRateLimit(actor.id);
   if (!verdict.allowed) {

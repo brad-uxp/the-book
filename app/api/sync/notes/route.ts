@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSyncSession, readJsonLimited, invalid, resolveActor, type Actor } from "@/lib/api";
-import { getActorEmail } from "@/lib/audit";
+import { getWriter, requireSyncSession, readJsonLimited, invalid, resolveActor, type Actor } from "@/lib/api";
 import { withKeyLock } from "@/lib/keyed-lock";
 import { checkRateLimit, refundRateLimit } from "@/lib/rate-limit";
 import { SyncPushSchema } from "@/lib/validations";
@@ -64,8 +63,8 @@ export async function POST(req: NextRequest) {
 
   // One push per caller at a time: each holds a database connection while it
   // runs, and a burst from one token must not take the pool from the web.
-  const actorEmail = await getActorEmail();
-  const { results, more } = await withKeyLock(key, () => pushNotes(mutations, actorEmail));
+  const writer = await getWriter();
+  const { results, more } = await withKeyLock(key, () => pushNotes(mutations, writer));
   // Changes left unanswered (the push stopped early) will be sent again:
   // they are charged then, not now.
   refundRateLimit(key, mutations.length - results.length);

@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   try {
-    const node = await updateNode(prisma, id, nodeId, data);
+    const node = await updateNode(prisma, id, nodeId, data, await getWriter());
     return NextResponse.json(node);
   } catch (err) {
     return toApiResponse(err);

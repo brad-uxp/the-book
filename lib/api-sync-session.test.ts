@@ -109,9 +109,9 @@ describe("matriz de acceso por tipo de credencial", () => {
 describe("getWriter", () => {
   it("un token agent escribe como agente; el resto, como dueño", async () => {
     withToken("agent");
-    expect(await getWriter()).toEqual({ actor: "token:claude-agent", access: "agent" });
+    expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:agent:claude-agent \(tb_/), access: "agent" });
     withToken("automation");
-    expect(await getWriter()).toEqual({ actor: "token:script", access: "owner" });
+    expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:automation:script \(tb_/), access: "owner" });
     withToken("mobile");
     expect((await getWriter()).access).toBe("owner");
   });

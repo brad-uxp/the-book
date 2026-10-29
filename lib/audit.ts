@@ -5,9 +5,10 @@ import { resolveActor } from "@/lib/api";
 /**
  * Label for whoever is performing the current mutation.
  *
- * An email for a browser session, `token:<name>` for an API token. Keeping
- * them distinguishable is the point: with machine access enabled, "did I do
- * this or did the agent?" has to be answerable from the log alone.
+ * An email for a browser session, `token:<kind>:<name> (<prefix>)` for an
+ * API token (tokenActor). Keeping them distinguishable is the point: with
+ * machine access enabled, "did I do this or did the agent?" has to be
+ * answerable from the log alone.
  *
  * Returns null when there is no identifiable caller. Crons pass the literal
  * "system" instead of calling this.

@@ -155,8 +155,10 @@ describe("checkToken — reglas de validez", () => {
 
 describe("tokenActor", () => {
   it("marca al agente como distinto de un humano en la auditoría", () => {
-    expect(tokenActor("claude-work")).toBe("token:claude-work");
+    const actor = tokenActor({ name: "claude-work", kind: "agent", prefix: "tb_AbCd1234" });
+    // El tipo dice qué podía hacer; el prefijo distingue dos tokens con el mismo nombre.
+    expect(actor).toBe("token:agent:claude-work (tb_AbCd1234)");
     // Lo que importa: no se puede confundir con un email.
-    expect(tokenActor("claude-work")).not.toContain("@");
+    expect(actor).not.toContain("@");
   });
 });

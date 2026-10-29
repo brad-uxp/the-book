@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { invalid, readJson, requireSession, toApiResponse } from "@/lib/api";
+import { getWriter, invalid, readJson, requireSession, toApiResponse } from "@/lib/api";
 import { CanvasEdgeUpdateSchema } from "@/lib/validations";
 import { SelfLinkError, deleteEdge, updateEdge } from "@/lib/canvas-service";
 
@@ -21,7 +21,7 @@ export async function PATCH(
   if (!parsed.success) return invalid(parsed.error);
 
   try {
-    const edge = await updateEdge(prisma, id, edgeId, parsed.data);
+    const edge = await updateEdge(prisma, id, edgeId, parsed.data, await getWriter());
     return NextResponse.json(edge);
   } catch (err) {
     if (err instanceof SelfLinkError) {
@@ -43,7 +43,7 @@ export async function DELETE(
 
   try {
     // Scoped by issue_id: an edge of another canvas is a 404 from here.
-    await deleteEdge(prisma, id, edgeId);
+    await deleteEdge(prisma, id, edgeId, await getWriter());
     return NextResponse.json({ ok: true });
   } catch (err) {
     // P2025 becomes a 404, which is the right answer for "already gone".

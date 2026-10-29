@@ -34,9 +34,11 @@ owner**, including `DELETE`. Things it deliberately cannot do:
 - **Exceed 300 requests/minute.** Over that, `429` with a `Retry-After`
   header. Back off and retry; do not spin.
 
-Every mutation is recorded in the audit log as `token:<name>`, distinct from
-the human's email. That is what makes "did I do this or did the agent?"
-answerable — visible under `/admin-logs`.
+Every mutation is recorded in the audit log as `token:<kind>:<name> (<prefix>)`
+— the token's kind, its name and the prefix Settings shows, so two tokens with
+the same name stay apart — distinct from the human's email; an update also
+lists the fields it `changed`. That is what makes "did I do this or did the
+agent?" answerable — visible under `/admin-logs`.
 
 ### Agent tokens
 
@@ -48,17 +50,63 @@ not by the agent's prompt:
 
 | | |
 |---|---|
-| Reaches | `GET /api/issues`, `GET/PATCH /api/issues/{id}`, and **tasks only**: notes are left out of the list and are a `404` by id. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
+| Reaches | [the MCP](#the-mcp-apimcp), `GET /api/issues`, `GET/PATCH /api/issues/{id}`, and **tasks only**: notes are left out of the list and are a `404` by id. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
 | May write | `agent_note`, `progress`, and `status` to `in_progress`, `review` or `blocked`. |
 | `403` | `status: "done"` (only the owner archives) or `"pending"`; any other field (`title`, `description`, `due_date`, `category`, `client_id`, `note_format`, `sort_order`), even alongside allowed ones; `POST` (create) and `DELETE`; any write to an archived issue (a `done` task), including reopening it; any write to a note. |
 
-A refused `PATCH` writes nothing. Writes are audited as `token:<name>` and
-count against the same 300 requests/minute. An agent token lasts at most 30
+A refused `PATCH` writes nothing, and the archived check is made again inside
+the write itself: the owner archiving the issue in the same instant is never
+undone. An `agent_note` an agent token writes is stored as the editor would
+store it, without chips: anything the editor's schema does not know is
+dropped, and a chip is left as its text. Writes are audited as `token:agent:<name> (<prefix>)` and count against
+the same 300 requests/minute. An agent token lasts at most 30
 days (Settings proposes 14).
 
 The web does not refresh @person and #invoice chips inside `agent_note` (it
 does in descriptions): a chip an agent planted would otherwise come back with
 the live label — an invoice's amount — saved by the owner's session.
+
+### The MCP (`/api/mcp`)
+
+theBook's own MCP server, for an agent token and nothing else: Streamable HTTP,
+stateless (no sessions, so `POST` only — a `GET` is a `405`). Any Claude
+session, in any folder, works epics with it without HTML or a shell. The tools
+go through the same `lib/issues-service.ts` rules as the routes above, tasks
+only:
+
+| Tool | Does |
+|---|---|
+| `issues_list` | Rows `{id, title, status, progress, updated}`. Archived tasks are left out unless `status` asks for them. |
+| `issue_get` | `description` and `note` (the agent note) as **markdown**; `changes`: what the owner changed since the agent last wrote its note, as unified diffs (the description against the one it saw then, the note against the one it wrote); `base`; folder and session. `log_lines` adds the end of the log. |
+| `issue_update_note` | Replaces the note (markdown), given the `base` it read. If the note or the description changed since, `409` and nothing is written; read again, keep the owner's answers, retry. Answers the new `base`. |
+| `issue_update_state` | Any of `status` (`in_progress`, `review`, `blocked`; `done` and `pending` are a validation error), `progress`, `work_dir`, `session_url`, in one transaction. |
+| `issue_write_log` | **Adds** one entry (up to 4 000 characters), stamped with the time in Montevideo. Past 200 000 characters the oldest lines are dropped, whole. |
+
+- **Markdown, never HTML.** The server converts through the editor's own
+  schema (`lib/rich-text/markdown.ts`), and computes the diffs in markdown, so
+  TipTap writing the same text two ways is not a change. @person and #invoice
+  chips read as text (`@Ana`, `#Inv 12: Acme — $1,200.00`); what an agent
+  writes is parsed without chips, so `@`, `#` and any HTML in it stay plain
+  text.
+- **`base`** is a short hash of the note and of the description
+  (`agentBase`); it is checked before the write and again inside it, so an
+  edit landing in between is a `409` too.
+- **Refusals** are tool errors whose text starts with the status: `403: …`,
+  `404: …`, `409: …`.
+- **Without a valid Bearer**, `401` with `WWW-Authenticate: Bearer realm="book"`
+  (plus `error="invalid_token"` when one was presented); a browser session is
+  not enough. Any other kind of token: `403`. Bodies over 1 MiB: `413`; a
+  JSON-RPC batch: `400` (one message per request). An unexpected failure is
+  `500: Internal error`, never the exception's message.
+
+Adding it to Claude Code, for every folder (`--scope user`):
+
+```bash
+claude mcp add --transport http --scope user thebook https://book.bolstro.com/api/mcp --header "Authorization: Bearer <agent token>"
+```
+
+The token then sits in plain text in `~/.claude.json`; it is provisional — F3
+of the agents plan replaces it with OAuth.
 
 ### The mobile app's sign-in
 
@@ -169,7 +217,7 @@ characters. `PATCH` accepts it; `POST` and the phone's sync do not carry it.
 When an **agent** token writes it, the server also keeps that note and the
 description as they stood (`IssueAgentState`), so what the owner changes
 afterwards can be told apart. The agent's log, folder and session link live
-there too; they have no REST route — the MCP server (planned) writes them.
+there too; they have no REST route — [the MCP](#the-mcp-apimcp) writes them.
 
 `note_format` is `text` (default: the note is its `description`) or `canvas`
 (the note is a canvas of connected ideas, and `description` is unused). Only a

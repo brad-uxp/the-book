@@ -6,7 +6,7 @@ import { CANVAS_COLOR_KEYS } from "./canvas-palette";
 import { ISSUE_STATUSES } from "./issues";
 import { NOTE_FORMATS } from "./notes";
 import { SYNC_PUSH_MAX } from "./sync-protocol";
-import { AGENT_LOG_MAX, AGENT_REF_MAX, ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
+import { AGENT_LOG_ENTRY_MAX, AGENT_LOG_MAX, AGENT_REF_MAX, ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import {
   LAYOUT_BATCH_MAX,
   NODE_CONTENT_MAX,
@@ -258,6 +258,14 @@ export const IssueAgentStateSchema = z
   .strict();
 
 export type IssueAgentStateInput = z.infer<typeof IssueAgentStateSchema>;
+
+/**
+ * What an agent sends through the MCP (/api/mcp, lib/mcp-issues.ts): its
+ * note in markdown — the HTML it becomes is checked again against
+ * IssueUpdateSchema — and one entry for its log.
+ */
+export const AgentNoteMarkdownSchema = Text().max(RICH_TEXT_MAX, "Too long");
+export const AgentLogEntrySchema = Text().trim().min(1, "Empty").max(AGENT_LOG_ENTRY_MAX, "Too long");
 
 /**
  * Ids to remove from the archive. Bounded because this is the one route that
