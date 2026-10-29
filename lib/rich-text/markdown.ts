@@ -4,6 +4,7 @@ import { MarkdownManager } from "@tiptap/markdown";
 import { DOMParser as SchemaParser } from "@tiptap/pm/model";
 import { structuredPatch } from "diff";
 import { Window } from "happy-dom";
+import { runInNewContext } from "node:vm";
 import { MENTION_NODE, richTextExtensions } from "./extensions";
 
 /**
@@ -129,6 +130,34 @@ export function htmlToMarkdown(html: string): string {
 export function markdownToHtml(md: string): string {
   if (md.trim() === "") return "";
   return agentHtml(generateHTML(markdown.parse(md), WRITE_SCHEMA));
+}
+
+/**
+ * markdownToHtml for what an agent sends, with a hard deadline. The markdown
+ * lexer (marked, under @tiptap/markdown) is quadratic on runs of emphasis
+ * delimiters — 12 KB of `_a*` takes over a second — and a list nested a few
+ * hundred deep overflows the stack. Either would freeze the one replica's
+ * event loop. Run inside a vm with a timeout, the conversion is interrupted
+ * wherever it is (Node terminates the isolate's execution, host functions
+ * included), and the module is left as it was. Throws MarkdownTooComplexError.
+ */
+export function agentMarkdownToHtml(md: string): string {
+  try {
+    return runInNewContext("convert()", { convert: () => markdownToHtml(md) }, { timeout: CONVERT_TIMEOUT_MS });
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    if (code === "ERR_SCRIPT_EXECUTION_TIMEOUT" || err instanceof RangeError) throw new MarkdownTooComplexError();
+    throw err;
+  }
+}
+
+/** A real note converts in a few milliseconds; a cold start in a hundred. */
+const CONVERT_TIMEOUT_MS = 500;
+
+export class MarkdownTooComplexError extends Error {
+  constructor() {
+    super("The note's formatting is too complex to convert");
+  }
 }
 
 /**

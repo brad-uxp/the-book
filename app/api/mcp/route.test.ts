@@ -314,6 +314,17 @@ describe("herramientas", () => {
     });
   });
 
+  it("issue_update_note: un markdown que tarda de más en convertirse es un 400, sin colgar el proceso", async () => {
+    const r = await call("issue_update_note", { id: "t-1", note: "_a*".repeat(6_000), base: agentBase(task) });
+    expect(r).toMatchObject({ isError: true, text: expect.stringMatching(/^400: .*too complex/) });
+    expect(prisma.issue.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("issue_update_note: pasado el presupuesto por minuto, 429", async () => {
+    for (let i = 0; i < 10; i++) await call("issue_update_note", { id: "t-1", note: "x", base: "stale" });
+    expect(await call("issue_update_note", { id: "t-1", note: "x", base: "stale" })).toMatchObject({ isError: true, text: expect.stringMatching(/^429:/) });
+  });
+
   it("issue_update_note: con una versión base vieja, 409 y nada escrito", async () => {
     const r = await call("issue_update_note", { id: "t-1", note: "mine", base: agentBase({ ...task, agent_note: "" }) });
     expect(r).toMatchObject({ isError: true, text: "409: The note or the description changed since you read it" });

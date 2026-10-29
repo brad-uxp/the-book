@@ -11,7 +11,8 @@ import {
   updateIssue,
   type Writer,
 } from "@/lib/issues-service";
-import { htmlToMarkdown, markdownDiff, markdownToHtml } from "@/lib/rich-text/markdown";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { MarkdownTooComplexError, agentMarkdownToHtml, htmlToMarkdown, markdownDiff } from "@/lib/rich-text/markdown";
 import { AGENT_REF_MAX } from "@/lib/text-limits";
 import {
   AgentLogEntrySchema,
@@ -58,6 +59,13 @@ const minute = (d: Date) => `${d.toISOString().slice(0, 16)}Z`;
 const Id = z.string().min(1).max(100).regex(/^[\w-]+$/, "Not an id").describe("Task id");
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+/**
+ * Note writes a token gets per minute. Converting a note costs CPU in the one
+ * process (up to agentMarkdownToHtml's deadline): this bounds what a looping
+ * or steered agent can take, far above a real pass, which writes once.
+ */
+const NOTE_WRITES_PER_MINUTE = 10;
 
 export function issuesMcpServer(writer: Writer): McpServer {
   const server = new McpServer({ name: "thebook", title: "theBook", version: "1.0.0" });
@@ -172,7 +180,16 @@ export function issuesMcpServer(writer: Writer): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ id, note, base }) => {
-      const html = markdownToHtml(note);
+      if (!checkRateLimit(`mcp-note:${writer.actor}`, Date.now(), NOTE_WRITES_PER_MINUTE).allowed) {
+        return refuse({ status: 429, error: "Too many note writes; wait a minute" });
+      }
+      let html: string;
+      try {
+        html = agentMarkdownToHtml(note);
+      } catch (err) {
+        if (err instanceof MarkdownTooComplexError) return refuse({ status: 400, error: err.message });
+        throw err;
+      }
       // The HTML is what gets stored: held to the same rule as the REST API's.
       if (!IssueUpdateSchema.pick({ agent_note: true }).safeParse({ agent_note: html }).success) {
         return refuse({ status: 400, error: "Note too long" });

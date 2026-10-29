@@ -270,6 +270,23 @@ Residuales:
   pudo escribir (inyección persistente). El protocolo de la skill `epica` tiene que tratarlas
   como datos, no como instrucciones.
 
+**Revisión independiente de `a1654df`** (2026-10-29, pedida por la sesión coordinadora):
+
+- **ALTO, corregido: DoS de CPU en `issue_update_note`.** El lexer de marked (bajo
+  `@tiptap/markdown`) es cuadrático con delimitadores de énfasis: 3 KB de `_a*` tardan 123 ms,
+  6 KB 372 ms y 12 KB 1,6 s. Una lista anidada unos 440 niveles desborda la pila. Con el tope de
+  200 000 caracteres, una llamada congelaba el event loop de la única réplica. Arreglo:
+  - `agentMarkdownToHtml` corre la conversión en un `vm` con `timeout` de 500 ms. Node termina
+    la ejecución del isolate, funciones del host incluidas, y el módulo queda sano (probado). Un
+    RangeError también se convierte en `MarkdownTooComplexError` → 400.
+  - El markdown de la nota tiene tope `AGENT_NOTE_MARKDOWN_MAX` = 20 000.
+  - Cada token puede escribir 10 notas por minuto: el peor caso es 5 s de CPU por minuto, no un
+    proceso colgado.
+  - Medido: `_a*` al tope, 501 ms y error; la lista de 440 niveles, 413 ms y error; una nota real
+    de ~1 KB, 40 ms en frío.
+  - Se descartó un `worker_thread`: con el bundling de Next 16 el worker no puede importar el
+    esquema TS de TipTap, y `vm` corta igual.
+
 **Para F3**:
 
 - El desafío vive en un solo lugar, `mcpUnauthorized()` en `lib/mcp-auth.ts`: agregarle

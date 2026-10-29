@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { generateHTML } from "@tiptap/html/server";
 import { richTextExtensions } from "./extensions";
-import { TOO_CHANGED, agentHtml, htmlToMarkdown, markdownDiff, markdownToHtml } from "./markdown";
+import { MarkdownTooComplexError, TOO_CHANGED, agentHtml, agentMarkdownToHtml, htmlToMarkdown, markdownDiff, markdownToHtml } from "./markdown";
+import { AGENT_NOTE_MARKDOWN_MAX } from "../text-limits";
 
 /** HTML as the editor saves it: the same schema, serialized the same way. */
 function editorHtml(content: unknown[]): string {
@@ -129,6 +130,40 @@ describe("markdownToHtml: lo que escribe un agente", () => {
   it("vacío es vacío", () => {
     expect(markdownToHtml("")).toBe("");
     expect(markdownToHtml("  \n ")).toBe("");
+  });
+});
+
+// Revisión de F2: el lexer de marked es cuadrático con delimitadores de énfasis
+// (12 KB de `_a*` pasan del segundo) y una lista muy anidada desborda la pila.
+// Con el tope de tiempo, lo peor que manda un agente termina en medio segundo.
+describe("agentMarkdownToHtml: lo que manda un agente, con tope de tiempo", () => {
+  const bounded = (md: string) => {
+    const started = performance.now();
+    let error: unknown = null;
+    try {
+      agentMarkdownToHtml(md);
+    } catch (err) {
+      error = err;
+    }
+    return { error, ms: performance.now() - started };
+  };
+
+  it("delimitadores de énfasis al tope permitido: error, acotado", () => {
+    const md = "_a*".repeat(Math.floor(AGENT_NOTE_MARKDOWN_MAX / 3));
+    const { error, ms } = bounded(md);
+    expect(error).toBeInstanceOf(MarkdownTooComplexError);
+    expect(ms).toBeLessThan(1_500);
+  });
+
+  it("una lista anidada cientos de niveles: error, acotado", () => {
+    const md = Array.from({ length: 440 }, (_, i) => `${"  ".repeat(i)}- x`).join("\n");
+    const { error, ms } = bounded(md);
+    expect(error).toBeInstanceOf(MarkdownTooComplexError);
+    expect(ms).toBeLessThan(1_500);
+  });
+
+  it("una nota de verdad pasa, igual que sin el tope, y después del corte todo sigue andando", () => {
+    expect(agentMarkdownToHtml("✅ Ready\n\n- **one**\n- _two_")).toBe(markdownToHtml("✅ Ready\n\n- **one**\n- _two_"));
   });
 });
 
