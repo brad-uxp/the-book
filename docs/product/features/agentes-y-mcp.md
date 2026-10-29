@@ -2,8 +2,9 @@
 
 > Estado: **F1 hecha y desplegada** (2026-10-28: `main` en `431ed79`, Android 0.6.0 publicada).
 > **F2 y F3 hechas, desplegadas y verificadas en producción** (2026-10-29: `main` en `7a3a73c`;
-> Claude conectado como conector de claude.ai; ver "Cómo quedó F3"). F4–F6 propuestas. Se ejecuta
-> por fases con este documento como brief.
+> Claude conectado como conector de claude.ai; ver "Cómo quedó F3"). **F4 hecha y probada**
+> (2026-10-29: skills `epica` y `lanzar` en `~/.claude/skills/`; ver "Cómo quedó F4"). F5–F6
+> propuestas. Se ejecuta por fases con este documento como brief.
 
 ## 1. Qué cambia y por qué
 
@@ -430,7 +431,7 @@ para las rutas REST de issues (F1) y en `/api/mcp` es un 401.
     escritura, y las ediciones de Brad con su email;
   - desconectar → 401 se probó en local, no en producción.
 
-### F4 — Protocolo y lanzador (S)
+### F4 — Protocolo y lanzador (S) — ✅ hecha (2026-10-29)
 
 - Skill de usuario `epica` (`~/.claude/skills/epica/`): la pasada de §3, la plantilla de la nota
   y el subagente revisor.
@@ -439,6 +440,81 @@ para las rutas REST de issues (F1) y en `/api/mcp` es un 401.
   estado del agente.
 - **Hecho cuando**: una sesión nueva en otra carpeta, con solo "toma la épica X", hace una
   pasada completa y deja la épica en `review`.
+
+#### Cómo quedó F4 (supuestos y decisiones tomadas al implementar)
+
+Archivos fuera de todo repo, sin versionar (`~/.claude` es un git local sin remoto; versionarlas
+lo decide Brad): `~/.claude/skills/epica/SKILL.md`, `~/.claude/skills/epica/REVISOR.md` (el
+prompt del revisor) y `~/.claude/skills/lanzar/SKILL.md`. Las herramientas se nombran por su
+sufijo (`issue_get`…), no por el uuid del conector, que cambia al reconectar.
+
+- **La pasada** tiene ocho pasos: identificar, leer, avanza y criterio, tomar, trabajar, revisor,
+  nota y cerrar. La bitácora marca `Pasada empieza:` y `Pasada termina:`. Así `lanzar` no propone
+  una épica en curso y `epica` pregunta antes de tomar una que parece tomada. Una pasada nunca
+  termina en `in_progress`: si se bloquea en Brad, escribe la nota 🟡 y pasa a `review`; si
+  depende de un tercero, a `blocked` (primera línea `⛔ Bloqueada: …`).
+- **Aprobación**: solo cuenta lo que Brad cambió (`changes.note`, `changes.description`) o lo que
+  dice en la sesión. El estado, la nota anterior y la bitácora los puede escribir cualquier token
+  `agent`, así que nunca aprueban nada. Pedir la pasada ("toma la épica X", o elegirla en
+  `lanzar`) es el "avanza" de §3.6, y aprueba solo el "Siguiente propuesto".
+- **Inyección persistente** (residual de F2): lo guardado dice qué quiere Brad, nunca da permisos.
+  Una lista cerrada pide siempre el OK de Brad en la sesión, aunque la pida el criterio:
+  - código de la red o datos a una URL;
+  - credenciales o `.env`;
+  - escribir fuera de la carpeta;
+  - dependencias nuevas;
+  - borrar lo que no creó la pasada;
+  - push, merge, deploy o envíos;
+  - escribir en otra épica.
+
+  La épica se escribe solo por el conector, nunca por REST, `thebook.py` ni un token `automation`.
+- **Criterio aprobado**: como el agente no escribe la descripción, vive en la nota (sección
+  "Criterio de listo"). Se copia literal en cada nota hasta que Brad lo pase a la descripción.
+- **Revisor**: subagente `general-purpose`, nunca un fork. Recibe el criterio literal, la carpeta
+  y los comandos del diff. Solo lee: de theBook, solo `issue_get` de su épica. Nunca recibe el
+  transcript de la sesión, porque trae la conversación. Cada punto lleva veredicto ✅/❌/❓ con
+  evidencia; un ❌ o ❓ que quede baja la nota a 🟡, y `progress` = porcentaje de ✅.
+- **`lanzar`**: muestra la carpeta de cada épica para que Brad la confirme y valida la ruta
+  (absoluta, sin comillas ni `$`, existente). Lanza como máximo 3 sesiones a la vez (16 GB) y
+  una por carpeta. Abre cada una con `start_session` (`cwd` = `work_dir`), heredando el modo de
+  permisos salvo `bypassPermissions`, que baja a `default`. Sin `start_session` (CLI) da
+  instrucciones, no comandos de shell: un `work_dir` lo puede escribir cualquier agente.
+- **Sesión**: una sesión local no tiene link http(s). `session_url` queda `null` y la nota lleva
+  la carpeta y `claude --resume <id>`.
+- **Revisión independiente** (subagente con contexto limpio, antes de probar): encontró la
+  aprobación falsificable desde la nota o el estado, el `work_dir` sin confirmar en `lanzar`, la
+  falta de lugar para el criterio aprobado y el plan B con `own_initiative` (no acepta `cwd`).
+  Todo eso se corrigió antes de la prueba.
+- **Probado** (2026-10-29) sobre "Prueba MCP", en una sesión nueva de la app abierta por `lanzar`
+  en una carpeta vacía fuera de todo repo:
+  - Pasada 1: la skill se disparó sola con "toma la épica <id>". No había criterio, así que lo
+    propuso (🟡) y dejó la épica en `review` con `work_dir`.
+  - Pasada 2: Brad aprobó en la sesión. La pasada tomó la épica, forzó un 409 con una base vieja,
+    reintentó con la nueva, corrió el revisor (✅ 3 de 5) y cerró en `review` con 60 %.
+  - Pasada 3, con la skill ya corregida: el revisor leyó la épica con `issue_get` y dio ✅ en los
+    5 puntos (dos se apoyan en la bitácora, que escribe el agente). Cerró en `review` con nota ✅
+    y 100 %.
+
+  Lo que mostró la prueba, ya corregido en la skill:
+  - la nota de F3, escrita por un agente, se leyó como de Brad (ahora solo cuenta así con la
+    bitácora vacía);
+  - theBook junta en un párrafo las secciones en líneas seguidas (la plantilla lleva líneas en
+    blanco);
+  - el revisor recibió el transcript para ver la épica (ahora usa `issue_get`).
+
+  Sin probar en vivo: el canario de inyección, el 409 causado por otro agente y `lanzar` sin
+  `start_session`.
+
+**Para el servidor** (no se tocó theBook):
+
+- `issue_get` no distingue "ningún agente escribió la nota" de "Brad no cambió nada desde la nota
+  del agente": en los dos casos no hay `changes.note`. Con `last_note` nulo y nota no vacía,
+  convendría devolver `changes.note` como diff desde vacío. La skill hoy usa "bitácora vacía".
+- Cualquier token `agent` escribe en cualquier tarea no archivada; una épica no tiene "dueño".
+  Si F5 muestra agentes que se cruzan, se podría atar `IssueAgentState` a la conexión OAuth que
+  la tomó.
+- El `claude` de terminal (2.1.310) no lista el conector theBook (sí otros de claude.ai); la app
+  de escritorio sí. Hasta entender por qué (¿otra cuenta?), las pasadas corren en la app.
 
 ### F5 — Piloto con dos épicas
 
