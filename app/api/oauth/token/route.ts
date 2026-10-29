@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readTextLimited } from "@/lib/api";
 import { exchangeCode, refreshTokens, type TokenResult } from "@/lib/oauth-service";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { OAuthCodeGrantSchema, OAuthRefreshGrantSchema } from "@/lib/validations";
 
 export const runtime = "nodejs";
 
 /** A token request is a few form fields. */
 const TOKEN_BODY_MAX_BYTES = 8 * 1024;
-
-/**
- * Generous for one owner — a connection refreshes once an hour — and still a
- * ceiling on what anyone can make this public endpoint do to the database.
- */
-const TOKEN_REQUESTS_PER_MINUTE = 120;
 
 /** Tokens and their errors are never cached (RFC 6749 §5.1). */
 const NO_STORE = { "Cache-Control": "no-store", Pragma: "no-cache" };
@@ -27,22 +20,23 @@ function oauthError(error: string, description: string, status = 400) {
  * public client (no secret; PKCE protects the code). Public — proxy.ts lets
  * it through — and the rules are lib/oauth-service.ts's. Form-encoded, as
  * RFC 6749 and Claude both have it.
+ *
+ * No endpoint-wide limit: anyone could spend it and lock the owner's refresh
+ * out. A real code or refresh token is never refused for traffic; a made-up
+ * one costs a body capped at 8 KB and one indexed read. Each connection's
+ * refreshes are limited instead (lib/oauth-service.ts).
  */
-export async function POST(req: NextRequest) {
-  const verdict = checkRateLimit("oauth-token", Date.now(), TOKEN_REQUESTS_PER_MINUTE);
-  if (!verdict.allowed) {
-    return NextResponse.json(
-      { error: "slow_down", error_description: "Too many token requests" },
-      { status: 429, headers: { ...NO_STORE, "Retry-After": String(verdict.retryAfterSeconds) } }
-    );
-  }
-
-  if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) {
+export async function POST(req: NextRequest) {  if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) {
     return oauthError("invalid_request", "Send the token request as application/x-www-form-urlencoded");
   }
   const body = await readTextLimited(req, TOKEN_BODY_MAX_BYTES);
   if (!body.ok) return oauthError("invalid_request", body.reason === "too_large" ? "Request too large" : "No body");
-  const form = Object.fromEntries(new URLSearchParams(body.value));
+  const params = new URLSearchParams(body.value);
+  // A parameter sent twice is an invalid request (RFC 6749 §3.2), not the last one.
+  if (new Set(params.keys()).size !== [...params.keys()].length) {
+    return oauthError("invalid_request", "A parameter was sent more than once");
+  }
+  const form = Object.fromEntries(params);
 
   let result: TokenResult;
   if (form.grant_type === "authorization_code") {

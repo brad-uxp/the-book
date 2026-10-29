@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { checkAuthorizeRequest } from "@/lib/oauth-service";
 import { AUTHORIZE_PATH } from "@/lib/oauth";
 import { decide } from "./actions";
+import { AllowButton } from "./allow-button";
 import { AUTHORIZE_PARAMS } from "./params";
 
 export const metadata = { title: "Connect to book" };
@@ -106,7 +107,8 @@ function Consent({
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Then you go back to <span className="font-medium text-foreground">{destination.host}</span>.
+          Then you go back to <span className="font-medium text-foreground">{destination.host}</span>. Only allow it
+          if you just added book as a connector in Claude yourself.
         </p>
       )}
 
@@ -118,9 +120,7 @@ function Consent({
           <Button type="submit" name="decision" value="deny" variant="outline" className="flex-1">
             Cancel
           </Button>
-          <Button type="submit" name="decision" value="allow" className="flex-1">
-            Allow
-          </Button>
+          <AllowButton />
         </div>
         <p className="text-center text-xs text-muted-foreground">You can disconnect it any time in Settings.</p>
       </form>

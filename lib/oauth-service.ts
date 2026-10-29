@@ -2,6 +2,7 @@ import type { OAuthGrant, Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { generateToken } from "@/lib/api-tokens";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { fetchClientMetadata, type ClientMetadata } from "@/lib/oauth-clients";
 import {
   ACCESS_TOKEN_TTL_MS,
@@ -33,8 +34,17 @@ import {
 
 type Db = Prisma.TransactionClient;
 
-/** A refresh token used again this soon after its rotation is the client retrying, not a thief. */
+/**
+ * A refresh token used again this soon after its rotation is the client
+ * retrying (a lost answer, a proactive and a reactive refresh at once), not a
+ * thief. The residual: a thief who rotates first, followed by the client
+ * within the window, keeps the connection; the client signs in again, and
+ * Settings shows two.
+ */
 const REFRESH_REUSE_GRACE_MS = 30_000;
+
+/** A connection refreshes once an hour; more than this a minute is a client gone wrong. */
+const REFRESHES_PER_MINUTE = 10;
 const DAY_MS = 24 * 60 * 60_000;
 
 export interface AuthorizeRequest {
@@ -144,7 +154,7 @@ export interface TokenResponse {
 
 export type TokenResult =
   | { ok: true; tokens: TokenResponse }
-  | { ok: false; error: "invalid_grant" | "invalid_target"; description: string };
+  | { ok: false; error: "invalid_grant" | "invalid_target" | "invalid_request"; description: string };
 
 const invalidGrant = (description: string) => ({ ok: false, error: "invalid_grant", description }) as const;
 
@@ -207,6 +217,11 @@ export async function exchangeCode(
   now = new Date()
 ): Promise<TokenResult> {
   const hash = hashSecret(input.code);
+  // An unknown code costs one indexed read and no transaction: the endpoint is
+  // public, and has no limit that could also turn a real exchange away.
+  if (!(await prisma.oAuthCode.findUnique({ where: { code_hash: hash }, select: { code_hash: true } }))) {
+    return invalidGrant("Unknown code");
+  }
   const result = await prisma.$transaction(async (tx) => {
     const code = await tx.oAuthCode.findUnique({ where: { code_hash: hash } });
     if (!code) return { result: invalidGrant("Unknown code") };
@@ -261,6 +276,11 @@ export async function refreshTokens(
   now = new Date()
 ): Promise<TokenResult> {
   const hash = hashSecret(input.refresh_token);
+  const known = await prisma.oAuthRefreshToken.findUnique({ where: { token_hash: hash }, select: { grant_id: true } });
+  if (!known) return invalidGrant("Unknown or revoked refresh token");
+  if (!checkRateLimit(`oauth-refresh:${known.grant_id}`, now.getTime(), REFRESHES_PER_MINUTE).allowed) {
+    return { ok: false, error: "invalid_request", description: "Too many refreshes; try again in a minute" } as const;
+  }
   const result = await prisma.$transaction(async (tx) => {
     const row = await tx.oAuthRefreshToken.findUnique({ where: { token_hash: hash }, include: { grant: true } });
     if (!row || row.grant.revoked_at) return { result: invalidGrant("Unknown or revoked refresh token") };
@@ -283,7 +303,11 @@ export async function refreshTokens(
     // What the connection no longer needs: access tokens past their hour, refresh tokens past their month.
     await tx.apiToken.deleteMany({ where: { oauth_grant_id: row.grant_id, expires_at: { lt: now } } });
     await tx.oAuthRefreshToken.deleteMany({ where: { grant_id: row.grant_id, expires_at: { lt: now } } });
-    const grant = await tx.oAuthGrant.update({ where: { id: row.grant_id }, data: { last_used_at: now } });
+    // Only while it is not revoked: a Disconnect committing in between waits
+    // on this row, then this matches nothing, and no token outlives it.
+    const touched = await tx.oAuthGrant.updateMany({ where: { id: row.grant_id, revoked_at: null }, data: { last_used_at: now } });
+    if (touched.count === 0) return { result: invalidGrant("Connection revoked") };
+    const grant = { ...row.grant, last_used_at: now };
     return { result: { ok: true, tokens: await issueTokens(tx, grant, now) } as const };
   });
 

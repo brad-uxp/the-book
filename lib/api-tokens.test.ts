@@ -97,6 +97,7 @@ describe("checkToken — reglas de validez", () => {
       name: "claude-work",
       kind: "automation",
       audience: null,
+      oauthGrantId: null,
     });
   });
 

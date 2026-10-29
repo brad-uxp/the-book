@@ -67,7 +67,11 @@ const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true,
  */
 const NOTE_WRITES_PER_MINUTE = 10;
 
-export function issuesMcpServer(writer: Writer): McpServer {
+/**
+ * `budgetKey`: what the per-minute limits are counted by — the caller's OAuth
+ * connection (lib/api.ts mcpBudgetKey), so a refreshed token shares them.
+ */
+export function issuesMcpServer(writer: Writer, budgetKey: string): McpServer {
   const server = new McpServer({ name: "thebook", title: "theBook", version: "1.0.0" });
 
   /**
@@ -180,7 +184,7 @@ export function issuesMcpServer(writer: Writer): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ id, note, base }) => {
-      if (!checkRateLimit(`mcp-note:${writer.actor}`, Date.now(), NOTE_WRITES_PER_MINUTE).allowed) {
+      if (!checkRateLimit(`mcp-note:${budgetKey}`, Date.now(), NOTE_WRITES_PER_MINUTE).allowed) {
         return refuse({ status: 429, error: "Too many note writes; wait a minute" });
       }
       let html: string;

@@ -35,6 +35,11 @@ describe("POST /api/oauth/token", () => {
     expect(await res.json()).toEqual({ error: "invalid_grant", error_description: "Refresh token reused" });
   });
 
+  it("un parámetro repetido: invalid_request (RFC 6749 §3.2), no el último", async () => {
+    const res = await post("grant_type=refresh_token&refresh_token=tbr_a&refresh_token=tbr_b&client_id=x");
+    expect(await res.json()).toMatchObject({ error: "invalid_request" });
+  });
+
   it("JSON en vez de formulario, un grant desconocido o campos faltantes: 400 sin tocar el servicio", async () => {
     expect((await post('{"grant_type":"authorization_code"}', "application/json")).status).toBe(400);
     expect(await (await post("grant_type=client_credentials")).json()).toMatchObject({ error: "unsupported_grant_type" });

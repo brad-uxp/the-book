@@ -385,6 +385,31 @@ para las rutas REST de issues (F1) y en `/api/mcp` es un 401.
   otros), `no-store`, 120/min para todo el endpoint.
 - **Settings → Connected apps** lista las conexiones y las desconecta. Los access tokens de OAuth no
   aparecen en "API tokens".
+- **Revisión de `security-auditor`** (2026-10-29): sin críticos ni altos. Corregido antes del
+  deploy:
+  - **Token endpoint sin límite global**: un bucket para todo el endpoint lo podía gastar
+    cualquiera y bloquear tu refresh. Ahora un código o refresh real nunca recibe un 429. Uno
+    inventado cuesta 8 KB de body y una lectura indexada fuera de transacción. Cada conexión tiene
+    10 refreshes por minuto.
+  - **Consentimiento contra double-clickjacking**: "Allow" se arma 700 ms después de que la
+    página tiene el foco y se desarma al perderlo (probado). La advertencia de "solo si lo
+    iniciaste vos" también va para claude.ai. La decisión se audita con tu email
+    (`oauth_consent`).
+  - **Disconnect contra refresh simultáneos**: el refresh marca la conexión con un `updateMany`
+    condicionado a que no esté revocada, y si no puede, no emite nada.
+  - **Límites del MCP por conexión** (`mcpBudgetKey`), no por access token: el que refresca no
+    estrena presupuesto.
+  - **Parámetro repetido en el token request**: `invalid_request` (RFC 6749 §3.2).
+- **Residuales declarados**:
+  - si un ladrón rota un refresh y el cliente legítimo reintenta dentro de los 30 s de gracia, la
+    cadena del ladrón sigue viva; el cliente vuelve a conectarse y Settings muestra dos;
+  - sin endpoint de revocación (RFC 7009): desconectar desde Claude no revoca nada en theBook, y
+    la conexión vive hasta que se revoque en Settings o venza el refresh (30 días);
+  - si el callback de claude.ai no ata el `state` a la sesión que inició el flujo, un atacante
+    que logre tu doble clic sobre su URL de autorización se llevaría el acceso (lo mitigan el
+    botón que se arma con foco y la advertencia);
+  - COOP `same-origin` en el consentimiento: verificar en el deploy que el popup de claude.ai
+    termina bien; si no, relajarlo solo en `/oauth/authorize`.
 - **Verificado en local**, por HTTP contra `next dev` y una Postgres efímera, con el CIMD real de
   Claude Code y un callback loopback:
   - descubrimiento y la pantalla de consentimiento;

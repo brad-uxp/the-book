@@ -25,7 +25,7 @@ vi.mock("@/auth", () => ({
   isAllowedSession: (s: unknown) => !!s,
 }));
 
-import { getWriter, requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
+import { getWriter, mcpBudgetKey, requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
 import { resetRateLimits } from "./rate-limit";
 
 const TOKEN_NAMES = { mobile: "mobile · Pixel", automation: "script", release: "book-release", agent: "claude-agent" } as const;
@@ -105,6 +105,15 @@ describe("matriz de acceso por tipo de credencial", () => {
   });
 });
 
+
+describe("mcpBudgetKey", () => {
+  it("un token de OAuth cuenta por su conexión, que sobrevive al token de una hora", () => {
+    const token = { kind: "token", id: "tok-1", name: "n", label: "l", tokenKind: "agent" } as const;
+    expect(mcpBudgetKey({ ...token, oauthGrantId: "g-1" })).toBe("oauth-grant:g-1");
+    expect(mcpBudgetKey({ ...token, id: "tok-2", oauthGrantId: "g-1" })).toBe("oauth-grant:g-1");
+    expect(mcpBudgetKey(token)).toBe("tok-1");
+  });
+});
 
 describe("un token de OAuth es solo para el MCP", () => {
   it("las rutas REST lo rechazan, aunque sea un token agent en una ruta de issues", async () => {

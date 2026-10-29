@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { getWriter, readJsonLimited, requireAgentToken } from "@/lib/api";
+import { getWriter, mcpBudgetKey, readJsonLimited, requireAgentToken, resolveActor } from "@/lib/api";
 import { issuesMcpServer } from "@/lib/mcp-issues";
 
 export const runtime = "nodejs";
@@ -46,7 +46,9 @@ export async function POST(req: NextRequest) {
   // requireAgentToken let in an agent token only; pinned anyway, so this
   // endpoint can never write as the owner.
   const writer = { ...(await getWriter()), access: "agent" as const };
-  const handler = createMcpHandler(() => issuesMcpServer(writer), {
+  const actor = await resolveActor();
+  const budgetKey = actor?.kind === "token" ? mcpBudgetKey(actor) : "unknown";
+  const handler = createMcpHandler(() => issuesMcpServer(writer, budgetKey), {
     // No subscriptions/listen: nothing here changes on its own, and with a
     // handler per request the SDK's own cap on open streams would never bind.
     maxSubscriptions: 0,

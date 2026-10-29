@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { auth, isAllowedSession } from "@/auth";
+import { auditLog } from "@/lib/audit";
 import { authorizationResponseUrl, checkAuthorizeRequest, createCode } from "@/lib/oauth-service";
 import { AUTHORIZE_PARAMS } from "./params";
 
@@ -12,7 +13,9 @@ import { AUTHORIZE_PARAMS } from "./params";
  * Origin, but not who is signed in.
  */
 export async function decide(formData: FormData) {
-  if (!isAllowedSession(await auth())) redirect("/login");
+  const session = await auth();
+  if (!isAllowedSession(session)) redirect("/login");
+  const owner = (session as { user?: { email?: string } } | null)?.user?.email ?? null;
 
   const params: Record<string, string | undefined> = {};
   for (const key of AUTHORIZE_PARAMS) {
@@ -26,7 +29,18 @@ export async function decide(formData: FormData) {
   }
 
   const { request } = check;
-  if (formData.get("decision") !== "allow") {
+  const allowed = formData.get("decision") === "allow";
+  // The owner's decision, by the owner: the exchange that follows is audited
+  // as the client's (lib/oauth-service.ts).
+  auditLog({
+    entity_type: "oauth_consent",
+    entity_id: request.code_challenge.slice(0, 16),
+    entity_name: request.client_name,
+    action: "create",
+    actor_email: owner,
+    after: { decision: allowed ? "allowed" : "declined", client_id: request.client_id, redirect_uri: request.redirect_uri, scope: request.scope },
+  });
+  if (!allowed) {
     redirect(
       authorizationResponseUrl(request.redirect_uri, {
         error: "access_denied",

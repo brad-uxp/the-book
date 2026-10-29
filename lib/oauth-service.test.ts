@@ -88,6 +88,7 @@ vi.mock("@/lib/db", () => ({ prisma: db.prisma }));
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn() }));
 
 import { auditLog } from "@/lib/audit";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { mcpResource } from "@/lib/mcp-auth";
 import { checkAuthorizeRequest, createCode, exchangeCode, refreshTokens, revokeConnection, type AuthorizeRequest } from "./oauth-service";
 
@@ -119,6 +120,7 @@ async function connect() {
 
 beforeEach(() => {
   db.reset();
+  resetRateLimits();
   vi.mocked(auditLog).mockClear();
 });
 
@@ -234,6 +236,41 @@ describe("el refresh", () => {
     expect(await refreshTokens({ refresh_token: tokens.refresh_token, client_id: CLAUDE_CODE }, later(31 * 24 * 3_600_000))).toMatchObject({ ok: false, description: "Refresh token expired" });
     await revokeConnection([...db.tables.grants.keys()][0], "owner@example.com", later(6_000));
     expect(await refreshTokens({ refresh_token: tokens.refresh_token, client_id: CLAUDE_CODE }, later(7_000))).toMatchObject({ ok: false });
+  });
+});
+
+describe("el refresh contra un Disconnect al mismo tiempo", () => {
+  it("si la conexión se revocó entre la lectura y la escritura, no sale ningún token", async () => {
+    const { tokens } = await connect();
+    const id = [...db.tables.grants.keys()][0];
+    const stale = { ...db.tables.grants.get(id)! };
+    await revokeConnection(id, "owner@example.com", later(4_000));
+    // La lectura del refresh vio la conexión todavía abierta.
+    const real = db.prisma.oAuthRefreshToken.findUnique;
+    db.prisma.oAuthRefreshToken.findUnique = (async (args: { where: Record<string, unknown> }) => {
+      const row = await real(args);
+      return row ? { ...row, grant: stale } : null;
+    }) as typeof real;
+    try {
+      const r = await refreshTokens({ refresh_token: tokens.refresh_token, client_id: CLAUDE_CODE }, later(5_000));
+      expect(r).toMatchObject({ ok: false, error: "invalid_grant", description: "Connection revoked" });
+      expect(db.tables.tokens.every((t) => t.revoked_at)).toBe(true);
+      expect(db.tables.tokens).toHaveLength(1);
+    } finally {
+      db.prisma.oAuthRefreshToken.findUnique = real;
+    }
+  });
+
+  it("una conexión que refresca de más se frena, sin revocarla", async () => {
+    let { tokens } = await connect();
+    for (let i = 0; i < 10; i++) {
+      const r = await refreshTokens({ refresh_token: tokens.refresh_token, client_id: CLAUDE_CODE }, later(10_000 + i));
+      if (!r.ok) throw new Error(r.description);
+      tokens = r.tokens;
+    }
+    const r = await refreshTokens({ refresh_token: tokens.refresh_token, client_id: CLAUDE_CODE }, later(20_000));
+    expect(r).toMatchObject({ ok: false, error: "invalid_request" });
+    expect([...db.tables.grants.values()][0].revoked_at).toBeNull();
   });
 });
 

@@ -114,9 +114,9 @@ gets tokens for the MCP alone.
 | Clients | Claude's only, identified by a Client ID Metadata Document on `https://claude.ai` (`client_id_metadata_document_supported`); theBook fetches it, from claude.ai only. No dynamic registration. |
 | Redirects | `https://claude.ai/api/mcp/auth_callback` (claude.ai, Desktop, mobile) or a loopback `http://localhost:<port>/callback` / `http://127.0.0.1:<port>/callback` (Claude Code), and only if the client's document lists it. Anything else is shown as an error, never redirected to. |
 | Authorize | `GET /oauth/authorize`: the owner's session (else `/login`, and back), PKCE `S256`, `resource` = `https://book.bolstro.com/api/mcp`, scope `issues`. The response carries `code`, `state` and `iss`. |
-| Token | `POST /api/oauth/token`, form-encoded, public client (no secret). `authorization_code`: a code lives a minute, once; a code used twice revokes what it issued. `refresh_token`: rotated on every use; an old one used again after 30 s revokes the connection. 120 requests/minute for the whole endpoint. |
+| Token | `POST /api/oauth/token`, form-encoded, public client (no secret). `authorization_code`: a code lives a minute, once; a code used twice revokes what it issued. `refresh_token`: rotated on every use; an old one used again after 30 s revokes the connection; 10 refreshes a minute per connection. No endpoint-wide limit: a real code or refresh is never turned away for traffic. |
 | Tokens | Access: an hour, bound to the MCP — the REST API refuses it (`403`). Refresh: 30 days. |
-| Revoke | **Settings → Connected apps**: the connection and its tokens; the next call is a `401`. |
+| Revoke | **Settings → Connected apps**: the connection and its tokens; the next call is a `401`. Disconnecting inside Claude does not reach theBook (no RFC 7009 endpoint). |
 
 Connecting: in Claude, **Customize → Connectors → Add custom connector**, with
 `https://book.bolstro.com/api/mcp`. In Claude Code, `claude mcp add --transport

@@ -26,6 +26,8 @@ export type Actor =
       tokenKind: TokenKind;
       /** Set for an OAuth access token: the MCP's URL, the only place it is good for. */
       audience?: string | null;
+      /** Set for an OAuth access token: its connection, which outlives the hour-long token. */
+      oauthGrantId?: string | null;
     };
 
 /**
@@ -63,6 +65,7 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
       label: tokenActor({ name: verified.name, kind: verified.kind, prefix }),
       tokenKind: verified.kind,
       audience: verified.audience,
+      oauthGrantId: verified.oauthGrantId,
     };
   }
 
@@ -249,7 +252,9 @@ export async function requireAgentToken(): Promise<Response | null> {
   ) {
     return mcpUnauthorized(presented);
   }
-  const verdict = checkRateLimit(actor.id);
+  // Counted per connection: a refresh mints a new token every hour, and a
+  // client refreshing more must not get a fresh budget each time.
+  const verdict = checkRateLimit(mcpBudgetKey(actor));
   if (!verdict.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded" },
@@ -257,6 +262,11 @@ export async function requireAgentToken(): Promise<Response | null> {
     );
   }
   return null;
+}
+
+/** What the MCP's limits are counted by: the OAuth connection, or the token. */
+export function mcpBudgetKey(actor: Extract<Actor, { kind: "token" }>): string {
+  return actor.oauthGrantId ? `oauth-grant:${actor.oauthGrantId}` : actor.id;
 }
 
 /** Prisma's known request errors carry a string `code` like "P2025". */
