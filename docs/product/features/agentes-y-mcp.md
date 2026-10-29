@@ -1,8 +1,9 @@
 # Agentes sobre theBook: épicas con estado de revisión y un MCP propio
 
 > Estado: **F1 hecha y desplegada** (2026-10-28: `main` en `431ed79`, Android 0.6.0 publicada).
-> **F2 hecha y desplegada** (2026-10-29: `main` en `7fb99e5`). **F3 hecha** (2026-10-29, en `dev`;
-> ver "Cómo quedó F3"). F4–F6 propuestas. Se ejecuta por fases con este documento como brief.
+> **F2 y F3 hechas, desplegadas y verificadas en producción** (2026-10-29: `main` en `7a3a73c`;
+> Claude conectado como conector de claude.ai; ver "Cómo quedó F3"). F4–F6 propuestas. Se ejecuta
+> por fases con este documento como brief.
 
 ## 1. Qué cambia y por qué
 
@@ -416,7 +417,18 @@ para las rutas REST de issues (F1) y en `/api/mcp` es un 401.
   - canje y llamadas al MCP; `done` rechazado; token del MCP → 403 en REST;
   - rotación y gracia; reuso de código → conexión revocada;
   - desconexión en Settings → 401; auditoría.
-  Sin probar hasta el deploy: el conector de claude.ai.
+- **Verificado en producción** (2026-10-29, deploy `28248c5f`, `7a3a73c`; también cierra el
+  "Hecho cuando" de F2, que sin token provisorio no se podía probar antes):
+  - la migración se aplicó al arrancar; cero 5xx;
+  - el conector de claude.ai se conectó al primer intento por CIMD (claude.ai no pidió
+    `/register`), pasando por el consentimiento con la sesión de Brad. El popup terminó bien
+    pese al COOP `same-origin`. El documento CIMD de las apps hosteadas se llama "Claude";
+  - Claude Code en otra carpeta (`/Users/bradly/Work`) ve las cinco herramientas y lee;
+  - sobre una tarea de prueba ("Prueba MCP"): `done` rechazado; la nota escrita en markdown con
+    versión base y un 409 con la base vieja; la bitácora con la hora de Montevideo; Review y
+    100 %. La auditoría registra `token:agent:Claude · f56760ba (tb_…)` con `changed` por
+    escritura, y las ediciones de Brad con su email;
+  - desconectar → 401 se probó en local, no en producción.
 
 ### F4 — Protocolo y lanzador (S)
 
