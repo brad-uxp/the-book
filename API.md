@@ -50,7 +50,7 @@ not by the agent's prompt:
 
 | | |
 |---|---|
-| Reaches | [the MCP](#the-mcp-apimcp), `GET /api/issues`, `GET/PATCH /api/issues/{id}`, and **tasks only**: notes are left out of the list and are a `404` by id. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
+| Reaches | `GET /api/issues`, `GET/PATCH /api/issues/{id}`, and **tasks only**: notes are left out of the list and are a `404` by id. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
 | May write | `agent_note`, `progress`, and `status` to `in_progress`, `review` or `blocked`. |
 | `403` | `status: "done"` (only the owner archives) or `"pending"`; any other field (`title`, `description`, `due_date`, `category`, `client_id`, `note_format`, `sort_order`), even alongside allowed ones; `POST` (create) and `DELETE`; any write to an archived issue (a `done` task), including reopening it; any write to a note. |
 
@@ -68,11 +68,12 @@ the live label — an invoice's amount — saved by the owner's session.
 
 ### The MCP (`/api/mcp`)
 
-theBook's own MCP server, for an agent token and nothing else: Streamable HTTP,
-stateless (no sessions, so `POST` only — a `GET` is a `405`). Any Claude
-session, in any folder, works epics with it without HTML or a shell. The tools
-go through the same `lib/issues-service.ts` rules as the routes above, tasks
-only:
+theBook's own MCP server: Streamable HTTP, stateless (no sessions, so `POST`
+only — a `GET` is a `405`). Any Claude session, in any folder, works epics with
+it without HTML or a shell. It takes only the access tokens theBook's own OAuth
+issues for it ([below](#oauth-for-the-mcp)) — not a token made in Settings —
+and the tools go through the same `lib/issues-service.ts` rules as the routes
+above, tasks only:
 
 | Tool | Does |
 |---|---|
@@ -93,20 +94,34 @@ only:
   edit landing in between is a `409` too.
 - **Refusals** are tool errors whose text starts with the status: `403: …`,
   `404: …`, `409: …`.
-- **Without a valid Bearer**, `401` with `WWW-Authenticate: Bearer realm="book"`
-  (plus `error="invalid_token"` when one was presented); a browser session is
-  not enough. Any other kind of token: `403`. Bodies over 1 MiB: `413`; a
-  JSON-RPC batch: `400` (one message per request). An unexpected failure is
-  `500: Internal error`, never the exception's message.
+- **Without a valid token** — none, a browser session, a token made in
+  Settings, an expired or revoked one, or one for another audience — `401` with
+  `WWW-Authenticate: Bearer realm="book", resource_metadata="…", scope="issues"`
+  (plus `error="invalid_token"` when one was presented): what starts a client's
+  OAuth. Bodies over 1 MiB: `413`; a JSON-RPC batch: `400` (one message per
+  request). An unexpected failure is `500: Internal error`, never the
+  exception's message.
 
-Adding it to Claude Code, for every folder (`--scope user`):
+### OAuth for the MCP
 
-```bash
-claude mcp add --transport http --scope user thebook https://book.bolstro.com/api/mcp --header "Authorization: Bearer <agent token>"
-```
+theBook is the OAuth 2.1 authorization server of its own MCP: Claude connects
+by sending the owner to a consent screen behind the usual Google sign-in, and
+gets tokens for the MCP alone.
 
-The token then sits in plain text in `~/.claude.json`; it is provisional — F3
-of the agents plan replaces it with OAuth.
+| | |
+|---|---|
+| Discovery | `GET /.well-known/oauth-protected-resource/api/mcp` (RFC 9728) and `GET /.well-known/oauth-authorization-server` (RFC 8414). Public. |
+| Clients | Claude's only, identified by a Client ID Metadata Document on `https://claude.ai` (`client_id_metadata_document_supported`); theBook fetches it, from claude.ai only. No dynamic registration. |
+| Redirects | `https://claude.ai/api/mcp/auth_callback` (claude.ai, Desktop, mobile) or a loopback `http://localhost:<port>/callback` / `http://127.0.0.1:<port>/callback` (Claude Code), and only if the client's document lists it. Anything else is shown as an error, never redirected to. |
+| Authorize | `GET /oauth/authorize`: the owner's session (else `/login`, and back), PKCE `S256`, `resource` = `https://book.bolstro.com/api/mcp`, scope `issues`. The response carries `code`, `state` and `iss`. |
+| Token | `POST /api/oauth/token`, form-encoded, public client (no secret). `authorization_code`: a code lives a minute, once; a code used twice revokes what it issued. `refresh_token`: rotated on every use; an old one used again after 30 s revokes the connection. 120 requests/minute for the whole endpoint. |
+| Tokens | Access: an hour, bound to the MCP — the REST API refuses it (`403`). Refresh: 30 days. |
+| Revoke | **Settings → Connected apps**: the connection and its tokens; the next call is a `401`. |
+
+Connecting: in Claude, **Customize → Connectors → Add custom connector**, with
+`https://book.bolstro.com/api/mcp`. In Claude Code, `claude mcp add --transport
+http --scope user thebook https://book.bolstro.com/api/mcp`, then `/mcp` to
+sign in.
 
 ### The mobile app's sign-in
 

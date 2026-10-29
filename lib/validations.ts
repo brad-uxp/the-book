@@ -260,6 +260,27 @@ export const IssueAgentStateSchema = z
 export type IssueAgentStateInput = z.infer<typeof IssueAgentStateSchema>;
 
 /**
+ * The token endpoint's two grants (POST /api/oauth/token, RFC 6749 §4.1.3 and
+ * §6), as form fields. A public client: `client_id` and PKCE, no secret.
+ */
+const OAuthField = (max: number) => z.string().min(1).max(max);
+export const OAuthCodeGrantSchema = z.object({
+  grant_type: z.literal("authorization_code"),
+  code: OAuthField(200),
+  code_verifier: OAuthField(128),
+  redirect_uri: OAuthField(2_000),
+  client_id: OAuthField(500),
+  resource: OAuthField(500).optional(),
+});
+export const OAuthRefreshGrantSchema = z.object({
+  grant_type: z.literal("refresh_token"),
+  refresh_token: OAuthField(200),
+  client_id: OAuthField(500),
+  resource: OAuthField(500).optional(),
+  scope: OAuthField(200).optional(),
+});
+
+/**
  * What an agent sends through the MCP (/api/mcp, lib/mcp-issues.ts): its
  * note in markdown — the HTML it becomes is checked again against
  * IssueUpdateSchema — and one entry for its log.

@@ -1,8 +1,8 @@
 # Agentes sobre theBook: épicas con estado de revisión y un MCP propio
 
 > Estado: **F1 hecha y desplegada** (2026-10-28: `main` en `431ed79`, Android 0.6.0 publicada).
-> **F2 hecha** (2026-10-28, en `dev`; ver "Cómo quedó F2"). F3–F6 propuestas. Se ejecuta por
-> fases, cada una en su propia sesión, con este documento como brief.
+> **F2 hecha y desplegada** (2026-10-29: `main` en `7fb99e5`). **F3 hecha** (2026-10-29, en `dev`;
+> ver "Cómo quedó F3"). F4–F6 propuestas. Se ejecuta por fases con este documento como brief.
 
 ## 1. Qué cambia y por qué
 
@@ -282,7 +282,7 @@ Residuales:
 - Al terminar: `claude mcp remove thebook -s user` y revocar el token provisorio en Settings
   (si no, las herramientas aparecen duplicadas).
 
-### F3 — OAuth: theBook como servidor de autorización (L)
+### F3 — OAuth: theBook como servidor de autorización (L) — ✅ hecha (2026-10-29)
 
 - Se parte de `secretary/src/oauth.ts`, con estos cambios:
 
@@ -309,6 +309,67 @@ Residuales:
 - **Verificar al empezar**: qué mecanismo de registro usa hoy el conector de claude.ai
   ("published identity" / CIMD, registro automático / DCR, o cliente propio) y sus redirect
   URIs reales. La documentación de Claude no publica la URL de callback.
+
+#### Cómo quedó F3 (supuestos y decisiones tomadas al implementar)
+
+**Sin token provisorio.** Brad decidió (2026-10-29) no usar el token `agent` de F2: el MCP espera
+a F3. F2 se desplegó igual, y su verificación en producción con Claude pasa a ser la de F3. Desde F3
+el MCP solo acepta tokens de su propio OAuth: un token `agent` hecho en Settings sigue sirviendo
+para las rutas REST de issues (F1) y en `/api/mcp` es un 401.
+
+- **Verificado al empezar** (docs de conectores de Claude, 2026-10-29): las apps hosteadas
+  (claude.ai, Desktop, mobile, Cowork) usan el callback `https://claude.ai/api/mcp/auth_callback`.
+  Claude Code usa loopback `/callback` en un puerto variable, con su CIMD en
+  `https://claude.ai/oauth/claude-code-client-metadata`. Claude usa CIMD si los metadatos dicen
+  `client_id_metadata_document_supported: true` y `none` como método del token endpoint; si no,
+  cae a DCR. El `client_id` CIMD de las apps hosteadas no está publicado.
+- **Clientes: solo CIMD de claude.ai, sin DCR** (DCR está deprecado en el spec 2026-07-28 y es lo
+  más abusable). Se acepta cualquier `client_id` HTTPS en `https://claude.ai/` (por el que no está
+  publicado), se baja el documento solo de ahí (`lib/oauth-clients.ts`: 3 s, 16 KB, sin redirects,
+  10 min de caché) y su `client_id` tiene que ser esa URL. Lista cerrada de redirects
+  (`lib/oauth.ts`): el callback de claude.ai o loopback `/callback` en cualquier puerto, y además
+  listados en el documento. Un redirect que no pasa se muestra; nunca se redirige a él.
+- **Tablas** (`20261029120000_oauth_for_the_mcp`, aditiva, revisada por `data-model-steward`):
+  `OAuthGrant` (la "conexión", revocada nunca borrada), `OAuthCode` (sha256, 60 s, un uso, atado a `client_id`, `redirect_uri`, `code_challenge` y `resource`),
+  `OAuthRefreshToken` (sha256, rota en cada uso). El access token es un `ApiToken` kind `agent` de
+  1 h con `oauth_grant_id` y `audience` = URL del MCP; un CHECK (`ApiToken_oauth_audience_together`,
+  guardado por `prisma/migrations.test.ts`) mantiene las dos columnas juntas. Al refrescar se
+  borran los access y refresh vencidos de esa conexión.
+- **Audiencia en las dos direcciones**: `requireAgentToken` exige `audience` = URL del MCP (todo lo
+  demás es 401 con desafío, para que Claude reautentique); `requireSession` rechaza (403) cualquier
+  token con audiencia, así que un token del MCP no abre la API REST.
+- **Reuso**: un código usado dos veces revoca lo que emitió (RFC 6749 §4.1.2). Un refresh usado de
+  nuevo revoca la conexión, salvo dentro de 30 s de su rotación: eso es el cliente reintentando
+  (una respuesta perdida, un refresh proactivo y uno reactivo a la vez), y sin la gracia Brad
+  tendría que reconectar sin que nadie haya robado nada. Fuera de esos 30 s, revoca. Revocar marca
+  la conexión y sus `ApiToken` en la misma transacción.
+- **Filas que no crecen**: cada refresh borra los access tokens vencidos y los refresh vencidos de
+  su conexión; cada código nuevo borra los de hace más de un día. Una conexión revocada o que dejó
+  de refrescar deja a lo sumo dos access tokens vencidos. Alcanza para el volumen (1–3 conexiones);
+  si hiciera falta, el job diario puede purgar los de conexiones revocadas.
+- **Loopback de Claude Code, aceptado** (pedido de revisión de la sesión coordinadora): es el
+  respaldo si el conector de claude.ai no aparece en una sesión de Code. Cualquier puerto
+  (RFC 8252), siempre PKCE, y el consentimiento avisa que el acceso va a un programa local.
+- **Consentimiento** (`app/oauth/authorize`): detrás de la sesión (proxy → `/login?callbackUrl=` →
+  vuelve; `loginReturnPath` solo acepta `/oauth/authorize`, si no sería open redirect). Muestra el
+  cliente, el host al que vuelve y, si es loopback, un aviso. La server action `decide` revalida
+  todo y la sesión. Overlay a pantalla completa sobre el layout (no se movieron rutas). La
+  respuesta lleva `iss` (RFC 9207).
+- **Origen público** = `AUTH_URL` (fallback `https://book.bolstro.com`), nunca el `Host` de la
+  request: issuer y audiencia fijos.
+- **Scope** `issues`, el único (se acepta y se ignora `offline_access`; siempre hay refresh). F6
+  agrega otros y los chequea por herramienta.
+- **Endpoint de token**: form-encoded, cliente público, errores RFC 6749 (`invalid_grant`, no
+  otros), `no-store`, 120/min para todo el endpoint.
+- **Settings → Connected apps** lista las conexiones y las desconecta. Los access tokens de OAuth no
+  aparecen en "API tokens".
+- **Verificado en local**, por HTTP contra `next dev` y una Postgres efímera, con el CIMD real de
+  Claude Code y un callback loopback:
+  - descubrimiento y la pantalla de consentimiento;
+  - canje y llamadas al MCP; `done` rechazado; token del MCP → 403 en REST;
+  - rotación y gracia; reuso de código → conexión revocada;
+  - desconexión en Settings → 401; auditoría.
+  Sin probar hasta el deploy: el conector de claude.ai.
 
 ### F4 — Protocolo y lanzador (S)
 

@@ -10,14 +10,23 @@ import {
   tokenActor,
   type TokenKind,
 } from "@/lib/api-tokens";
-import { mcpUnauthorized } from "@/lib/mcp-auth";
+import { mcpResource, mcpUnauthorized } from "@/lib/mcp-auth";
+import { canonicalResource } from "@/lib/oauth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { Writer } from "@/lib/issues-service";
 
 /** Who is making the current request. */
 export type Actor =
   | { kind: "user"; label: string }
-  | { kind: "token"; id: string; name: string; label: string; tokenKind: TokenKind };
+  | {
+      kind: "token";
+      id: string;
+      name: string;
+      label: string;
+      tokenKind: TokenKind;
+      /** Set for an OAuth access token: the MCP's URL, the only place it is good for. */
+      audience?: string | null;
+    };
 
 /**
  * Resolves the caller from either credential the API accepts: a NextAuth
@@ -53,6 +62,7 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
       name: verified.name,
       label: tokenActor({ name: verified.name, kind: verified.kind, prefix }),
       tokenKind: verified.kind,
+      audience: verified.audience,
     };
   }
 
@@ -84,6 +94,15 @@ export async function requireSession(opts: { agent?: boolean } = {}): Promise<Ne
   const actor = await resolveActor();
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // An OAuth access token is for the MCP (requireAgentToken): its audience.
+  // Here it is a token for somewhere else.
+  if (actor.kind === "token" && actor.audience) {
+    return NextResponse.json(
+      { error: "This token is for theBook's MCP only" },
+      { status: 403 }
+    );
   }
 
   // A release token only publishes app builds (requireReleaseToken). It lives
@@ -210,18 +229,25 @@ export async function requireReleaseToken(): Promise<NextResponse | null> {
 }
 
 /**
- * Authorization for the MCP (/api/mcp): an agent token, and nothing else.
- * The MCP is the agents' way in and holds every caller to an agent's rules
- * (lib/issues-service.ts); the owner and the scripts have the REST API.
- * Without a valid Bearer the 401 carries the challenge MCP clients read
- * (lib/mcp-auth.ts) — a browser session is not one.
+ * Authorization for the MCP (/api/mcp): an access token theBook's OAuth
+ * issued for it (lib/oauth-service.ts) — kind `agent`, audience the MCP's
+ * URL — and nothing else. The MCP is the agents' way in and holds every
+ * caller to an agent's rules (lib/issues-service.ts); the owner and the
+ * scripts have the REST API. Anything else — no Bearer, a browser session,
+ * an expired or revoked token, a token for somewhere else — is the 401 whose
+ * challenge starts a client's OAuth (lib/mcp-auth.ts).
  */
 export async function requireAgentToken(): Promise<Response | null> {
   const presented = (await headers()).has("authorization");
   const actor = await resolveActor();
-  if (!actor || actor.kind !== "token") return mcpUnauthorized(presented);
-  if (actor.tokenKind !== "agent") {
-    return NextResponse.json({ error: "The MCP takes an agent token" }, { status: 403 });
+  if (
+    !actor ||
+    actor.kind !== "token" ||
+    actor.tokenKind !== "agent" ||
+    !actor.audience ||
+    canonicalResource(actor.audience) !== canonicalResource(mcpResource())
+  ) {
+    return mcpUnauthorized(presented);
   }
   const verdict = checkRateLimit(actor.id);
   if (!verdict.allowed) {
@@ -289,6 +315,20 @@ export async function readJsonLimited(
   req: Request,
   maxBytes: number
 ): Promise<{ ok: true; value: unknown } | { ok: false; reason: "too_large" | "invalid" }> {
+  const text = await readTextLimited(req, maxBytes);
+  if (!text.ok) return text;
+  try {
+    return { ok: true, value: JSON.parse(text.value) };
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+}
+
+/** The body as text, read with the same hard cap as readJsonLimited. */
+export async function readTextLimited(
+  req: Request,
+  maxBytes: number
+): Promise<{ ok: true; value: string } | { ok: false; reason: "too_large" | "invalid" }> {
   const declared = Number(req.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) {
     return { ok: false, reason: "too_large" };
@@ -315,11 +355,7 @@ export async function readJsonLimited(
     bytes.set(c, offset);
     offset += c.byteLength;
   }
-  try {
-    return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) };
-  } catch {
-    return { ok: false, reason: "invalid" };
-  }
+  return { ok: true, value: new TextDecoder().decode(bytes) };
 }
 
 /** Standard 400 for a failed Zod parse, matching the project convention. */

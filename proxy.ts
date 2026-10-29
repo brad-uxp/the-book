@@ -3,6 +3,16 @@ import { NextResponse } from "next/server";
 import { isMobilePublicPath } from "@/lib/mobile-auth";
 import { MCP_PATH, mcpUnauthorized } from "@/lib/mcp-auth";
 
+/**
+ * theBook's OAuth, for its MCP (lib/oauth.ts): the discovery documents and
+ * the token endpoint are public — a client reaches them before it has any
+ * credential, and the token endpoint checks its own. The consent screen
+ * (/oauth/authorize) is not: it needs the owner's session.
+ */
+const OAUTH_PUBLIC_PREFIX = "/.well-known/oauth-";
+const OAUTH_TOKEN_PATH = "/api/oauth/token";
+const OAUTH_AUTHORIZE_PATH = "/oauth/authorize";
+
 export const proxy = auth(async (req) => {
   const { pathname } = req.nextUrl;
 
@@ -19,6 +29,10 @@ export const proxy = auth(async (req) => {
   // handlers verify Google's ID token and a single-use nonce. Everything else
   // under /api/mobile (sign-out) needs a token like any route.
   if (isMobilePublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  if (pathname.startsWith(OAUTH_PUBLIC_PREFIX) || pathname === OAUTH_TOKEN_PATH) {
     return NextResponse.next();
   }
 
@@ -47,7 +61,12 @@ export const proxy = auth(async (req) => {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.redirect(new URL("/login", req.url));
+  // Signing in from the consent screen comes back to it (app/login/page.tsx).
+  const login = new URL("/login", req.url);
+  if (pathname === OAUTH_AUTHORIZE_PATH) {
+    login.searchParams.set("callbackUrl", `${pathname}${req.nextUrl.search}`);
+  }
+  return NextResponse.redirect(login);
 });
 
 export const config = {

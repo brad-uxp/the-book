@@ -177,6 +177,10 @@ const PROTECTED_CONSTRAINTS = [
     name: "CanvasEdge_sides_valid",
     purpose: "keeps a connection's pinned sides to top, right, bottom or left",
   },
+  {
+    name: "ApiToken_oauth_audience_together",
+    purpose: "an OAuth access token always has its audience, and only it has one: the REST API refuses audience-bound tokens",
+  },
 ];
 
 describe("CHECK constraints que Prisma no puede modelar", () => {

@@ -54,6 +54,9 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { agentBase } from "@/lib/issues-service";
+import { mcpResource } from "@/lib/mcp-auth";
+
+const MCP_URL = mcpResource();
 
 const task = {
   id: "t-1",
@@ -66,10 +69,24 @@ const task = {
   agent_note: "<p>🟡 Questions</p><p>1. A or B?</p>",
 };
 
-function withToken(kind: "agent" | "automation" | "mobile") {
+/**
+ * A token as the database has it. `oauth`: an access token theBook's OAuth
+ * issued for the MCP (kind agent, audience the MCP's URL); otherwise one made
+ * in Settings, with no audience.
+ */
+function withToken(kind: "agent" | "automation" | "mobile", { oauth = kind === "agent", audience = MCP_URL } = {}) {
   const { token, prefix, hash } = generateToken();
   state.authorization = `Bearer ${token}`;
-  state.token = { id: `tok-${kind}`, name: "claude", kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
+  state.token = {
+    id: `tok-${kind}`,
+    name: "claude",
+    kind,
+    token_prefix: prefix,
+    token_hash: hash,
+    expires_at: null,
+    revoked_at: null,
+    ...(oauth ? { oauth_grant_id: "grant-1", audience } : { audience: null }),
+  };
 }
 
 let nextId = 1;
@@ -123,10 +140,12 @@ beforeEach(() => {
 });
 
 describe("autenticación", () => {
-  it("sin Bearer: 401 con el desafío que leen los clientes de MCP", async () => {
+  it("sin Bearer: 401 con el desafío que lleva a la metadata de OAuth", async () => {
     const res = await rpc("tools/list");
     expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toBe('Bearer realm="book"');
+    expect(res.headers.get("www-authenticate")).toBe(
+      `Bearer realm="book", resource_metadata="${new URL(MCP_URL).origin}/.well-known/oauth-protected-resource/api/mcp", scope="issues"`
+    );
   });
 
   it("un token inválido: 401 invalid_token", async () => {
@@ -136,9 +155,30 @@ describe("autenticación", () => {
     expect(res.headers.get("www-authenticate")).toContain('error="invalid_token"');
   });
 
-  it.each(["automation", "mobile"] as const)("un token %s: 403, el MCP es solo para agentes", async (kind) => {
+  it.each(["automation", "mobile"] as const)("un token %s: 401, el MCP solo toma los tokens de su OAuth", async (kind) => {
     withToken(kind);
-    expect((await rpc("tools/list")).status).toBe(403);
+    const res = await rpc("tools/list");
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain('error="invalid_token"');
+  });
+
+  it("un token agent hecho en Settings (sin audiencia): 401", async () => {
+    withToken("agent", { oauth: false });
+    expect((await rpc("tools/list")).status).toBe(401);
+  });
+
+  it("un token de OAuth vencido o revocado: 401, y el cliente refresca", async () => {
+    withToken("agent");
+    state.token = { ...(state.token as object), expires_at: new Date(Date.now() - 1_000) };
+    expect((await rpc("tools/list")).status).toBe(401);
+    withToken("agent");
+    state.token = { ...(state.token as object), revoked_at: new Date() };
+    expect((await rpc("tools/list")).status).toBe(401);
+  });
+
+  it("un token de OAuth para otra audiencia: 401", async () => {
+    withToken("agent", { audience: "https://evil.example/api/mcp" });
+    expect((await rpc("tools/list")).status).toBe(401);
   });
 
   it("un cuerpo de más de 1 MiB: 413, sin leerlo entero", async () => {

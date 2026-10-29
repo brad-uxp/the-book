@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { ApiTokens } from "@/components/settings/api-tokens";
+import { Connections } from "@/components/settings/connections";
 import { CorporateExclusions } from "@/components/settings/corporate-exclusions";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export default async function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Notifications, corporate profitability and API access.
+          Notifications, corporate profitability, connected apps and API access.
         </p>
       </div>
       <SettingsForm initial={initial} />
@@ -33,6 +34,7 @@ export default async function SettingsPage() {
         clients={clients}
         initial={settings?.corporate_excluded_client_ids ?? []}
       />
+      <Connections />
       <ApiTokens />
     </div>
   );

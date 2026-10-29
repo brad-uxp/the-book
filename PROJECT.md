@@ -32,9 +32,10 @@
 - **Cloudflare R2** (S3-compatible) — adjuntos de facturas vía URLs presignadas
 - **MCP propio** en `/api/mcp` (`@modelcontextprotocol/server` v2, Streamable HTTP
   sin estado): las herramientas de issues con las que un agente trabaja una épica,
-  con token `agent`. El agente lee y escribe markdown; la conversión a HTML de
-  TipTap es del servidor (`lib/rich-text/markdown.ts`, con `@tiptap/html` +
-  happy-dom). Plan y fases en
+  con los tokens del **OAuth propio de theBook** (F3: theBook es el servidor de
+  autorización; Claude se conecta pasando por el login de Google). El agente lee y
+  escribe markdown; la conversión a HTML de TipTap es del servidor
+  (`lib/rich-text/markdown.ts`, con `@tiptap/html` + happy-dom). Plan y fases en
   [`docs/product/features/agentes-y-mcp.md`](./docs/product/features/agentes-y-mcp.md)
 
 > **No hay email.** Existió y se eliminó: Nodemailer y Gmail SMTP son de una
@@ -69,7 +70,9 @@ humana. Una migración commiteada llega a la base en el siguiente deploy.
 ```
 TheBook/
 ├── app/
-│   ├── api/                          # 58 rutas API (REST + el MCP) — ver tabla abajo
+│   ├── api/                          # 61 rutas API (REST, el MCP y su OAuth) — ver tabla abajo
+│   ├── .well-known/                  # Metadata OAuth (RFC 9728 del MCP, RFC 8414 del servidor)
+│   ├── oauth/authorize/              # Pantalla de consentimiento del OAuth del MCP
 │   ├── admin-logs/page.tsx           # Logs de auditoría
 │   ├── dashboard/page.tsx            # Dashboard con métricas y gráficos
 │   ├── expenses/page.tsx             # Vista unificada de gastos
@@ -98,6 +101,7 @@ TheBook/
 │   ├── api.ts                        # requireSession, mapeo de errores, readJson
 │   ├── issues-service.ts  canvas-service.ts  # Escrituras de issues e ideas: reglas + auditoría, para las rutas REST, la sync y el MCP
 │   ├── mcp-issues.ts  mcp-auth.ts     # El MCP de issues para agentes (/api/mcp) y su 401 con WWW-Authenticate
+│   ├── oauth.ts  oauth-clients.ts  oauth-service.ts  # OAuth del MCP: reglas (testeadas), CIMD de Claude, códigos/tokens/revocar
 │   ├── rich-text/markdown.ts         # Markdown ↔ HTML de TipTap y diffs, para el MCP (solo servidor, testeada)
 │   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
 │   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
@@ -204,7 +208,9 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
-| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings; solo llega a las rutas de issues y al MCP, y ahí `lib/issues-service.ts` lo limita a `agent_note`, `progress`, `status` ∈ {in_progress, review, blocked} y su estado de agente) |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings: solo llega a las rutas REST de issues; o emitido por el OAuth del MCP: 1 h, `oauth_grant_id` + `audience` = URL del MCP, solo sirve en `/api/mcp`. En los dos casos `lib/issues-service.ts` lo limita a `agent_note`, `progress`, `status` ∈ {in_progress, review, blocked} y su estado de agente). CHECK `ApiToken_oauth_audience_together` |
+| `OAuthGrant`   | Una "conexión" del OAuth del MCP: lo que Brad aprobó en el consentimiento (cliente CIMD de claude.ai, redirect, scope, resource). Settings → Connected apps la lista y la revoca (con sus `ApiToken`). Revocada, nunca borrada |
+| `OAuthCode` / `OAuthRefreshToken` | Código de autorización (sha256, 60 s, un uso) y refresh tokens (sha256, 30 días, rotan en cada uso; reusar uno revoca la conexión) |
 | `MobileRelease` | Versión publicada de la app Android (versión, `version_code` único y creciente, sha256, tamaño, clave en R2, notas, `published_at`) para las actualizaciones sin cable |
 
 ### Invariantes que la base enforza
@@ -234,7 +240,7 @@ editar una migración generada, borrá esa línea antes de commitear.
 
 ---
 
-## Rutas API (58)
+## Rutas API (61)
 
 Todas exigen credencial (`requireSession()` en el handler, además del `proxy.ts`),
 salvo `auth/[...nextauth]`, `cron/daily` (protegida con `CRON_SECRET`) y las dos
@@ -261,6 +267,12 @@ lo que F3 extiende a OAuth). Cinco herramientas sobre `lib/issues-service.ts`:
 `issues_list`, `issue_get`, `issue_update_note` (con versión base: 409 si Brad
 cambió la nota o la descripción), `issue_update_state` e `issue_write_log`.
 Detalle en [`API.md`](./API.md#the-mcp-apimcp).
+
+El MCP toma solo los access tokens de su propio OAuth (F3), con audiencia
+verificada; la API REST rechaza cualquier token con audiencia. Públicos (sin
+sesión): `/.well-known/oauth-*` y `POST /api/oauth/token`; `/oauth/authorize`
+exige la sesión de Brad (proxy → `/login?callbackUrl=` → vuelve). Detalle en
+[`API.md`](./API.md#oauth-for-the-mcp).
 
 | Recurso           | Métodos         | Ruta                                 |
 | ----------------- | --------------- | ------------------------------------ |
@@ -320,7 +332,10 @@ Detalle en [`API.md`](./API.md#the-mcp-apimcp).
 | Última versión    | GET             | `/api/mobile/releases/latest`        |
 | Sync notas        | GET/POST        | `/api/sync/notes`                    |
 | Sync refs         | GET             | `/api/sync/refs`                     |
-| MCP (agentes)     | POST            | `/api/mcp` (solo token agent)        |
+| MCP (agentes)     | POST            | `/api/mcp` (solo tokens de su OAuth) |
+| OAuth token       | POST (público)  | `/api/oauth/token`                   |
+| Conexiones        | GET             | `/api/settings/connections` (solo sesión) |
+| Conexión          | DELETE          | `/api/settings/connections/[id]` (solo sesión) |
 | Cron Daily        | GET             | `/api/cron/daily`                    |
 
 ---
@@ -448,6 +463,10 @@ automáticamente; el `build` genera el cliente Prisma por su cuenta.
   quedan como texto (F1: plantar el chip de una factura para leer su monto)
 - **Auditoría por token**: `token:<kind>:<name> (<prefix>)` y, en cada update, los
   campos que cambiaron (`changed`), nunca el texto
+- **OAuth del MCP cerrado**: solo clientes CIMD de claude.ai (sin registro
+  dinámico), redirects de lista cerrada, PKCE S256, `resource` obligatorio y
+  audiencia verificada en cada llamada, refresh rotativo con detección de reuso,
+  revocación inmediata desde Settings
 - **Cron protegido** con Bearer token
 - **Object keys de R2 validadas** contra el formato exacto que emite
   `buildInvoiceKey`, y su pertenencia verificada al escribir y al firmar

@@ -81,12 +81,15 @@ export interface TokenRecord {
   token_hash: string;
   expires_at: Date | null;
   revoked_at: Date | null;
+  /** Where the token may be used: the MCP's URL for an OAuth access token, null for the REST API. */
+  audience?: string | null;
 }
 
 export interface VerifiedToken {
   id: string;
   name: string;
   kind: TokenKind;
+  audience: string | null;
 }
 
 /**
@@ -103,7 +106,7 @@ export function checkToken(
   if (!hashesMatch(record.token_hash, hashToken(raw))) return null;
   if (record.revoked_at !== null) return null;
   if (record.expires_at !== null && record.expires_at <= now) return null;
-  return { id: record.id, name: record.name, kind: record.kind };
+  return { id: record.id, name: record.name, kind: record.kind, audience: record.audience ?? null };
 }
 
 /**

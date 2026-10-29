@@ -1,13 +1,17 @@
 import { signIn } from "@/auth";
+import { loginReturnPath } from "@/lib/oauth";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; callbackUrl?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, callbackUrl } = await searchParams;
+  // Back to the consent screen the owner came from (an app connecting to the
+  // MCP), or home — never anywhere else.
+  const returnTo = loginReturnPath(callbackUrl);
   const year = new Date().getFullYear();
 
   return (
@@ -46,7 +50,7 @@ export default async function LoginPage({
             <form
               action={async () => {
                 "use server";
-                await signIn("google", { redirectTo: "/" });
+                await signIn("google", { redirectTo: returnTo });
               }}
             >
               <Button

@@ -96,6 +96,7 @@ describe("checkToken — reglas de validez", () => {
       id: "tok-1",
       name: "claude-work",
       kind: "automation",
+      audience: null,
     });
   });
 

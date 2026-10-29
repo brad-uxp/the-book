@@ -593,7 +593,85 @@ model ApiToken {
   /// The phone this token signed in, when it registered for push.
   device MobileDevice?
 
+  /// Set on an access token issued through OAuth (lib/oauth-service.ts): the
+  /// connection it belongs to. Revoking the connection revokes it.
+  oauth_grant_id String?
+  oauth_grant    OAuthGrant? @relation(fields: [oauth_grant_id], references: [id], onDelete: Cascade)
+  /// Where the token may be used. An OAuth access token is for the MCP only
+  /// (its `resource`); null — Settings and the app's sign-in — is the REST API.
+  /// Set if and only if oauth_grant_id is (CHECK ApiToken_oauth_audience_together).
+  audience       String?
+
   @@index([revoked_at])
+  @@index([oauth_grant_id])
+}
+
+// ============================================================
+// OAuth: theBook as the authorization server of its own MCP
+// ============================================================
+
+/// A connection: what the owner allowed on the consent screen, for one client
+/// and one resource. Settings lists these; revoking one ends every token it
+/// issued. Revoked, never deleted; its access tokens, an hour long, are
+/// deleted once expired.
+model OAuthGrant {
+  id           String    @id @default(uuid())
+  /// The client's metadata document URL (CIMD), on https://claude.ai.
+  client_id    String
+  /// The name the consent screen showed: the client's host, and its document's name.
+  client_name  String
+  redirect_uri String
+  /// Space-separated scopes the owner allowed (e.g. "issues").
+  scope        String
+  /// The protected resource its tokens are for: the MCP's URL.
+  resource     String
+  created_at   DateTime  @default(now())
+  /// When it last refreshed: roughly when the client last used it.
+  last_used_at DateTime?
+  revoked_at   DateTime?
+
+  codes          OAuthCode[]
+  refresh_tokens OAuthRefreshToken[]
+  access_tokens  ApiToken[]
+
+  @@index([revoked_at])
+}
+
+/// An authorization code: made on consent, exchanged once, within a minute, at
+/// the token endpoint. Only its sha256 is kept. It carries what the grant will
+/// be; the exchange creates the grant and records it here, so a code used a
+/// second time revokes what the first use made (RFC 6749 §4.1.2).
+model OAuthCode {
+  code_hash      String      @id
+  client_id      String
+  client_name    String
+  redirect_uri   String
+  scope          String
+  resource       String
+  /// PKCE, S256 only.
+  code_challenge String
+  expires_at     DateTime
+  used_at        DateTime?
+  grant_id       String?
+  grant          OAuthGrant? @relation(fields: [grant_id], references: [id], onDelete: Cascade)
+  created_at     DateTime    @default(now())
+
+  @@index([expires_at])
+}
+
+/// A refresh token of a connection. Rotated on every use, as OAuth 2.1 asks of
+/// a public client: using one marks it used and issues the next. Using a used
+/// one again means it leaked, and the whole connection is revoked. Only its
+/// sha256 is kept.
+model OAuthRefreshToken {
+  token_hash String     @id
+  grant_id   String
+  grant      OAuthGrant @relation(fields: [grant_id], references: [id], onDelete: Cascade)
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime   @default(now())
+
+  @@index([grant_id])
 }
 
 /// A phone that receives push notifications: the native FCM registration

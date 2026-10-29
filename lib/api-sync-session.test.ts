@@ -106,6 +106,15 @@ describe("matriz de acceso por tipo de credencial", () => {
 });
 
 
+describe("un token de OAuth es solo para el MCP", () => {
+  it("las rutas REST lo rechazan, aunque sea un token agent en una ruta de issues", async () => {
+    withToken("agent");
+    state.record = { ...(state.record as object), oauth_grant_id: "grant-1", audience: "https://book.bolstro.com/api/mcp" };
+    expect((await requireSession({ agent: true }))?.status).toBe(403);
+    expect((await requireSession())?.status).toBe(403);
+  });
+});
+
 describe("getWriter", () => {
   it("un token agent escribe como agente; el resto, como dueño", async () => {
     withToken("agent");

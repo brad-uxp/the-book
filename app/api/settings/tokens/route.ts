@@ -40,7 +40,10 @@ export async function GET() {
   const denied = await requireUserSession();
   if (denied) return denied;
 
+  // OAuth access tokens come and go every hour; Settings shows their
+  // connection instead (/api/settings/connections).
   const tokens = await prisma.apiToken.findMany({
+    where: { oauth_grant_id: null },
     select: PUBLIC_FIELDS,
     orderBy: { created_at: "desc" },
   });
