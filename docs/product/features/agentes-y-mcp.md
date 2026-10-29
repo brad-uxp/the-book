@@ -286,6 +286,11 @@ Residuales:
     de ~1 KB, 40 ms en frío.
   - Se descartó un `worker_thread`: con el bundling de Next 16 el worker no puede importar el
     esquema TS de TipTap, y `vm` corta igual.
+- **BAJO, corregido: links de un agente por REST.** El esquema conservaba `class`, `title`,
+  `target` y `rel` del link, así que `<a class="invoice-mention">` se dibujaba como un chip de
+  factura falso (y los editores lo abren al hacer clic), y el agente podía quitar `noopener`.
+  `agentHtml` deja de cada link solo el `href`, con `target` y `rel` seguros, los del editor. Por
+  MCP no pasaba, porque llega en markdown.
 
 **Para F3**:
 

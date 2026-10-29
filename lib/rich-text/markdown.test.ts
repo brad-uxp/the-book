@@ -175,6 +175,14 @@ describe("agentHtml: el HTML de un agente", () => {
     expect(agentHtml(html)).toBe("<p>Hi Ana</p>");
   });
 
+  it("un link es solo su dirección: sin clase de chip, sin title, con target y rel seguros", () => {
+    const html =
+      '<p><a href="https://evil.example" class="invoice-mention" target="_self" rel="opener" title="x">#Inv 12: Acme — $1,200.00</a></p>';
+    expect(agentHtml(html)).toBe(
+      '<p><a target="_blank" rel="noopener noreferrer nofollow" href="https://evil.example">#Inv 12: Acme — $1,200.00</a></p>'
+    );
+  });
+
   it("lo que ya es del editor no cambia", () => {
     const html = markdownToHtml("**Ready** — see [PR](https://example.com)");
     expect(agentHtml(html)).toBe(html);

@@ -168,7 +168,27 @@ export class MarkdownTooComplexError extends Error {
  */
 export function agentHtml(html: string): string {
   if (html.trim() === "") return "";
-  return generateHTML(parseHtml(html, WRITE_SCHEMA), WRITE_SCHEMA);
+  return generateHTML(plainLinks(parseHtml(html, WRITE_SCHEMA)), WRITE_SCHEMA);
+}
+
+/**
+ * A link's address is all an agent decides about it. The schema keeps a
+ * link's class, title, target and rel from the HTML, so `class="invoice-mention"`
+ * would draw an invoice chip that is not one — and the editors open chips on
+ * click — and an agent could drop `noopener`. Its target and rel are the
+ * editor's own defaults.
+ */
+const AGENT_LINK = { target: "_blank", rel: "noopener noreferrer nofollow", class: null, title: null };
+
+function plainLinks(node: JSONContent): JSONContent {
+  const marks = node.marks?.map((mark) =>
+    mark.type === "link" ? { ...mark, attrs: { href: mark.attrs?.href ?? null, ...AGENT_LINK } } : mark
+  );
+  return {
+    ...node,
+    ...(marks ? { marks } : {}),
+    ...(node.content ? { content: node.content.map(plainLinks) } : {}),
+  };
 }
 
 /**
