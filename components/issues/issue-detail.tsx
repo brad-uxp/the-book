@@ -36,6 +36,11 @@ interface IssueDetailProps {
   onUpdate: (id: string, patch: Partial<Issue>) => void;
   /** Asks to turn this issue into a canvas note — it moves words, so it confirms. */
   onConvertToCanvas: (issue: Issue) => void;
+  /**
+   * Bumped when the texts were changed elsewhere (an agent, the phone). Part of
+   * the editors' docKey: they take a new `value` only with a new docKey.
+   */
+  contentRev?: number;
 }
 
 export function IssueDetail({
@@ -44,6 +49,7 @@ export function IssueDetail({
   clients,
   onUpdate,
   onConvertToCanvas,
+  contentRev = 0,
 }: IssueDetailProps) {
   const col = issue ? COLUMNS.find((c) => c.id === issue.status) : null;
   const [expanded, setExpanded] = useState(() => {
@@ -59,8 +65,15 @@ export function IssueDetail({
 
   const now = useNow();
   const agentNote = issue?.agent_note ?? "";
-  // An agent works tasks; a note shows the field only if one wrote there anyway.
-  const showAgentNote = !!issue && (issue.category === "task" || !isBlankHtml(agentNote));
+  // Shown only once an agent has written: an empty second editor under the
+  // description is noise. Once shown it stays while the issue is open, so
+  // clearing it while answering does not pull it out from under the cursor.
+  const hasAgentNote = !!issue && !isBlankHtml(agentNote);
+  const [agentNoteShownFor, setAgentNoteShownFor] = useState<string | null>(null);
+  if (issue && hasAgentNote && agentNoteShownFor !== issue.id) {
+    setAgentNoteShownFor(issue.id);
+  }
+  const showAgentNote = !!issue && (hasAgentNote || agentNoteShownFor === issue.id);
 
   const isDueSoon = (dateStr: string | null) => {
     if (!dateStr || !now) return false;
@@ -217,7 +230,7 @@ export function IssueDetail({
               {/* Description editor */}
               <div className="px-12 py-6">
                 <RichTextEditor
-                  docKey={issue.id}
+                  docKey={`${issue.id}#${contentRev}`}
                   value={issue.description}
                   onChange={(html) => onUpdate(issue.id, { description: html })}
                   toolbar
@@ -237,7 +250,7 @@ export function IssueDetail({
                         padded background); this padding is the room it takes. */}
                     <div className="pt-6">
                       <RichTextEditor
-                        docKey={`${issue.id}:agent_note`}
+                        docKey={`${issue.id}:agent_note#${contentRev}`}
                         value={agentNote}
                         onChange={(html) => onUpdate(issue.id, { agent_note: html })}
                         placeholder="An agent's questions or delivery show here. Answer inline."

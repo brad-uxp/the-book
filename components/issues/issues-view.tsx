@@ -65,8 +65,19 @@ import {
   type IssuesView as IssuesViewMode,
 } from "@/lib/issues";
 import { isCanvasNote, type NoteFormat } from "@/lib/notes";
+import { mergeRefreshedIssues } from "@/lib/issues-refresh";
+import { usePolling } from "@/hooks/use-polling";
 
 type ViewMode = IssuesViewMode;
+
+/** How often the view refetches while the tab is visible. */
+const REFRESH_MS = 15_000;
+/**
+ * How long after the owner's last change to an issue a refresh leaves it
+ * alone: covers the 500 ms text debounce and a fetch that read the row just
+ * before the save landed.
+ */
+const SETTLE_MS = 2_000;
 
 /**
  * Status-filter value that switches the list into the archive.
@@ -102,7 +113,19 @@ export function IssuesView({
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [filterClient, setFilterClient] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  // Bumped when a refresh brings the open issue's texts from elsewhere (an
+  // agent's note, an edit on the phone): the editors only take a new value
+  // with a new docKey.
+  const [contentRev, setContentRev] = useState(0);
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // What a refresh must not overwrite (lib/issues-refresh.ts): when the owner
+  // last changed each issue, the saves still in flight, what was deleted here,
+  // and a drag under way.
+  const touchedAtRef = useRef<Record<string, number>>({});
+  const inFlightRef = useRef<Record<string, number>>({});
+  const removedRef = useRef<Set<string>>(new Set());
+  const draggingRef = useRef(false);
+  const skipFirstRefreshRef = useRef(true);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -188,7 +211,12 @@ export function IssuesView({
     else setEditIssue(issue);
   };
 
+  const touch = (id: string) => {
+    touchedAtRef.current[id] = Date.now();
+  };
+
   const updateIssue = (id: string, patch: Partial<Issue>) => {
+    touch(id);
     setIssues((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
     setEditIssue((prev) =>
       prev && prev.id === id ? { ...prev, ...patch } : prev
@@ -205,11 +233,17 @@ export function IssuesView({
 
     if (timerKey && debounceRef.current[timerKey]) clearTimeout(debounceRef.current[timerKey]);
     const timer = setTimeout(() => {
+      inFlightRef.current[id] = (inFlightRef.current[id] ?? 0) + 1;
       fetch(`/api/issues/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
-      }).catch(console.error);
+      })
+        .catch(console.error)
+        .finally(() => {
+          inFlightRef.current[id] -= 1;
+          touch(id);
+        });
     }, delay);
     if (timerKey) debounceRef.current[timerKey] = timer;
   };
@@ -245,12 +279,14 @@ export function IssuesView({
         : null,
       client: created.client ?? null,
     };
+    touch(issue.id);
     setIssues((prev) => [...prev, issue]);
     setEditIssue(issue);
   };
 
   const handleDelete = async (id: string) => {
     await fetch(`/api/issues/${id}`, { method: "DELETE" }).catch(console.error);
+    removedRef.current.add(id);
     setIssues((prev) => prev.filter((t) => t.id !== id));
     setEditIssue(null);
   };
@@ -291,6 +327,9 @@ export function IssuesView({
 
       // Drop exactly what the endpoint is scoped to remove: the selected rows
       // that are actually archived. Anything it skipped stays on screen.
+      for (const i of issues) {
+        if (selectedIds.has(i.id) && isArchived(i)) removedRef.current.add(i.id);
+      }
       setIssues((prev) =>
         prev.filter((i) => !(selectedIds.has(i.id) && isArchived(i)))
       );
@@ -349,6 +388,53 @@ export function IssuesView({
     updateIssue(issue.id, { category: newCategory });
     setConvertIssue(null);
   };
+
+  // Keep the screen current: an agent takes a task or hands it to Review, the
+  // phone edits one. Only while the tab is visible, at once when it comes
+  // back, and never over a change of the owner's still settling.
+  const refreshIssues = usePolling(async (signal) => {
+    if (skipFirstRefreshRef.current) {
+      skipFirstRefreshRef.current = false; // the page just drew fresh data
+      return;
+    }
+    if (document.visibilityState !== "visible" || draggingRef.current) return;
+    const startedAt = Date.now();
+    const res = await fetch("/api/issues", { signal, cache: "no-store" });
+    if (!res.ok) throw new Error(`GET /api/issues ${res.status}`);
+    const fresh = (await res.json()) as Issue[];
+    if (signal.aborted || draggingRef.current) return;
+
+    const isPending = (id: string) =>
+      (inFlightRef.current[id] ?? 0) > 0 ||
+      (touchedAtRef.current[id] ?? 0) > startedAt - SETTLE_MS;
+    setIssues((prev) =>
+      mergeRefreshedIssues(prev, fresh, { isPending, removed: removedRef.current })
+    );
+
+    const open = editIssue;
+    const theirs = open && !isPending(open.id) ? fresh.find((i) => i.id === open.id) : undefined;
+    if (open && theirs && theirs.updated_at !== open.updated_at) {
+      if (
+        theirs.description !== open.description ||
+        (theirs.agent_note ?? "") !== (open.agent_note ?? "")
+      ) {
+        setContentRev((r) => r + 1);
+      }
+      setEditIssue((prev) => (prev && prev.id === theirs.id ? theirs : prev));
+    }
+  }, REFRESH_MS);
+
+  useEffect(() => {
+    const onBack = () => {
+      if (document.visibilityState === "visible") refreshIssues();
+    };
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("focus", onBack);
+    return () => {
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("focus", onBack);
+    };
+  }, [refreshIssues]);
 
   // Built once and rendered into both Selects — the mobile popover and the
   // desktop bar must never drift apart.
@@ -568,6 +654,9 @@ export function IssuesView({
           onDeleteIssue={setDeleteIssue}
           onConvertCategory={setConvertIssue}
           onCreateForColumn={(status) => createIssue(status, "task")}
+          onDraggingChange={(dragging) => {
+            draggingRef.current = dragging;
+          }}
         />
       )}
 
@@ -617,6 +706,7 @@ export function IssuesView({
         clients={clients}
         onUpdate={updateIssue}
         onConvertToCanvas={setCanvasIssue}
+        contentRev={contentRev}
       />
 
       {/* Convert to canvas — its own dialog: it moves words, not just a flag */}

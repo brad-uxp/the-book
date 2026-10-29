@@ -76,6 +76,8 @@ export interface Issue {
   description: string;
   /** An agent's latest pass, and the owner's answers. Absent where a view loads only what it shows (a canvas has none). */
   agent_note?: string;
+  /** Moves with every write; the issues view compares it to spot what changed (lib/issues-refresh.ts). */
+  updated_at?: string;
 }
 
 // ── InlineProgress ───────────────────────────────────────────────────────────

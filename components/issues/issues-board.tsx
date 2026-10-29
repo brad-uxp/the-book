@@ -40,6 +40,8 @@ interface Props {
   onDeleteIssue: (issue: Issue) => void;
   onConvertCategory: (issue: Issue) => void;
   onCreateForColumn: (status: IssueStatus) => void;
+  /** A card is being dragged; the view holds its refresh until it lands. */
+  onDraggingChange?: (dragging: boolean) => void;
 }
 
 export function IssuesBoard({
@@ -51,6 +53,7 @@ export function IssuesBoard({
   onDeleteIssue,
   onConvertCategory,
   onCreateForColumn,
+  onDraggingChange,
 }: Props) {
   const popoverCloseTime = useRef(0);
 
@@ -75,6 +78,7 @@ export function IssuesBoard({
   };
 
   const handleDragEnd = (result: DropResult) => {
+    onDraggingChange?.(false);
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (
@@ -112,18 +116,17 @@ export function IssuesBoard({
       return updated;
     });
 
-    // Persist status change
-    fetch(`/api/issues/${draggableId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: destination.droppableId,
-      }),
-    }).catch(console.error);
+    // Persist the status through the view, which knows a save is in flight
+    // and keeps a refresh from moving the card back meanwhile. The order
+    // inside the column is not saved.
+    onUpdateIssue(draggableId, { status: destination.droppableId as IssueStatus });
   };
 
   return (
-    <DragDropContext onDragEnd={handleDragEnd}>
+    <DragDropContext
+      onDragStart={() => onDraggingChange?.(true)}
+      onDragEnd={handleDragEnd}
+    >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {BOARD_COLUMNS.map((col) => {
           const colIssues = columnIssues(col.id);
