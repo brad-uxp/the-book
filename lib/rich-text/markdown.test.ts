@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateHTML } from "@tiptap/html/server";
 import { richTextExtensions } from "./extensions";
-import { MarkdownTooComplexError, TOO_CHANGED, agentHtml, agentMarkdownToHtml, htmlToMarkdown, markdownDiff, markdownToHtml } from "./markdown";
-import { AGENT_NOTE_MARKDOWN_MAX } from "../text-limits";
+import { htmlToMarkdown } from "./markdown";
 
 /** HTML as the editor saves it: the same schema, serialized the same way. */
 function editorHtml(content: unknown[]): string {
@@ -74,141 +73,15 @@ describe("htmlToMarkdown", () => {
     expect(htmlToMarkdown(html)).toBe("Ask @Ana about #Inv 12: Acme — $1,200.00");
   });
 
+  it("lo que el esquema del editor no conoce no llega al markdown; su texto sí", () => {
+    const html =
+      '<p onclick="x()">Hi <b>there</b></p><script>alert(1)</script><img src="https://evil.example/x.png">' +
+      '<iframe src="https://evil.example"></iframe>';
+    expect(htmlToMarkdown(html)).toBe("Hi **there**");
+  });
+
   it("vacío es vacío", () => {
     expect(htmlToMarkdown("")).toBe("");
     expect(htmlToMarkdown("<p></p>")).toBe("");
-  });
-});
-
-describe("ida y vuelta", () => {
-  it("HTML del editor → markdown → HTML da el mismo HTML", () => {
-    expect(markdownToHtml(htmlToMarkdown(RICH))).toBe(RICH);
-  });
-
-  it("markdown → HTML → markdown da el mismo markdown", () => {
-    const md = htmlToMarkdown(RICH);
-    expect(htmlToMarkdown(markdownToHtml(md))).toBe(md);
-  });
-
-  it("con chips: vuelven como texto plano, nunca como chips", () => {
-    const html = editorHtml([p(text("Ask "), person, text(" about "), invoice)]);
-    const back = markdownToHtml(htmlToMarkdown(html));
-    expect(back).toBe("<p>Ask @Ana about #Inv 12: Acme — $1,200.00</p>");
-    expect(htmlToMarkdown(back)).toBe(htmlToMarkdown(html));
-  });
-
-  it("los caracteres de markdown en el texto sobreviven", () => {
-    const html = editorHtml([p(text("5*3*2, a_b_c, [x], `y`, a < b & c > d"))]);
-    expect(markdownToHtml(htmlToMarkdown(html))).toBe(html);
-  });
-});
-
-describe("markdownToHtml: lo que escribe un agente", () => {
-  it("nunca crea un chip, ni con el HTML del chip", () => {
-    const planted =
-      'Total: <span data-type="invoiceMention" class="invoice-mention" data-id="inv-9" data-label="x" ' +
-      'data-invoice-id="inv-9" data-invoice-label="x">x</span> and @Ana #Inv 12';
-    const html = markdownToHtml(planted);
-    // Una sola etiqueta, el párrafo: el chip plantado quedó como su texto, escapado.
-    expect(html.match(/<[a-z]+/g)).toEqual(["<p"]);
-    expect(html).toContain("&lt;span data-type=");
-    expect(html).toContain("@Ana #Inv 12");
-  });
-
-  it("el HTML crudo queda como texto", () => {
-    const html = markdownToHtml('<script>alert(1)</script>\n\n<img src=x onerror="alert(1)">');
-    expect(html).not.toMatch(/<script|<img/);
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  it("un link que no es http(s) no queda como link", () => {
-    const html = markdownToHtml("[click](javascript:alert(1)) and [ok](https://example.com)");
-    expect(html).not.toContain("javascript:");
-    expect(html).toContain('href="https://example.com"');
-  });
-
-  it("vacío es vacío", () => {
-    expect(markdownToHtml("")).toBe("");
-    expect(markdownToHtml("  \n ")).toBe("");
-  });
-});
-
-// Revisión de F2: el lexer de marked es cuadrático con delimitadores de énfasis
-// (12 KB de `_a*` pasan del segundo) y una lista muy anidada desborda la pila.
-// Con el tope de tiempo, lo peor que manda un agente termina en medio segundo.
-describe("agentMarkdownToHtml: lo que manda un agente, con tope de tiempo", () => {
-  const bounded = (md: string) => {
-    const started = performance.now();
-    let error: unknown = null;
-    try {
-      agentMarkdownToHtml(md);
-    } catch (err) {
-      error = err;
-    }
-    return { error, ms: performance.now() - started };
-  };
-
-  it("delimitadores de énfasis al tope permitido: error, acotado", () => {
-    const md = "_a*".repeat(Math.floor(AGENT_NOTE_MARKDOWN_MAX / 3));
-    const { error, ms } = bounded(md);
-    expect(error).toBeInstanceOf(MarkdownTooComplexError);
-    expect(ms).toBeLessThan(1_500);
-  });
-
-  it("una lista anidada cientos de niveles: error, acotado", () => {
-    const md = Array.from({ length: 440 }, (_, i) => `${"  ".repeat(i)}- x`).join("\n");
-    const { error, ms } = bounded(md);
-    expect(error).toBeInstanceOf(MarkdownTooComplexError);
-    expect(ms).toBeLessThan(1_500);
-  });
-
-  it("una nota de verdad pasa, igual que sin el tope, y después del corte todo sigue andando", () => {
-    expect(agentMarkdownToHtml("✅ Ready\n\n- **one**\n- _two_")).toBe(markdownToHtml("✅ Ready\n\n- **one**\n- _two_"));
-  });
-});
-
-describe("agentHtml: el HTML de un agente", () => {
-  it("queda en el esquema del editor, sin chips y sin lo que el esquema no conoce", () => {
-    const html =
-      '<p onclick="x()">Hi <span data-type="mention" class="mention" data-id="p-1" data-label="Ana" data-mention-id="p-1" ' +
-      'data-mention-label="Ana">Ana</span></p><script>alert(1)</script><iframe src="https://evil.example"></iframe>';
-    expect(agentHtml(html)).toBe("<p>Hi Ana</p>");
-  });
-
-  it("un link es solo su dirección: sin clase de chip, sin title, con target y rel seguros", () => {
-    const html =
-      '<p><a href="https://evil.example" class="invoice-mention" target="_self" rel="opener" title="x">#Inv 12: Acme — $1,200.00</a></p>';
-    expect(agentHtml(html)).toBe(
-      '<p><a target="_blank" rel="noopener noreferrer nofollow" href="https://evil.example">#Inv 12: Acme — $1,200.00</a></p>'
-    );
-  });
-
-  it("lo que ya es del editor no cambia", () => {
-    const html = markdownToHtml("**Ready** — see [PR](https://example.com)");
-    expect(agentHtml(html)).toBe(html);
-  });
-});
-
-describe("markdownDiff", () => {
-  it("sin cambios, null", () => {
-    expect(markdownDiff("a\n\nb", "a\n\nb")).toBeNull();
-  });
-
-  it("las líneas que cambiaron, con una de contexto", () => {
-    const before = "## Questions\n\n1. A or B?\n\nNext: ship";
-    const after = "## Questions\n\n1. A or B?\n\n**Brad:** A.\n\nNext: ship";
-    expect(markdownDiff(before, after)).toBe("@@ -3,3 +3,5 @@\n 1. A or B?\n \n+**Brad:** A.\n+\n Next: ship");
-  });
-
-  it("acotado: un texto cambiado entero, largo, no se diffea", () => {
-    const before = Array.from({ length: 1500 }, (_, i) => `old line ${i}`).join("\n\n");
-    const after = Array.from({ length: 1500 }, (_, i) => `new line ${i}`).join("\n\n");
-    expect(markdownDiff(before, after)).toBe(TOO_CHANGED);
-  });
-
-  it("el mismo texto serializado distinto por TipTap no es un cambio", () => {
-    const a = htmlToMarkdown("<p><strong>Ready</strong> to review</p>");
-    const b = htmlToMarkdown('<p><b>Ready</b> to review</p>');
-    expect(markdownDiff(a, b)).toBeNull();
   });
 });

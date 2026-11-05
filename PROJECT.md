@@ -31,11 +31,12 @@
 - **NextAuth 5 (beta)** — autenticación con Google OAuth, single-user
 - **Cloudflare R2** (S3-compatible) — adjuntos de facturas vía URLs presignadas
 - **MCP propio** en `/api/mcp` (`@modelcontextprotocol/server` v2, Streamable HTTP
-  sin estado): las herramientas de issues con las que un agente trabaja una épica,
-  con los tokens del **OAuth propio de theBook** (F3: theBook es el servidor de
-  autorización; Claude se conecta pasando por el login de Google). El agente lee y
-  escribe markdown; la conversión a HTML de TipTap es del servidor
-  (`lib/rich-text/markdown.ts`, con `@tiptap/html` + happy-dom). Plan y fases en
+  sin estado), **de solo lectura**: un agente lista las tareas y lee una, con los
+  tokens del **OAuth propio de theBook** (theBook es el servidor de autorización;
+  Claude se conecta pasando por el login de Google). El agente lee markdown; la
+  conversión desde el HTML de TipTap es del servidor (`lib/rich-text/markdown.ts`,
+  con `@tiptap/markdown` + happy-dom). Historia, y el flujo de épicas que se
+  revirtió el 2026-11-05, en
   [`docs/product/features/agentes-y-mcp.md`](./docs/product/features/agentes-y-mcp.md)
 
 > **No hay email.** Existió y se eliminó: Nodemailer y Gmail SMTP son de una
@@ -99,10 +100,10 @@ TheBook/
 │   ├── notifications/  settings/  admin-logs/
 ├── lib/
 │   ├── api.ts                        # requireSession, mapeo de errores, readJson
-│   ├── issues-service.ts  canvas-service.ts  # Escrituras de issues e ideas: reglas + auditoría, para las rutas REST, la sync y el MCP
-│   ├── mcp-issues.ts  mcp-auth.ts     # El MCP de issues para agentes (/api/mcp) y su 401 con WWW-Authenticate
+│   ├── issues-service.ts  canvas-service.ts  # Escrituras de issues e ideas: reglas + auditoría, para las rutas REST y la sync
+│   ├── mcp-issues.ts  mcp-auth.ts     # El MCP de issues para agentes, de solo lectura (/api/mcp), y su 401 con WWW-Authenticate
 │   ├── oauth.ts  oauth-clients.ts  oauth-service.ts  # OAuth del MCP: reglas (testeadas), CIMD de Claude, códigos/tokens/revocar
-│   ├── rich-text/markdown.ts         # Markdown ↔ HTML de TipTap y diffs, para el MCP (solo servidor, testeada)
+│   ├── rich-text/markdown.ts         # HTML de TipTap → markdown, para el MCP (solo servidor, testeada)
 │   ├── audit.ts                      # Logging de auditoría (fire-and-forget)
 │   ├── cron-helpers.ts               # Lógica pura del job diario (testeada)
 │   ├── currency.ts                   # Centavos ↔ display (testeada)
@@ -195,8 +196,7 @@ guardan como **UTC midnight**.
 | Modelo         | Descripción                                                          |
 | -------------- | -------------------------------------------------------------------- |
 | `OtherExpense` | Gasto puntual: nombre, categoría, monto, fecha                       |
-| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. Estados (`ISSUE_STATUSES` en `lib/issues.ts`, compartido con el teléfono): `pending` (Backlog), `in_progress`, `review` (le toca a Brad: preguntas o entrega de un agente), `blocked`, `done`. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`). `agent_note`: HTML de TipTap, la última pasada de un agente y las respuestas de Brad, inline; no viaja en la sync del teléfono |
-| `IssueAgentState` | 1:1 con `Issue` (PK `issue_id`, `ON DELETE CASCADE`): lo que un agente guarda entre pasadas — bitácora en markdown, carpeta, link de sesión — y, puestos por el servidor cuando un agente escribe su nota, esa nota (`last_note`) y la descripción de ese momento (`description_seen`). Tabla aparte para no mover `Task.updated_at`, por el que tira la sync. Se escribe solo vía `lib/issues-service.ts`: lo escribe el MCP (la bitácora se agrega en el servidor y recorta lo más viejo pasado `AGENT_LOG_MAX`); sin ruta REST |
+| `Issue`        | Tarea o nota (`@@map("Task")`): estado, progreso, vencimiento, cliente. `status = done` **es el archivo**: no se muestra en el board, y en la lista solo bajo el filtro "Done · archived" (`lib/issues.ts`). Solo aplica a tareas: una nota nunca se archiva. Estados (`ISSUE_STATUSES` en `lib/issues.ts`, compartido con el teléfono): `pending` (Backlog), `in_progress`, `blocked`, `done`. `note_format` (`text` \| `canvas`) dice de qué está hecha una nota: un documento (la descripción) o un lienzo de ideas conectadas. Solo una nota puede ser canvas (`lib/notes.ts`) |
 | `CanvasNode`   | Una idea de una nota canvas: HTML de TipTap (mismo formato que la descripción, así las menciones se buscan igual), color por clave de paleta, posición y tamaño. El id puede venir del cliente (UUID) |
 | `CanvasEdge`   | Conexión dirigida entre dos ideas **del mismo** lienzo |
 | `SyncTombstone`| Un borrado de issue, idea o conexión, para que el teléfono se entere. Lo escriben **solo triggers** `AFTER DELETE` (cubren cascadas y cualquier otra vía); se purga a los 60 días |
@@ -208,7 +208,7 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
-| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings: solo llega a las rutas REST de issues; o emitido por el OAuth del MCP: 1 h, `oauth_grant_id` + `audience` = URL del MCP, solo sirve en `/api/mcp`. En los dos casos `lib/issues-service.ts` lo limita a `agent_note`, `progress`, `status` ∈ {in_progress, review, blocked} y su estado de agente). CHECK `ApiToken_oauth_audience_together` |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings: solo llega a las rutas REST de issues; o emitido por el OAuth del MCP: 1 h, `oauth_grant_id` + `audience` = URL del MCP, solo sirve en `/api/mcp`. En los dos casos lee tareas y no escribe nada: `lib/issues-service.ts` rechaza toda escritura). CHECK `ApiToken_oauth_audience_together` |
 | `OAuthGrant`   | Una "conexión" del OAuth del MCP: lo que Brad aprobó en el consentimiento (cliente CIMD de claude.ai, redirect, scope, resource). Settings → Connected apps la lista y la revoca (con sus `ApiToken`). Revocada, nunca borrada |
 | `OAuthCode` / `OAuthRefreshToken` | Código de autorización (sha256, 60 s, un uso) y refresh tokens (sha256, 30 días, rotan en cada uso; reusar uno revoca la conexión) |
 | `MobileRelease` | Versión publicada de la app Android (versión, `version_code` único y creciente, sha256, tamaño, clave en R2, notas, `published_at`) para las actualizaciones sin cable |
@@ -254,21 +254,18 @@ la excepción: exige sesión interactiva, porque un token que puede emitir token
 no se puede revocar. Y la sync del teléfono (`/api/sync/*`) acepta la sesión del
 navegador o un token `mobile` (los que emite el login de la app), no los tokens
 `automation` hechos a mano en Settings (`requireSyncSession`). Un token `agent`
-recibe 403 en toda ruta salvo `GET /api/issues` y `GET/PATCH/DELETE /api/issues/[id]`
-y `POST /api/issues` (`requireSession({ agent: true })`), y ahí solo ve tareas
-(las notas no salen en la lista y por id son 404). El servicio rechaza con 403
-crear, borrar, `done`, `pending`, cualquier otro campo, escribir una nota y
-escribir una tarea archivada. Dura 30 días como mucho. Detalle en
-[`API.md`](./API.md#agent-tokens).
+recibe 403 en toda ruta salvo `GET/POST /api/issues` y `GET/PATCH/DELETE
+/api/issues/[id]` (`requireSession({ agent: true })`), y ahí solo lee tareas (las
+notas no salen en la lista y por id son 404; las archivadas se leen igual).
+Toda escritura — crear, editar, borrar — es un 403 de `lib/issues-service.ts`.
+Dura 30 días como mucho. Detalle en [`API.md`](./API.md#agent-tokens).
 
-`/api/mcp` es el revés: **solo** acepta un token `agent` (`requireAgentToken`;
-cualquier otro tipo, 403; sin Bearer válido, 401 con `WWW-Authenticate`, que es
-lo que F3 extiende a OAuth). Cinco herramientas sobre `lib/issues-service.ts`:
-`issues_list`, `issue_get`, `issue_update_note` (con versión base: 409 si Brad
-cambió la nota o la descripción), `issue_update_state` e `issue_write_log`.
-Detalle en [`API.md`](./API.md#the-mcp-apimcp).
+`/api/mcp` es el revés: **solo** acepta un token `agent` de su OAuth
+(`requireAgentToken`; sin uno válido, 401 con `WWW-Authenticate`, que arranca el
+OAuth del cliente). Es de solo lectura: `issues_list` e `issue_get` (la tarea y
+su descripción en markdown). Detalle en [`API.md`](./API.md#the-mcp-apimcp).
 
-El MCP toma solo los access tokens de su propio OAuth (F3), con audiencia
+El MCP toma solo los access tokens de su propio OAuth, con audiencia
 verificada; la API REST rechaza cualquier token con audiencia. Públicos (sin
 sesión): `/.well-known/oauth-*` y `POST /api/oauth/token`; `/oauth/authorize`
 exige la sesión de Brad (proxy → `/login?callbackUrl=` → vuelve). Detalle en
@@ -384,7 +381,7 @@ teléfono por FCM como mensaje solo de datos; best effort, nunca tumba el job.
 | Settings singleton          | Una fila, con CHECK en la base                                         |
 | Métricas                    | `lib/metrics.ts` único: dashboard y `/api/metrics` usan las mismas fórmulas |
 | Auth single-user            | `ALLOWED_EMAILS` en `auth.ts`, re-chequeado en cada refresh del token  |
-| Escrituras de issues        | `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST, la sync del teléfono y el MCP pasan por el mismo código, que chequea quién escribe por su cuenta; la auditoría se escribe después del commit |
+| Escrituras de issues        | `lib/issues-service.ts` / `lib/canvas-service.ts`: las rutas REST y la sync del teléfono pasan por el mismo código, que chequea quién escribe por su cuenta (un `agent`, nunca); la auditoría se escribe después del commit |
 | Sync del teléfono           | Pull por cursor con ventana de 2 min; push idempotente por `mutation_id`; última escritura gana por campo, salvo el texto: en conflicto, copia |
 
 ---
@@ -451,16 +448,12 @@ automáticamente; el `build` genera el cliente Prisma por su cuenta.
   `req.auth` sea un objeto truthy, y gatear sobre eso abre toda la API
 - **Sesión de 12 h**, con re-validación de la allowlist en cada refresh
 - **Tokens por tipo, cerrados por defecto**: `requireSession()` rechaza los
-  tokens `release` y `agent` salvo donde la ruta los pide; lo que un `agent`
-  puede escribir lo decide `lib/issues-service.ts`, no la ruta ni el prompt.
+  tokens `release` y `agent` salvo donde la ruta los pide; que un `agent` no
+  escriba nada lo decide `lib/issues-service.ts`, no la ruta ni el prompt.
   `canvas-service` y la sync también rechazan a un `agent` por su cuenta
-- **Escrituras del agente atómicas**: el chequeo de "tarea, no archivada" (y la
-  versión base de la nota) va en el `WHERE` del `updateMany`, y el estado del
-  agente bloquea la fila de la tarea (`FOR UPDATE`): Brad archivando en el
-  mismo instante nunca queda deshecho
-- **Lo que escribe un agente nunca es un chip**: su markdown se convierte con el
-  esquema de TipTap sin los nodos de mención, así que `@`, `#` y cualquier HTML
-  quedan como texto (F1: plantar el chip de una factura para leer su monto)
+- **MCP de solo lectura**: dos herramientas que leen; el HTML guardado se
+  convierte a markdown en un DOM de happy-dom que no ejecuta scripts ni sale a
+  la red
 - **Auditoría por token**: `token:<kind>:<name> (<prefix>)` y, en cada update, los
   campos que cambiaron (`changed`), nunca el texto
 - **OAuth del MCP cerrado**: solo clientes CIMD de claude.ai (sin registro

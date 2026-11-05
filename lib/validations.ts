@@ -6,14 +6,7 @@ import { CANVAS_COLOR_KEYS } from "./canvas-palette";
 import { ISSUE_STATUSES } from "./issues";
 import { NOTE_FORMATS } from "./notes";
 import { SYNC_PUSH_MAX } from "./sync-protocol";
-import {
-  AGENT_LOG_ENTRY_MAX,
-  AGENT_LOG_MAX,
-  AGENT_NOTE_MARKDOWN_MAX,
-  AGENT_REF_MAX,
-  ISSUE_TITLE_MAX,
-  RICH_TEXT_MAX,
-} from "./text-limits";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import {
   LAYOUT_BATCH_MAX,
   NODE_CONTENT_MAX,
@@ -241,30 +234,8 @@ export type IssueInput = z.infer<typeof IssueSchema>;
  */
 export const IssueCreateSchema = IssueSchema.extend({ id: z.uuid().optional() });
 
-/**
- * An edit of an issue (PATCH /api/issues/:id): any field, plus the agent's
- * note. The note is not part of IssueSchema, so neither creating an issue nor
- * the phone's sync (SyncIssueFieldsSchema) carries it.
- */
-export const IssueUpdateSchema = IssueSchema.partial().extend({
-  agent_note: Text().max(RICH_TEXT_MAX, "Too long").optional(),
-});
-
-/**
- * What an agent keeps about an issue between passes (IssueAgentState). Only
- * these: the note it last wrote and the description it last saw are kept by
- * the server, never sent.
- */
-export const IssueAgentStateSchema = z
-  .object({
-    log: Text().max(AGENT_LOG_MAX, "Too long"),
-    work_dir: Text().max(AGENT_REF_MAX).nullable(),
-    session_url: SafeUrl.pipe(z.string().max(AGENT_REF_MAX)).nullable(),
-  })
-  .partial()
-  .strict();
-
-export type IssueAgentStateInput = z.infer<typeof IssueAgentStateSchema>;
+/** An edit of an issue (PATCH /api/issues/:id): any of its fields. */
+export const IssueUpdateSchema = IssueSchema.partial();
 
 /**
  * The token endpoint's two grants (POST /api/oauth/token, RFC 6749 §4.1.3 and
@@ -286,14 +257,6 @@ export const OAuthRefreshGrantSchema = z.object({
   resource: OAuthField(500).optional(),
   scope: OAuthField(200).optional(),
 });
-
-/**
- * What an agent sends through the MCP (/api/mcp, lib/mcp-issues.ts): its
- * note in markdown — the HTML it becomes is checked again against
- * IssueUpdateSchema — and one entry for its log.
- */
-export const AgentNoteMarkdownSchema = Text().max(AGENT_NOTE_MARKDOWN_MAX, "Too long");
-export const AgentLogEntrySchema = Text().trim().min(1, "Empty").max(AGENT_LOG_ENTRY_MAX, "Too long");
 
 /**
  * Ids to remove from the archive. Bounded because this is the one route that

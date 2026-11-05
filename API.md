@@ -43,64 +43,43 @@ agent?" answerable — visible under `/admin-logs`.
 ### Agent tokens
 
 An **agent token** (`ApiToken.kind = agent`, minted in Settings → API tokens,
-kind "Agent") is for an AI agent working the owner's epics: it takes one,
-works, and hands it back in `review` with a note. It works an issue; it does
-not own it. The rules are enforced by the server (`lib/issues-service.ts`),
-not by the agent's prompt:
+kind "Agent") is for an AI agent that reads the owner's tasks. It reads; it
+writes nothing. The rules are enforced by the server (`lib/api.ts` and
+`lib/issues-service.ts`), not by the agent's prompt:
 
 | | |
 |---|---|
-| Reaches | `GET /api/issues`, `GET/PATCH /api/issues/{id}`, and **tasks only**: notes are left out of the list and are a `404` by id. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
-| May write | `agent_note`, `progress`, and `status` to `in_progress`, `review` or `blocked`. |
-| `403` | `status: "done"` (only the owner archives) or `"pending"`; any other field (`title`, `description`, `due_date`, `category`, `client_id`, `note_format`, `sort_order`), even alongside allowed ones; `POST` (create) and `DELETE`; any write to an archived issue (a `done` task), including reopening it; any write to a note. |
+| Reaches | `GET /api/issues` and `GET /api/issues/{id}`, **tasks only**: notes are left out of the list and are a `404` by id. Archived tasks read like any other. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
+| `403` | Every write: `POST /api/issues`, and `PATCH` or `DELETE` on `/api/issues/{id}`, whatever the body and whichever issue (`An agent token cannot write issues`). Nothing is written or audited. |
 
-A refused `PATCH` writes nothing, and the archived check is made again inside
-the write itself: the owner archiving the issue in the same instant is never
-undone. An `agent_note` an agent token writes is stored as the editor would
-store it, without chips: anything the editor's schema does not know is
-dropped, and a chip is left as its text. Writes are audited as `token:agent:<name> (<prefix>)` and count against
-the same 300 requests/minute. An agent token lasts at most 30
-days (Settings proposes 14).
-
-The web does not refresh @person and #invoice chips inside `agent_note` (it
-does in descriptions): a chip an agent planted would otherwise come back with
-the live label — an invoice's amount — saved by the owner's session.
+Requests count against the same 300 requests/minute. An agent token lasts at
+most 30 days (Settings proposes 14).
 
 ### The MCP (`/api/mcp`)
 
 theBook's own MCP server: Streamable HTTP, stateless (no sessions, so `POST`
-only — a `GET` is a `405`). Any Claude session, in any folder, works epics with
-it without HTML or a shell. It takes only the access tokens theBook's own OAuth
-issues for it ([below](#oauth-for-the-mcp)) — not a token made in Settings —
-and the tools go through the same `lib/issues-service.ts` rules as the routes
-above, tasks only:
+only — a `GET` is a `405`). Any Claude session, in any folder, reads the
+owner's tasks with it without HTML or a shell. It takes only the access tokens
+theBook's own OAuth issues for it ([below](#oauth-for-the-mcp)) — not a token
+made in Settings. It is **read-only**: two tools, tasks only.
 
 | Tool | Does |
 |---|---|
 | `issues_list` | Rows `{id, title, status, progress, updated}`. Archived tasks are left out unless `status` asks for them. |
-| `issue_get` | `description` and `note` (the agent note) as **markdown**; `changes`: what the owner changed since the agent last wrote its note, as unified diffs (the description against the one it saw then, the note against the one it wrote); `base`; folder and session. `log_lines` adds the end of the log. |
-| `issue_update_note` | Replaces the note (markdown), given the `base` it read. If the note or the description changed since, `409` and nothing is written; read again, keep the owner's answers, retry. Answers the new `base`. |
-| `issue_update_state` | Any of `status` (`in_progress`, `review`, `blocked`; `done` and `pending` are a validation error), `progress`, `work_dir`, `session_url`, in one transaction. |
-| `issue_write_log` | **Adds** one entry (up to 4 000 characters), stamped with the time in Montevideo. Past 200 000 characters the oldest lines are dropped, whole. |
+| `issue_get` | One task: `{id, title, status, progress, updated, description}`, the description as **markdown**. A note is `404`. |
 
 - **Markdown, never HTML.** The server converts through the editor's own
-  schema (`lib/rich-text/markdown.ts`), and computes the diffs in markdown, so
-  TipTap writing the same text two ways is not a change. @person and #invoice
-  chips read as text (`@Ana`, `#Inv 12: Acme — $1,200.00`); what an agent
-  writes is parsed without chips, so `@`, `#` and any HTML in it stay plain
-  text.
-- **`base`** is a short hash of the note and of the description
-  (`agentBase`); it is checked before the write and again inside it, so an
-  edit landing in between is a `409` too.
-- **Refusals** are tool errors whose text starts with the status: `403: …`,
-  `404: …`, `409: …`.
+  schema (`lib/rich-text/markdown.ts`), in a DOM that cannot run a script or
+  reach the network. @person and #invoice chips read as text (`@Ana`,
+  `#Inv 12: Acme — $1,200.00`).
+- **Refusals** are tool errors whose text starts with the status: `404: …`.
 - **Without a valid token** — none, a browser session, a token made in
   Settings, an expired or revoked one, or one for another audience — `401` with
   `WWW-Authenticate: Bearer realm="book", resource_metadata="…", scope="issues"`
   (plus `error="invalid_token"` when one was presented): what starts a client's
-  OAuth. Bodies over 1 MiB: `413`; a JSON-RPC batch: `400` (one message per
-  request). An unexpected failure is `500: Internal error`, never the
-  exception's message.
+  OAuth. Over 300 calls a minute per connection: `429`. Bodies over 1 MiB:
+  `413`; a JSON-RPC batch: `400` (one message per request). An unexpected
+  failure is `500: Internal error`, never the exception's message.
 
 ### OAuth for the MCP
 
@@ -223,16 +202,7 @@ derived, not a stored field.
 | GET | `/api/issues/linked-counts` |
 
 `category` is `task` or `note`; `status` is `pending` (the board's Backlog),
-`in_progress`, `review` (the owner's turn: an agent's questions or delivery),
-`blocked` or `done` (archived); `progress` is 0–100.
-
-`agent_note` is an agent's latest pass on the issue and the owner's answers
-to it, inline: HTML, like `description`, and up to the same 200 000
-characters. `PATCH` accepts it; `POST` and the phone's sync do not carry it.
-When an **agent** token writes it, the server also keeps that note and the
-description as they stood (`IssueAgentState`), so what the owner changes
-afterwards can be told apart. The agent's log, folder and session link live
-there too; they have no REST route — [the MCP](#the-mcp-apimcp) writes them.
+`in_progress`, `blocked` or `done` (archived); `progress` is 0–100.
 
 `note_format` is `text` (default: the note is its `description`) or `canvas`
 (the note is a canvas of connected ideas, and `description` is unused). Only a
@@ -486,5 +456,5 @@ curl -s -X POST "$BASE/api/invoices" \
 - If an agent builds requests from content it did not author — invoices, email,
   PDFs — treat that content as untrusted input. An automation token can delete
   records, and the audit log is what lets you find and undo the damage, not
-  prevent it. An agent that only works issues should get an **agent** token
-  instead: the server holds it to its own fields.
+  prevent it. An agent that only needs to read tasks should get an **agent**
+  token instead: it reads tasks and the server refuses every write.

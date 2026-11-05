@@ -5,13 +5,11 @@
  * that has to know about it.
  *
  *  - pending: not started (the board says Backlog).
- *  - in_progress: being worked, by an agent or the owner.
- *  - review: the owner's turn — an agent left questions or a delivery in the
- *    issue's agent_note.
+ *  - in_progress: being worked.
  *  - blocked: waiting on someone else.
- *  - done: archived. Only the owner sets it (lib/issues-service.ts).
+ *  - done: archived.
  */
-export const ISSUE_STATUSES = ["pending", "in_progress", "review", "blocked", "done"] as const;
+export const ISSUE_STATUSES = ["pending", "in_progress", "blocked", "done"] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
 /**

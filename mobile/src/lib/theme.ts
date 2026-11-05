@@ -57,14 +57,13 @@ export const font = {
 
 /**
  * Task status colours — the same values the web's board uses. Keyed by any
- * string, so a status this build does not know yet (a newer server's) reads
- * as missing rather than failing; `satisfies` still makes every known one
- * listed.
+ * string, so a status this build does not know (a newer server's, or one
+ * since removed) reads as missing rather than failing; `satisfies` still
+ * makes every known one listed.
  */
 export const statusColor: Record<string, string> = {
   pending: "#94A3B8",
   in_progress: "#3B82F6",
-  review: "#8B5CF6",
   blocked: "#F97316",
   done: "#10B981",
 } satisfies Record<IssueStatus, string>;
@@ -72,7 +71,6 @@ export const statusColor: Record<string, string> = {
 export const statusLabel: Record<string, string> = {
   pending: "Pending",
   in_progress: "In progress",
-  review: "Review",
   blocked: "Blocked",
   done: "Done",
 } satisfies Record<IssueStatus, string>;

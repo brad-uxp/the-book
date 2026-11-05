@@ -1,26 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { getWriter, mcpBudgetKey, readJsonLimited, requireAgentToken, resolveActor } from "@/lib/api";
+import { readJsonLimited, requireAgentToken } from "@/lib/api";
 import { issuesMcpServer } from "@/lib/mcp-issues";
 
 export const runtime = "nodejs";
 
 /**
- * Bigger than any one call should be: a note is at most RICH_TEXT_MAX
- * characters, a few bytes each once in UTF-8 and JSON. Read with a cap so a
- * client cannot make the server hold whatever it sends.
+ * Far bigger than any call to a read-only tool should be. Read with a cap so
+ * a client cannot make the server hold whatever it sends.
  */
 const MCP_BODY_MAX_BYTES = 1024 * 1024;
 
 /**
  * theBook's MCP (lib/mcp-issues.ts) over Streamable HTTP, without sessions:
- * each request gets a fresh server for its caller, and nothing is kept
- * between requests — the in-memory rate limit is the only shared state, as
- * everywhere else. POST only: with no sessions there is no stream to GET and
- * none to DELETE, and Next answers those with a 405.
+ * each request gets a fresh server, and nothing is kept between requests —
+ * the in-memory rate limit is the only shared state, as everywhere else.
+ * POST only: with no sessions there is no stream to GET and none to DELETE,
+ * and Next answers those with a 405. Its tools only read.
  *
  * Agent tokens only (requireAgentToken). Without one, a 401 whose
- * WWW-Authenticate challenge F3 extends into OAuth discovery.
+ * WWW-Authenticate challenge starts a client's OAuth discovery.
  */
 export async function POST(req: NextRequest) {
   const denied = await requireAgentToken();
@@ -43,12 +42,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // requireAgentToken let in an agent token only; pinned anyway, so this
-  // endpoint can never write as the owner.
-  const writer = { ...(await getWriter()), access: "agent" as const };
-  const actor = await resolveActor();
-  const budgetKey = actor?.kind === "token" ? mcpBudgetKey(actor) : "unknown";
-  const handler = createMcpHandler(() => issuesMcpServer(writer, budgetKey), {
+  const handler = createMcpHandler(() => issuesMcpServer(), {
     // No subscriptions/listen: nothing here changes on its own, and with a
     // handler per request the SDK's own cap on open streams would never bind.
     maxSubscriptions: 0,

@@ -89,9 +89,9 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
  *   if (denied) return denied;
  *
  * An agent token is refused unless the route passes `{ agent: true }` — only
- * the issue routes do, and there lib/issues-service.ts decides what it may
- * write. Refusing by default means a new route never opens the books to it
- * by forgetting to.
+ * the issue routes do: there it reads tasks, and lib/issues-service.ts
+ * refuses any write. Refusing by default means a new route never opens the
+ * books to it by forgetting to.
  */
 export async function requireSession(opts: { agent?: boolean } = {}): Promise<NextResponse | null> {
   const actor = await resolveActor();
@@ -148,8 +148,8 @@ export async function requireSession(opts: { agent?: boolean } = {}): Promise<Ne
 
 /**
  * The caller as lib/issues-service.ts needs it: a label for the log, and what
- * it may change. Only an agent token is held to an agent's fields; with no
- * caller at all (which requireSession has already refused) it gets no more.
+ * it may change. An agent token may change nothing; with no caller at all
+ * (which requireSession has already refused) it gets no more.
  */
 export async function getWriter(): Promise<Writer> {
   const actor = await resolveActor().catch(() => null);
@@ -234,11 +234,11 @@ export async function requireReleaseToken(): Promise<NextResponse | null> {
 /**
  * Authorization for the MCP (/api/mcp): an access token theBook's OAuth
  * issued for it (lib/oauth-service.ts) — kind `agent`, audience the MCP's
- * URL — and nothing else. The MCP is the agents' way in and holds every
- * caller to an agent's rules (lib/issues-service.ts); the owner and the
- * scripts have the REST API. Anything else — no Bearer, a browser session,
- * an expired or revoked token, a token for somewhere else — is the 401 whose
- * challenge starts a client's OAuth (lib/mcp-auth.ts).
+ * URL — and nothing else. The MCP is the agents' way in, and only reads
+ * (lib/mcp-issues.ts); the owner and the scripts have the REST API.
+ * Anything else — no Bearer, a browser session, an expired or revoked token,
+ * a token for somewhere else — is the 401 whose challenge starts a client's
+ * OAuth (lib/mcp-auth.ts).
  */
 export async function requireAgentToken(): Promise<Response | null> {
   const presented = (await headers()).has("authorization");

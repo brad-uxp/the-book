@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Maximize2, Minimize2, Bot } from "lucide-react";
+import { X, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -10,7 +10,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { isBlankHtml } from "@/lib/notes";
 import {
   type Issue,
   type Client,
@@ -37,8 +36,9 @@ interface IssueDetailProps {
   /** Asks to turn this issue into a canvas note — it moves words, so it confirms. */
   onConvertToCanvas: (issue: Issue) => void;
   /**
-   * Bumped when the texts were changed elsewhere (an agent, the phone). Part of
-   * the editors' docKey: they take a new `value` only with a new docKey.
+   * Bumped when the description was changed elsewhere (the phone, another
+   * tab). Part of the editor's docKey: it takes a new `value` only with a new
+   * docKey.
    */
   contentRev?: number;
 }
@@ -64,16 +64,6 @@ export function IssueDetail({
   }, [expanded]);
 
   const now = useNow();
-  const agentNote = issue?.agent_note ?? "";
-  // Shown only once an agent has written: an empty second editor under the
-  // description is noise. Once shown it stays while the issue is open, so
-  // clearing it while answering does not pull it out from under the cursor.
-  const hasAgentNote = !!issue && !isBlankHtml(agentNote);
-  const [agentNoteShownFor, setAgentNoteShownFor] = useState<string | null>(null);
-  if (issue && hasAgentNote && agentNoteShownFor !== issue.id) {
-    setAgentNoteShownFor(issue.id);
-  }
-  const showAgentNote = !!issue && (hasAgentNote || agentNoteShownFor === issue.id);
 
   const isDueSoon = (dateStr: string | null) => {
     if (!dateStr || !now) return false;
@@ -237,31 +227,6 @@ export function IssueDetail({
                   className="min-h-[200px] text-sm"
                 />
               </div>
-
-              {/* Agent note: an agent's latest pass; the owner answers inline */}
-              {showAgentNote && (
-                <div className="px-12 pb-8">
-                  <div className="border-t pt-5">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                      <Bot className="h-3.5 w-3.5" />
-                      Agent note
-                    </div>
-                    {/* The toolbar reaches 1.5rem above itself (it sticks with a
-                        padded background); this padding is the room it takes. */}
-                    <div className="pt-6">
-                      <RichTextEditor
-                        docKey={`${issue.id}:agent_note#${contentRev}`}
-                        value={agentNote}
-                        onChange={(html) => onUpdate(issue.id, { agent_note: html })}
-                        placeholder="An agent's questions or delivery show here. Answer inline."
-                        toolbar
-                        refreshMentions={false}
-                        className="min-h-[120px] text-sm"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </>
         )}

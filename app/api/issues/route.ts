@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(issues);
 }
 
-/** An agent token reaches this only to be refused by createIssue (403). */
+/** An agent token reaches this only to be refused by createIssue (403): it writes nothing. */
 export async function POST(req: NextRequest) {
   const denied = await requireSession({ agent: true });
   if (denied) return denied;

@@ -182,7 +182,7 @@ export function ApiTokens() {
             onChange={(e) => {
               const next = e.target.value as "automation" | "release" | "agent";
               setKind(next);
-              // An agent token lasts 30 days at most (the API refuses more); 14 fits a pass.
+              // An agent token lasts 30 days at most (the API refuses more); 14 is the proposal.
               if (next === "agent") setDays(String(AGENT_TOKEN_DAYS));
             }}
             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
@@ -229,7 +229,7 @@ export function ApiTokens() {
                       </Badge>
                     )}
                     {t.kind === "agent" && (
-                      <Badge variant="secondary" className="text-[10px]" title="Reads issues and writes an agent's note, progress and status; never done, never deletes; refused everywhere else">
+                      <Badge variant="secondary" className="text-[10px]" title="Reads tasks and writes nothing; refused everywhere else">
                         Agent
                       </Badge>
                     )}

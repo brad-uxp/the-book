@@ -1,5 +1,63 @@
 # Agentes sobre theBook: épicas con estado de revisión y un MCP propio
 
+> **Estado actual (2026-11-05): revertido.** Brad decidió volver atrás el flujo de épicas
+> trabajadas por agentes. Quedan el OAuth y el MCP, **de solo lectura**. Qué se quitó, qué
+> queda y por qué: "Revertido (2026-11-05)", justo abajo. Todo lo que sigue a esa sección es la
+> historia tal como se escribió; no se reescribió.
+
+## Revertido (2026-11-05)
+
+**Qué se quitó**
+
+- **El estado `review`** (UI **Review**): de `ISSUE_STATUSES` (`lib/issues.ts`, compartido con
+  el teléfono), de Zod, del board (vuelve a tres columnas: In Progress, Blocked, Backlog), de
+  los filtros, del selector de estado, de los colores y de los tests. En el teléfono, la 0.6.1
+  (versionCode 11) ya no lo ofrece; un estado que la app no conoce se sigue mostrando por su
+  nombre. Una 0.6.0 que mande `review` por la sync recibe ese cambio rechazado (`invalid`) y
+  se queda con la fila del servidor.
+- **`agent_note`**: su editor en el detalle, su manejo en la vista de issues, el campo en la API
+  y su validación, `agentHtml`, el prop `refreshMentions` del editor (solo servía a la nota) y
+  los límites de `lib/text-limits.ts` que eran para ella y para la bitácora.
+- **`IssueAgentState`**: bitácora, carpeta y sesión del agente, `last_note` y
+  `description_seen`, la versión base (`agentBase`, el 409) y los diffs (`changes`).
+- **Las escrituras de agentes**: un token `agent` ya no escribe nada. Crear, editar o borrar es
+  un 403 en `lib/issues-service.ts`, sin tocar la base. Lee igual que antes: solo tareas, una
+  nota es 404 por id, las archivadas se leen.
+- **Del MCP**: `issue_update_note`, `issue_update_state` e `issue_write_log`; la conversión
+  markdown → HTML acotada con `vm` y el esquema sin chips; el tope de escrituras de nota por
+  minuto, que era de esa herramienta; la dependencia `diff`. `issue_get` devuelve id, título,
+  estado, progreso, `updated` y la descripción en markdown, nada más.
+- **Las skills `epica` y `lanzar`** (F4): borradas.
+
+**Qué queda, y por qué**
+
+- **El OAuth** (theBook como servidor de autorización, la pantalla de consentimiento,
+  Connected apps en Settings) y **`/api/mcp` con su autenticación**: leer las tareas desde
+  Claude sigue siendo útil, y esa parte ya pasó su revisión de seguridad (F3).
+- **El tipo de token `agent`**: los access tokens del OAuth son de ese tipo. `requireSession()`
+  lo sigue rechazando salvo en las rutas de issues.
+- **Lo que mejoró de paso**: la auditoría `token:<kind>:<name> (<prefix>)` con los campos
+  `changed`, el header COOP, los topes de `readJsonLimited`, los chequeos de acceso en
+  `canvas-service` y en la sync, el rate limit del MCP por conexión y los 500 sin el mensaje de
+  la excepción, y las subidas de dependencias (Next 16.4.3, DOMPurify, zod, source-map-js).
+- **El refresco automático del board** (`lib/issues-refresh.ts`): sirve igual para lo que se
+  cambia desde el teléfono o desde otra pestaña. Ahora mira la descripción y los campos.
+- **HTML → markdown** (`lib/rich-text/markdown.ts`, en un happy-dom sin red), que usa
+  `issue_get`, con sus tests.
+
+**La base, en dos deploys**
+
+1. Primero el código y el schema sin `review`, `agent_note` ni `IssueAgentState`, sin migración.
+   Producción conserva la columna, la tabla y el valor del enum, y el cliente de Prisma generado
+   sin ellos funciona contra esa base. Una tarea que siga en `review` no sale en el board hasta
+   el segundo deploy (en la lista sí): conviene moverla antes.
+2. Después, solo la migración `20261105120000_drop_agent_epics`: pasa lo que quede en `review` a
+   `in_progress`, borra `Task.agent_note` y la tabla `IssueAgentState` (con "ACEPTO PERDER
+   ESTOS DATOS") y recrea el enum sin `review`. Va aparte porque `pnpm start` la aplica al
+   arrancar, mientras el contenedor anterior, que todavía lee `agent_note`, sigue atendiendo.
+
+---
+
 > Estado: **F1 hecha y desplegada** (2026-10-28: `main` en `431ed79`, Android 0.6.0 publicada).
 > **F2 y F3 hechas, desplegadas y verificadas en producción** (2026-10-29: `main` en `7a3a73c`;
 > Claude conectado como conector de claude.ai; ver "Cómo quedó F3"). **F4 hecha y probada**

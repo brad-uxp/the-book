@@ -10,10 +10,9 @@ import {
   SettingsPatchSchema,
   SyncIssueFieldsSchema,
   IssueUpdateSchema,
-  IssueAgentStateSchema,
   SyncMutationSchema,
 } from "./validations";
-import { AGENT_LOG_MAX, ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
+import { ISSUE_TITLE_MAX, RICH_TEXT_MAX } from "./text-limits";
 import { CANVAS_BOUND } from "./canvas-geometry";
 import {
   LAYOUT_BATCH_MAX,
@@ -71,25 +70,16 @@ describe("IssueSchema — note_format", () => {
   });
 });
 
-describe("épicas de agentes: review y agent_note", () => {
-  it("review es un estado, en REST y en la sync", () => {
-    expect(IssueUpdateSchema.safeParse({ status: "review" }).success).toBe(true);
-    expect(SyncIssueFieldsSchema.safeParse({ status: "review" }).success).toBe(true);
+// Un teléfono o un cliente viejo que mande un estado que ya no existe no
+// escribe nada: REST y la sync aceptan los mismos cuatro.
+describe("estados de un issue", () => {
+  it("los cuatro, en REST y en la sync; otro no", () => {
+    for (const status of ["pending", "in_progress", "blocked", "done"]) {
+      expect(IssueUpdateSchema.safeParse({ status }).success).toBe(true);
+      expect(SyncIssueFieldsSchema.safeParse({ status }).success).toBe(true);
+    }
     expect(IssueUpdateSchema.safeParse({ status: "waiting" }).success).toBe(false);
-  });
-
-  it("agent_note va por PATCH, con el límite de un texto, y nunca por la sync", () => {
-    expect(IssueUpdateSchema.safeParse({ agent_note: "<p>ok</p>" }).success).toBe(true);
-    expect(IssueUpdateSchema.safeParse({ agent_note: "x".repeat(RICH_TEXT_MAX + 1) }).success).toBe(false);
-    expect(SyncIssueFieldsSchema.safeParse({ agent_note: "<p>ok</p>" }).success).toBe(false);
-  });
-
-  it("el estado del agente: solo bitácora, carpeta y sesión; lo que guarda el servidor no se manda", () => {
-    expect(IssueAgentStateSchema.safeParse({ log: "- step", work_dir: "/x", session_url: "https://claude.ai/code/1" }).success).toBe(true);
-    expect(IssueAgentStateSchema.safeParse({ last_note: "<p>forged</p>" }).success).toBe(false);
-    expect(IssueAgentStateSchema.safeParse({ description_seen: "" }).success).toBe(false);
-    expect(IssueAgentStateSchema.safeParse({ session_url: "javascript:alert(1)" }).success).toBe(false);
-    expect(IssueAgentStateSchema.safeParse({ log: "x".repeat(AGENT_LOG_MAX + 1) }).success).toBe(false);
+    expect(SyncIssueFieldsSchema.safeParse({ status: "waiting" }).success).toBe(false);
   });
 });
 

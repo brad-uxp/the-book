@@ -113,8 +113,8 @@ export function IssuesView({
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [filterClient, setFilterClient] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  // Bumped when a refresh brings the open issue's texts from elsewhere (an
-  // agent's note, an edit on the phone): the editors only take a new value
+  // Bumped when a refresh brings the open issue's description from elsewhere
+  // (an edit on the phone, another tab): the editor only takes a new value
   // with a new docKey.
   const [contentRev, setContentRev] = useState(0);
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -222,14 +222,13 @@ export function IssuesView({
       prev && prev.id === id ? { ...prev, ...patch } : prev
     );
 
-    // Typing in one of the two texts is saved once it pauses. Each text waits
-    // on its own timer, and nothing else waits at all: a timer shared by the
-    // issue would let a status change, or typing in the other text, cancel a
-    // save still pending.
+    // Typing in the description is saved once it pauses, on a timer of its
+    // own; nothing else waits at all: a timer shared by the issue would let a
+    // status change cancel a description save still pending.
     const keys = Object.keys(patch);
-    const text = keys.length === 1 && (keys[0] === "description" || keys[0] === "agent_note") ? keys[0] : null;
-    const timerKey = text ? `${id}:${text}` : null;
-    const delay = text ? 500 : 0;
+    const typing = keys.length === 1 && keys[0] === "description";
+    const timerKey = typing ? `${id}:description` : null;
+    const delay = typing ? 500 : 0;
 
     if (timerKey && debounceRef.current[timerKey]) clearTimeout(debounceRef.current[timerKey]);
     const timer = setTimeout(() => {
@@ -389,9 +388,9 @@ export function IssuesView({
     setConvertIssue(null);
   };
 
-  // Keep the screen current: an agent takes a task or hands it to Review, the
-  // phone edits one. Only while the tab is visible, at once when it comes
-  // back, and never over a change of the owner's still settling.
+  // Keep the screen current: the phone or another tab edits an issue. Only
+  // while the tab is visible, at once when it comes back, and never over a
+  // change of the owner's still settling.
   const refreshIssues = usePolling(async (signal) => {
     if (skipFirstRefreshRef.current) {
       skipFirstRefreshRef.current = false; // the page just drew fresh data
@@ -414,12 +413,7 @@ export function IssuesView({
     const open = editIssue;
     const theirs = open && !isPending(open.id) ? fresh.find((i) => i.id === open.id) : undefined;
     if (open && theirs && theirs.updated_at !== open.updated_at) {
-      if (
-        theirs.description !== open.description ||
-        (theirs.agent_note ?? "") !== (open.agent_note ?? "")
-      ) {
-        setContentRev((r) => r + 1);
-      }
+      if (theirs.description !== open.description) setContentRev((r) => r + 1);
       setEditIssue((prev) => (prev && prev.id === theirs.id ? theirs : prev));
     }
   }, REFRESH_MS);

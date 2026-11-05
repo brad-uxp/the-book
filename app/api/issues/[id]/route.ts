@@ -50,8 +50,8 @@ export async function PATCH(
   }
 
   // Only the keys the client sent change — see pickSent. Which moves between
-  // task, note and canvas exist is lib/notes.ts, and which fields an agent
-  // token may touch, lib/issues-service.ts: both applied by the service.
+  // task, note and canvas exist is lib/notes.ts, applied by the service, which
+  // also refuses any write by an agent token (403).
   const patch = pickSent(body, parsed.data);
 
   try {

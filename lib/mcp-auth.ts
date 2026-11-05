@@ -5,7 +5,7 @@
 
 export const MCP_PATH = "/api/mcp";
 
-/** The scope an MCP connection asks for: an agent working issues (lib/oauth.ts). */
+/** The scope an MCP connection asks for: an agent reading issues (lib/oauth.ts). */
 export const MCP_SCOPE = "issues";
 
 /**

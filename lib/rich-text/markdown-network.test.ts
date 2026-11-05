@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { htmlToMarkdown, markdownToHtml } from "./markdown";
+import { htmlToMarkdown } from "./markdown";
 
 /**
  * The HTML the server parses is not all the editor's: an automation token can
@@ -43,7 +43,6 @@ describe("parsear HTML guardado no sale a la red", () => {
 
     try {
       htmlToMarkdown(html);
-      markdownToHtml(html); // the markdown parser leaves HTML as text, but the result is parsed again
       // Anything a parse started would be on its way by now.
       await new Promise((resolve) => setTimeout(resolve, 300));
     } finally {

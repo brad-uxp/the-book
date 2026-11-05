@@ -62,7 +62,7 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // A page this app opens on another site gets no window.opener, so it
           // cannot send the book tab to a lookalike login. Links in notes open
-          // that way, and an agent's note is text the owner did not write.
+          // that way.
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           {

@@ -67,10 +67,9 @@ export function Connections() {
       <div>
         <h2 className="text-sm font-semibold">Connected apps</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Claude, connected to book&apos;s MCP. It works your tasks as an agent:
-          reads them, writes its note, log and progress, and moves them to In
-          Progress, Review or Blocked — never to Done. Add it in Claude as a
-          connector with the URL <span className="font-mono">https://book.bolstro.com/api/mcp</span>.
+          Claude, connected to book&apos;s MCP. It reads your tasks and changes
+          nothing. Add it in Claude as a connector with the URL{" "}
+          <span className="font-mono">https://book.bolstro.com/api/mcp</span>.
         </p>
       </div>
 

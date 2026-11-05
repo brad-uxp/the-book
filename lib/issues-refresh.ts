@@ -1,8 +1,8 @@
 /**
  * Folding a fresh copy of the issues into the one on screen.
  *
- * The issues view polls (components/issues/issues-view.tsx) so an agent's
- * move — a task taken, a task handed to Review — shows without a reload. What
+ * The issues view polls (components/issues/issues-view.tsx) so a change made
+ * elsewhere — on the phone, in another tab — shows without a reload. What
  * is on screen wins wherever the owner is mid-change: an issue with a save
  * pending or just made keeps its local copy, since the fetched one may predate
  * it. Everything else takes the server's.

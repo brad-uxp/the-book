@@ -15,15 +15,15 @@ describe("mergeRefreshedIssues", () => {
 
   it("takes the server's copy of an issue that changed, keeping the local order", () => {
     const local = [row("a", "1"), row("b", "1")];
-    const merged = mergeRefreshedIssues(local, [row("b", "2", "review"), row("a", "1")], none);
+    const merged = mergeRefreshedIssues(local, [row("b", "2", "blocked"), row("a", "1")], none);
     expect(merged.map((i) => i.id)).toEqual(["a", "b"]);
-    expect(merged[1]).toEqual(row("b", "2", "review"));
+    expect(merged[1]).toEqual(row("b", "2", "blocked"));
     expect(merged[0]).toBe(local[0]);
   });
 
   it("keeps the local copy of an issue with a pending change", () => {
     const local = [row("a", "1", "in_progress")];
-    const merged = mergeRefreshedIssues(local, [row("a", "2", "review")], {
+    const merged = mergeRefreshedIssues(local, [row("a", "2", "blocked")], {
       ...none,
       isPending: (id) => id === "a",
     });
@@ -50,7 +50,7 @@ describe("mergeRefreshedIssues", () => {
 
   it("replaces an issue whose server copy has no updated_at", () => {
     const local: Row[] = [{ id: "a", status: "pending" }];
-    const merged = mergeRefreshedIssues(local, [{ id: "a", status: "review" }], none);
-    expect(merged[0].status).toBe("review");
+    const merged = mergeRefreshedIssues(local, [{ id: "a", status: "blocked" }], none);
+    expect(merged[0].status).toBe("blocked");
   });
 });

@@ -12,11 +12,10 @@ import { AUTHORIZE_PARAMS } from "./params";
 export const metadata = { title: "Connect to book" };
 export const dynamic = "force-dynamic";
 
-/** What an MCP connection may do, in the owner's words (lib/issues-service.ts holds it to this). */
+/** What an MCP connection may do, in the owner's words (lib/mcp-issues.ts and lib/issues-service.ts hold it to this). */
 const CAN = [
-  "Read your tasks: their description and its own note. Not your notes, finances or settings.",
-  "Write its note on a task, its log and the task's progress.",
-  "Move a task to In Progress, Review or Blocked. Never to Done, and it cannot create or delete anything.",
+  "Read your tasks: their title, status, progress and description. Not your notes, finances or settings.",
+  "Nothing else: it cannot change, create or delete anything.",
 ];
 
 /**
@@ -83,8 +82,8 @@ function Consent({
       <div className="space-y-1">
         <h1 className="text-lg font-semibold">Connect {request.client_name}</h1>
         <p className="text-sm text-muted-foreground">
-          {request.client_name}, from <span className="font-medium text-foreground">claude.ai</span>, wants to work on
-          your tasks in book as an agent.
+          {request.client_name}, from <span className="font-medium text-foreground">claude.ai</span>, wants to read
+          your tasks in book.
         </p>
       </div>
 
