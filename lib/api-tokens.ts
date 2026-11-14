@@ -149,3 +149,15 @@ export function checkToken(
 export function tokenActor(token: { name: string; kind: TokenKind; prefix: string }): string {
   return `token:${token.kind}:${token.name} (${token.prefix})`;
 }
+
+/**
+ * A tokenActor label with only its kind left — `token:<kind>:<name> (<prefix>)`
+ * becomes `token:<kind>` — for a reader who may see that a token acted but not
+ * which one (a read-only token reading the audit log). Anything else — an
+ * email, "system", null — comes back as it was.
+ */
+export function tokenActorKindOnly(label: string | null): string | null {
+  if (label === null) return null;
+  const match = /^token:([^:\s]+):/.exec(label);
+  return match ? `token:${match[1]}` : label;
+}

@@ -34,8 +34,8 @@ const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
 /**
  * The audit log entries a read-only token gets (GET /api/audit-logs): the
  * books' own entities, as lib/audit.ts names them in `entity_type`. Not
- * tokens, OAuth grants and consents, issues and canvases, app releases, roles
- * or salary increase reminders.
+ * tokens, OAuth grants and consents, issues and canvases, app releases or
+ * roles. A token's label in them keeps only its kind (tokenActorKindOnly).
  */
 export const READONLY_AUDIT_ENTITY_TYPES: readonly string[] = [
   "invoice",
