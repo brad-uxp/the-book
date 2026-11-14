@@ -68,10 +68,15 @@ export function prefixOf(raw: string): string | null {
 
 /**
  * What a token is for (the ApiTokenKind enum): the phone's sign-in, a script,
- * the release script publishing app builds (and nothing else), or an agent
- * working issues (and nothing else — lib/api.ts, lib/issues-service.ts).
+ * the release script publishing app builds (and nothing else), an agent
+ * working issues (and nothing else — lib/api.ts, lib/issues-service.ts), or a
+ * script that only reads (GET and HEAD; every write is a 403 — lib/api.ts).
  */
-export type TokenKind = "mobile" | "automation" | "release" | "agent";
+export type TokenKind = "mobile" | "automation" | "release" | "agent" | "readonly";
+
+/** What a read-only token hears on anything but a read, wherever it is refused. */
+export const READONLY_REFUSAL =
+  "A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything";
 
 /** The stored columns this module needs to judge a token. */
 export interface TokenRecord {

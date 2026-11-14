@@ -534,13 +534,14 @@ model AuditLog {
  */
 /// What a token is for. `mobile`: minted by the app's Google sign-in — the
 /// only kind the phone's sync accepts. `automation`: made by hand in
-/// Settings, for scripts. `release` and `agent`: also made in Settings, each
-/// for one job only (lib/api.ts).
+/// Settings, for scripts. `release`, `agent` and `readonly`: also made in
+/// Settings, each for one job only (lib/api.ts).
 enum ApiTokenKind {
   mobile
   automation
   release // publishes app builds (POST /api/mobile/releases); nothing else
   agent // an agent working issues: its note, log, progress and some statuses (lib/issues-service.ts); nothing else
+  readonly // reads what an automation token reads (GET/HEAD only); every write is a 403
 }
 
 model ApiToken {

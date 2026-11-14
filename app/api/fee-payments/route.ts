@@ -13,7 +13,7 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const fees = await prisma.feePayment.findMany({
     orderBy: { paid_at: "desc" },

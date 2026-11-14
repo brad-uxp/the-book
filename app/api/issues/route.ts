@@ -6,7 +6,7 @@ import { mentionNeedle } from "@/lib/mentions";
 import { createIssue, inTransaction } from "@/lib/issues-service";
 
 export async function GET(req: NextRequest) {
-  const denied = await requireSession({ agent: true });
+  const denied = await requireSession({ agent: true, readonly: true });
   if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const personId = searchParams.get("personId");

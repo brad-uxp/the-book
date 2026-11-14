@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateToken } from "./api-tokens";
+import { generateToken, READONLY_REFUSAL } from "./api-tokens";
 
 // La cadena real — encabezado → tabla de tokens → tipo del token — con la
 // base, los encabezados y la sesión simulados.
@@ -28,7 +28,7 @@ vi.mock("@/auth", () => ({
 import { getWriter, mcpBudgetKey, requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
 import { resetRateLimits } from "./rate-limit";
 
-const TOKEN_NAMES = { mobile: "mobile · Pixel", automation: "script", release: "book-release", agent: "claude-agent" } as const;
+const TOKEN_NAMES = { mobile: "mobile · Pixel", automation: "script", release: "book-release", agent: "claude-agent", readonly: "fin-cli" } as const;
 
 function withToken(kind: keyof typeof TOKEN_NAMES) {
   const { token, prefix, hash } = generateToken();
@@ -86,12 +86,32 @@ describe("matriz de acceso por tipo de credencial", () => {
     ["agent", "requireUserSession (Settings, tokens)", requireUserSession, 403],
     ["agent", "requireReleaseToken", requireReleaseToken, 403],
     ["release", "requireSession({ agent: true })", () => requireSession({ agent: true }), 403],
+    // Un token readonly solo llega a los handlers GET, que lo piden explícitamente.
+    ["readonly", "requireSession (toda escritura)", requireSession, 403],
+    ["readonly", "requireSession({ readonly: true }) (lecturas)", () => requireSession({ readonly: true }), null],
+    ["readonly", "requireSession({ agent: true }) (escrituras de issues)", () => requireSession({ agent: true }), 403],
+    ["readonly", "requireSession({ agent: true, readonly: true }) (lecturas de issues)", () => requireSession({ agent: true, readonly: true }), null],
+    ["readonly", "requireSyncSession", requireSyncSession, 403],
+    ["readonly", "requireAppSession", requireAppSession, 403],
+    ["readonly", "requireUserSession (Settings, tokens)", requireUserSession, 403],
+    ["readonly", "requireReleaseToken", requireReleaseToken, 403],
+    // Que una lectura admita readonly no abre la ruta a los demás tipos cerrados.
+    ["agent", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), 403],
+    ["release", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), 403],
+    ["automation", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), null],
+    ["mobile", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), null],
   ] as const;
 
   it.each(cases)("token %s → %s → %s", async (kind, _label, guard, expected) => {
     withToken(kind);
     const res = await guard();
     expect(res === null ? null : res.status).toBe(expected);
+  });
+
+  it("un token readonly oye por qué: solo lee", async () => {
+    withToken("readonly");
+    const res = await requireSession();
+    expect(await res?.json()).toEqual({ error: READONLY_REFUSAL });
   });
 
   it("la sesión del navegador busca actualizaciones pero no publica", async () => {
@@ -125,13 +145,15 @@ describe("un token de OAuth es solo para el MCP", () => {
 });
 
 describe("getWriter", () => {
-  it("un token agent escribe como agente; el resto, como dueño", async () => {
+  it("un token agent escribe como agente; uno readonly, como lector; el resto, como dueño", async () => {
     withToken("agent");
     expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:agent:claude-agent \(tb_/), access: "agent" });
     withToken("automation");
     expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:automation:script \(tb_/), access: "owner" });
     withToken("mobile");
     expect((await getWriter()).access).toBe("owner");
+    withToken("readonly");
+    expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:readonly:fin-cli \(tb_/), access: "reader" });
   });
 
   it("la sesión del navegador es el dueño; sin quien llame, el acceso mínimo", async () => {

@@ -10,7 +10,7 @@ export const runtime = "nodejs";
  * from here, over the phone's own token.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const { id } = await params;
   if (id.length > 64) return NextResponse.json({ error: "Not found" }, { status: 404 });

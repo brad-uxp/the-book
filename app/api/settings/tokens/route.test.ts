@@ -1,0 +1,54 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/lib/db", () => ({ prisma: { apiToken: { create: vi.fn(), findMany: vi.fn() } } }));
+vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn(async () => "owner@example.com") }));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  requireUserSession: vi.fn(),
+}));
+vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
+
+import { NextRequest } from "next/server";
+import { POST } from "./route";
+import { prisma } from "@/lib/db";
+import { requireUserSession } from "@/lib/api";
+
+const create = vi.mocked(prisma.apiToken.create);
+
+const post = (body: unknown) =>
+  POST(
+    new NextRequest("http://localhost/api/settings/tokens", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+    })
+  );
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requireUserSession).mockResolvedValue(null);
+  create.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => ({ id: "tok-1", ...data })) as never);
+});
+
+describe("POST /api/settings/tokens", () => {
+  it("crea un token readonly, que dura lo de siempre", async () => {
+    const res = await post({ name: "fin-cli", kind: "readonly" });
+    expect(res.status).toBe(201);
+    const data = create.mock.calls[0][0].data;
+    expect(data.kind).toBe("readonly");
+    expect((data.expires_at as Date).getTime() - Date.now()).toBeGreaterThan(89 * 24 * 3600 * 1000);
+    expect((await res.json()).token).toMatch(/^tb_/);
+  });
+
+  it("sin kind sigue siendo automation", async () => {
+    await post({ name: "script" });
+    expect(create.mock.calls[0][0].data.kind).toBe("automation");
+  });
+
+  it("mobile no se emite acá, ni un kind inventado", async () => {
+    for (const kind of ["mobile", "admin"]) {
+      expect((await post({ name: "x", kind })).status).toBe(400);
+    }
+    expect(create).not.toHaveBeenCalled();
+  });
+});

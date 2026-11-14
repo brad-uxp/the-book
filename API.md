@@ -55,6 +55,22 @@ writes nothing. The rules are enforced by the server (`lib/api.ts` and
 Requests count against the same 300 requests/minute. An agent token lasts at
 most 30 days (Settings proposes 14).
 
+### Read-only tokens
+
+A **read-only token** (`ApiToken.kind = readonly`, minted in Settings → API
+tokens, kind "Read-only") is for a script that only reads the books — a report,
+a reconciliation — so the credential it keeps cannot change them. Enforced by
+the server (`lib/api.ts`; `lib/issues-service.ts` and `lib/canvas-service.ts`
+refuse its writes too):
+
+| | |
+|---|---|
+| Reaches | Every `GET` (and `HEAD`) an automation token reaches: invoices, clients, subscriptions and their payments, other expenses, people and their payments and reminders, referrers, roles, fee payments, metrics, settings, notifications, audit logs, issues (notes included) and canvases. Not token management, connections, the sync or the mobile routes — no hand-made token reaches those. |
+| `403` | Every `POST`, `PUT`, `PATCH` and `DELETE`, on every route, whatever the body: `A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything`. Nothing is written or audited. |
+
+Requests count against the same 300 requests/minute. It expires like an
+automation token (90 days by default).
+
 ### The MCP (`/api/mcp`)
 
 theBook's own MCP server: Streamable HTTP, stateless (no sessions, so `POST`

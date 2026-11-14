@@ -24,13 +24,15 @@ import { usePolling } from "@/hooks/use-polling";
 interface ApiToken {
   id: string;
   name: string;
-  kind: "mobile" | "automation" | "release" | "agent";
+  kind: "mobile" | "automation" | "release" | "agent" | "readonly";
   token_prefix: string;
   created_at: string;
   last_used_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
 }
+
+type CreatableKind = "automation" | "release" | "agent" | "readonly";
 
 const DEFAULT_EXPIRY_DAYS = 90;
 const AGENT_TOKEN_DAYS = 14;
@@ -46,7 +48,7 @@ export function ApiTokens() {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [name, setName] = useState("");
   const [days, setDays] = useState(String(DEFAULT_EXPIRY_DAYS));
-  const [kind, setKind] = useState<"automation" | "release" | "agent">("automation");
+  const [kind, setKind] = useState<CreatableKind>("automation");
   const [creating, setCreating] = useState(false);
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -118,8 +120,10 @@ export function ApiTokens() {
         <p className="text-xs text-muted-foreground mt-0.5">
           Credentials for clients other than this browser, such as the mobile
           app or scripts. They have the same access as you, so revoke any you
-          no longer use. A release token is the exception: it can only publish
-          builds of the Android app.
+          no longer use. The exceptions: a release token can only publish
+          builds of the Android app, an agent token only reads tasks, and a
+          read-only token reads everything a script can but cannot create,
+          change or delete anything.
         </p>
       </div>
 
@@ -180,7 +184,7 @@ export function ApiTokens() {
             id="token_kind"
             value={kind}
             onChange={(e) => {
-              const next = e.target.value as "automation" | "release" | "agent";
+              const next = e.target.value as CreatableKind;
               setKind(next);
               // An agent token lasts 30 days at most (the API refuses more); 14 is the proposal.
               if (next === "agent") setDays(String(AGENT_TOKEN_DAYS));
@@ -190,6 +194,7 @@ export function ApiTokens() {
             <option value="automation">Automation</option>
             <option value="release">App release</option>
             <option value="agent">Agent</option>
+            <option value="readonly">Read-only</option>
           </select>
         </div>
         <Button type="button" onClick={create} disabled={creating}>
@@ -231,6 +236,11 @@ export function ApiTokens() {
                     {t.kind === "agent" && (
                       <Badge variant="secondary" className="text-[10px]" title="Reads tasks and writes nothing; refused everywhere else">
                         Agent
+                      </Badge>
+                    )}
+                    {t.kind === "readonly" && (
+                      <Badge variant="secondary" className="text-[10px]" title="Reads (GET) what an automation token reads; every create, change or delete is refused">
+                        Read-only
                       </Badge>
                     )}
                   </div>

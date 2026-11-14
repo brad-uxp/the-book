@@ -5,7 +5,7 @@ import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireSession } from "@/lib/api";
 
 export async function GET() {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const referrers = await prisma.referrer.findMany({
     orderBy: { name: "asc" },

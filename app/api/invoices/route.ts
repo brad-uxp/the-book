@@ -6,7 +6,7 @@ import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireSession } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const pageParam = searchParams.get("page");
