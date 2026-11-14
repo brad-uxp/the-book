@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   const parsed = CreateTokenSchema.safeParse(await readJson(req));
   if (!parsed.success) return invalid(parsed.error);
 
-  const { token, prefix, hash } = generateToken();
+  const { token, prefix, hash } = generateToken(parsed.data.kind);
   const expiresAt = new Date(
     Date.now() + parsed.data.expires_in_days * 24 * 60 * 60 * 1000
   );

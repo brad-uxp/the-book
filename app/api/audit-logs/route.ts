@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
-  const denied = await requireSession({ readonly: true });
+  const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);

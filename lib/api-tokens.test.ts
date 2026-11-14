@@ -4,6 +4,7 @@ import {
   hashToken,
   bearerFromHeader,
   checkToken,
+  prefixOf,
   tokenActor,
   type TokenRecord,
 } from "./api-tokens";
@@ -162,5 +163,52 @@ describe("tokenActor", () => {
     expect(actor).toBe("token:agent:claude-work (tb_AbCd1234)");
     // Lo que importa: no se puede confundir con un email.
     expect(actor).not.toContain("@");
+  });
+});
+
+// Un token readonly lleva su propia cabeza, `tbro_`: el proxy lo reconoce
+// antes de leer la base y le corta todo lo que no sea una lectura.
+describe("la cabeza de un token readonly", () => {
+  it("generateToken(\"readonly\") da un tbro_ con prefijo de 13", () => {
+    const { token, prefix, hash } = generateToken("readonly");
+    expect(token.startsWith("tbro_")).toBe(true);
+    expect(token.slice(5)).toHaveLength(43);
+    expect(prefix).toHaveLength(13);
+    expect(token.startsWith(prefix)).toBe(true);
+    expect(hash).toBe(hashToken(token));
+  });
+
+  it("los demás tipos siguen con tb_", () => {
+    for (const kind of ["automation", "mobile", "release", "agent"] as const) {
+      const { token, prefix } = generateToken(kind);
+      expect(token.startsWith("tb_")).toBe(true);
+      expect(prefix).toHaveLength(11);
+    }
+  });
+
+  it("un tb_ nunca empieza con tbro_, así que la cabeza no confunde tipos", () => {
+    for (let i = 0; i < 500; i++) expect(generateToken().token.startsWith("tbro_")).toBe(false);
+  });
+
+  it("bearerFromHeader y prefixOf lo leen", () => {
+    const { token, prefix } = generateToken("readonly");
+    expect(bearerFromHeader(`Bearer ${token}`)).toBe(token);
+    expect(prefixOf(token)).toBe(prefix);
+    expect(prefixOf("tbro_short")).toBeNull();
+    expect(prefixOf("xx_" + "a".repeat(43))).toBeNull();
+  });
+
+  it("checkToken exige que la cabeza y el tipo coincidan, en los dos sentidos", () => {
+    const now = new Date("2026-11-14T12:00:00Z");
+    const ro = generateToken("readonly");
+    const tb = generateToken("automation");
+    const rec = (hash: string, kind: TokenRecord["kind"]): TokenRecord => ({
+      id: "t1", name: "n", kind, token_hash: hash, expires_at: null, revoked_at: null,
+    });
+    expect(checkToken(rec(ro.hash, "readonly"), ro.token, now)?.kind).toBe("readonly");
+    // Una fila readonly no responde a un tb_, que el proxy no confinaría a leer…
+    expect(checkToken(rec(tb.hash, "readonly"), tb.token, now)).toBeNull();
+    // …ni un tbro_ a una fila de otro tipo.
+    expect(checkToken(rec(ro.hash, "automation"), ro.token, now)).toBeNull();
   });
 });

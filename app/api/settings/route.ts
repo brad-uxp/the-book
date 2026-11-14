@@ -21,8 +21,8 @@ function snapshot(s: typeof DEFAULTS) {
   };
 }
 
-export async function GET() {
-  const denied = await requireSession({ readonly: true });
+export async function GET(req: NextRequest) {
+  const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const settings = await prisma.settings.findUnique({ where: { id: "singleton" } });
   return NextResponse.json(settings ?? { id: "singleton", ...DEFAULTS });

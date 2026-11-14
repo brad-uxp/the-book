@@ -4,8 +4,8 @@ import { ClientSchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireSession } from "@/lib/api";
 
-export async function GET() {
-  const denied = await requireSession({ readonly: true });
+export async function GET(req: NextRequest) {
+  const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const clients = await prisma.client.findMany({
     select: { id: true, name: true, color_hex: true, default_referrer_id: true },

@@ -12,8 +12,8 @@ const OtherExpenseSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-export async function GET() {
-  const denied = await requireSession({ readonly: true });
+export async function GET(req: NextRequest) {
+  const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const expenses = await prisma.otherExpense.findMany({
     orderBy: { paid_at: "desc" },

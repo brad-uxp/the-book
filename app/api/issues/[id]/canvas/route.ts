@@ -15,7 +15,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = await requireSession({ readonly: true });
+  const denied = await requireSession();
   if (denied) return denied;
   const { id } = await params;
 

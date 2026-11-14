@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { READONLY_REFUSAL } from "@/lib/api-tokens";
 import { isCanvasNote, isBlankHtml } from "@/lib/notes";
 import { plainTextSnippet } from "@/lib/mentions";
 import { EDGE_SELECT, NODE_SELECT } from "@/lib/note-canvas-server";
@@ -25,14 +24,11 @@ import type { Side } from "@/lib/canvas-geometry";
  * an agent works tasks (lib/issues-service.ts). Its token never reaches these
  * routes — requireSession refuses it — but the rule holds here too, whichever
  * way a write comes in; refuseAgent throws, since no caller should get here.
- * A read-only token is refused the same way: it reaches the canvas's reads,
- * never its writes.
  */
 
-/** An agent writes no idea and no connection, and neither does a read-only token. */
+/** An agent writes no idea and no connection. */
 function refuseAgent(writer: Writer) {
   if (writer.access === "agent") throw new Error("An agent works tasks, not notes");
-  if (writer.access === "reader") throw new Error(READONLY_REFUSAL);
 }
 
 /** The note an idea belongs to, and whether it is a canvas; null when there is no such issue. */
