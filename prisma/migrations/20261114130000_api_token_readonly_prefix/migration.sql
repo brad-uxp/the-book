@@ -9,16 +9,34 @@
 -- kind it does not refuse by name as the owner. This CHECK makes such a row
 -- impossible, whichever build writes it.
 --
+-- `"kind"::text`, not `"kind"`: compared as text, the constraint does not
+-- depend on the ApiTokenKind type. Removing an enum value here means renaming
+-- the type to `…_old`, creating it again and moving the column over
+-- (20261105120000_drop_agent_epics); a CHECK that compared the enum itself
+-- would make that ALTER COLUMN fail ("operator does not exist: ApiTokenKind
+-- <> ApiTokenKind_old"), and prisma/migrations.test.ts forbids dropping it.
+--
 -- No row changes. None is `readonly` today. If one were, with any other head,
 -- this migration fails — Postgres checks the existing rows when the
--- constraint is added — instead of deleting or rewriting it: a person decides
--- what happens to that token, then deploys again.
+-- constraint is added — instead of deleting or rewriting it. Nothing is
+-- applied (one statement), but Prisma records the migration as failed (P3018)
+-- and from then on every `prisma migrate deploy` stops with P3009 — `pnpm
+-- start` included, so a Railway rollback to an earlier build does not boot
+-- either. Deploying again is not enough. To recover:
+--
+--   1. Decide what happens to that row; nothing here decides it for you.
+--      This lists them:
+--        SELECT id, name, token_prefix, revoked_at FROM "ApiToken"
+--        WHERE kind = 'readonly' AND token_prefix NOT LIKE 'tbro\_%';
+--   2. pnpm exec prisma migrate resolve --rolled-back 20261114130000_api_token_readonly_prefix
+--   3. Deploy again: this migration runs anew.
 --
 -- Not expressible in schema.prisma; prisma/migrations.test.ts keeps a
--- `prisma migrate dev` from dropping it. In LIKE the backslash is the escape:
--- `\_` is an underscore, not "any one character".
+-- `prisma migrate dev` from dropping it, and any migration from dropping the
+-- columns or the table it rests on. In LIKE the backslash is the escape: `\_`
+-- is an underscore, not "any one character".
 
 -- AddCheckConstraint
 ALTER TABLE "ApiToken"
   ADD CONSTRAINT "ApiToken_readonly_prefix"
-  CHECK ("kind" <> 'readonly' OR "token_prefix" LIKE 'tbro\_%');
+  CHECK ("kind"::text <> 'readonly' OR "token_prefix" LIKE 'tbro\_%');

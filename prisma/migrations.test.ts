@@ -160,34 +160,73 @@ describe("ninguna migración borra datos sin decirlo", () => {
 
 // IssueLink_no_self_link was here until 20260927190000, which drops the
 // IssueLink table itself — deliberately, with the destructive opt-in.
+//
+// `table` and `columns`: what the constraint rests on. Dropping the table, or
+// any of those columns, drops the constraint with it without naming it, so
+// those count as dropping it too.
 const PROTECTED_CONSTRAINTS = [
   {
     name: "settings_singleton_check",
+    table: "Settings",
+    columns: ["id"],
     purpose: "keeps Settings to a single row",
   },
   {
     name: "Task_canvas_only_for_notes",
+    table: "Task",
+    columns: ["category", "note_format"],
     purpose:
       "keeps canvases on notes — a canvas task would dodge every rule keyed on category = note",
   },
   {
     name: "CanvasEdge_no_self_link",
+    table: "CanvasEdge",
+    columns: ["source_id", "target_id"],
     purpose: "stops an idea from connecting to itself on a canvas note",
   },
   {
     name: "CanvasEdge_sides_valid",
+    table: "CanvasEdge",
+    columns: ["source_side", "target_side"],
     purpose: "keeps a connection's pinned sides to top, right, bottom or left",
   },
   {
     name: "ApiToken_oauth_audience_together",
+    table: "ApiToken",
+    columns: ["oauth_grant_id", "audience"],
     purpose: "an OAuth access token always has its audience, and only it has one: the REST API refuses audience-bound tokens",
   },
   {
     name: "ApiToken_readonly_prefix",
+    table: "ApiToken",
+    columns: ["kind", "token_prefix"],
     purpose:
       "every read-only token starts with tbro_: builds older than that head refuse it (401) instead of taking a tb_ one for the owner's after a rollback",
   },
 ];
+
+/** A migration's statements, comments already gone. */
+function statements(sql: string): string[] {
+  return sql
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** An identifier as SQL may write it: quoted or not, maybe schema-qualified. */
+const ident = (name: string) => `(?:"?public"?\\.)?"?${name}"?(?=[\\s,;()]|$)`;
+
+/** Whether a statement drops `table` (DROP TABLE, alone or in a list). */
+function dropsTable(stmt: string, table: string): boolean {
+  const m = /^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([\s\S]+?)(?:\s+(?:CASCADE|RESTRICT))?$/i.exec(stmt);
+  return !!m && m[1].split(",").some((t) => new RegExp(`^\\s*${ident(table)}\\s*$`).test(t));
+}
+
+/** Whether a statement drops `column` of `table` (ALTER TABLE … DROP [COLUMN], any of its actions). */
+function dropsColumn(stmt: string, table: string, column: string): boolean {
+  const m = new RegExp(`^ALTER\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?${ident(table)}([\\s\\S]*)$`, "i").exec(stmt);
+  return !!m && new RegExp(`\\bDROP\\s+(?:COLUMN\\s+)?(?:IF\\s+EXISTS\\s+)?"?${column}"?(?=[\\s,]|$)`, "i").test(m[1]);
+}
 
 describe("CHECK constraints que Prisma no puede modelar", () => {
   const migrations = migrationSql();
@@ -213,7 +252,58 @@ describe("CHECK constraints que Prisma no puede modelar", () => {
           `Si prisma migrate dev lo generó, borrá esa línea del SQL antes de commitear.`
       ).toEqual([]);
     });
+
+    it(`${c.name} descansa en ${c.table} (${c.columns.join(", ")})`, () => {
+      const stmt = migrations
+        .flatMap((m) => statements(m.sql))
+        .find((st) => new RegExp(`ADD\\s+CONSTRAINT\\s+"${c.name}"\\s+CHECK`, "i").test(st));
+      expect(stmt, "falta el ADD CONSTRAINT").toBeDefined();
+      expect(stmt).toMatch(new RegExp(`^ALTER\\s+TABLE\\s+"${c.table}"`, "i"));
+      for (const col of c.columns) expect(stmt, col).toMatch(new RegExp(`\\b${col}\\b`));
+    });
+
+    it(`ninguna migración posterior se lleva ${c.name} con su tabla o sus columnas`, () => {
+      const at = migrations.findIndex((m) => new RegExp(`ADD\\s+CONSTRAINT\\s+"${c.name}"\\s+CHECK`, "i").test(m.sql));
+      const later = migrations.slice(at + 1).filter((m) =>
+        statements(m.sql).some(
+          (st) => dropsTable(st, c.table) || c.columns.some((col) => dropsColumn(st, c.table, col))
+        )
+      );
+      expect(
+        later.map((m) => m.file),
+        `una migración dropea "${c.table}" o una de sus columnas ${c.columns.join(", ")}, ` +
+          `y con eso este constraint — ${c.purpose}.`
+      ).toEqual([]);
+    });
   }
+
+  // Si el guard de arriba dejara de reconocer un DROP real, pasaría para siempre.
+  it("reconoce los drops que se llevan un constraint sin nombrarlo, y nada más", () => {
+    const yes = [
+      [`ALTER TABLE "ApiToken" DROP COLUMN "kind"`, "col"],
+      [`ALTER TABLE "ApiToken" ADD COLUMN "x" TEXT,\n  DROP COLUMN "token_prefix"`, "col"],
+      [`ALTER TABLE IF EXISTS ONLY public."ApiToken" DROP IF EXISTS kind CASCADE`, "col"],
+      [`DROP TABLE "ApiToken"`, "table"],
+      [`DROP TABLE IF EXISTS "Other", public."ApiToken" CASCADE`, "table"],
+    ] as const;
+    for (const [stmt, what] of yes) {
+      const hit = what === "table" ? dropsTable(stmt, "ApiToken") : ["kind", "token_prefix"].some((c) => dropsColumn(stmt, "ApiToken", c));
+      expect(hit, stmt).toBe(true);
+    }
+    const no = [
+      `ALTER TABLE "ApiToken" ALTER COLUMN "kind" DROP DEFAULT`,
+      `ALTER TABLE "ApiToken" ALTER COLUMN "kind" TYPE "ApiTokenKind" USING ("kind"::text::"ApiTokenKind")`,
+      `ALTER TABLE "ApiToken" DROP CONSTRAINT "ApiToken_kind_fkey"`,
+      `ALTER TABLE "ApiToken" DROP COLUMN "kind_old"`,
+      `ALTER TABLE "ApiTokenArchive" DROP COLUMN "kind"`,
+      `DROP TABLE "ApiTokenArchive"`,
+      `DROP TYPE "ApiTokenKind_old"`,
+    ];
+    for (const stmt of no) {
+      const hit = dropsTable(stmt, "ApiToken") || ["kind", "token_prefix"].some((c) => dropsColumn(stmt, "ApiToken", c));
+      expect(hit, stmt).toBe(false);
+    }
+  });
 });
 
 describe("las relaciones que cargan historia contable no cascadean", () => {
@@ -317,6 +407,7 @@ describe("ApiToken_readonly_prefix exige la cabeza que emite el código", () => 
   it("solo restringe a los readonly, y con LIKE escapado", () => {
     const body = added[0].replace(/\s+/g, " ").trim();
     const pattern = `${READONLY_TOKEN_PREFIX.replace(/_/g, "\\_")}%`;
-    expect(body).toBe(`"kind" <> 'readonly' OR "token_prefix" LIKE '${pattern}'`);
+    // `::text`: so the CHECK survives rebuilding the ApiTokenKind enum (see the migration).
+    expect(body).toBe(`"kind"::text <> 'readonly' OR "token_prefix" LIKE '${pattern}'`);
   });
 });
