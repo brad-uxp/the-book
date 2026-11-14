@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/api";
 import { MENTION_ATTR, countMentions } from "@/lib/mentions";
 
 export async function GET(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type"); // "person" | "invoice"

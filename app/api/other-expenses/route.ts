@@ -13,7 +13,7 @@ const OtherExpenseSchema = z.object({
 });
 
 export async function GET() {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const expenses = await prisma.otherExpense.findMany({
     orderBy: { paid_at: "desc" },

@@ -9,7 +9,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const { id } = await params;
   const payments = await prisma.subscriptionPayment.findMany({

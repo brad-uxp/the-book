@@ -7,6 +7,7 @@ import {
   bearerFromHeader,
   checkToken,
   prefixOf,
+  READONLY_REFUSAL,
   tokenActor,
   type TokenKind,
 } from "@/lib/api-tokens";
@@ -92,8 +93,16 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
  * the issue routes do: there it reads tasks, and lib/issues-service.ts
  * refuses any write. Refusing by default means a new route never opens the
  * books to it by forgetting to.
+ *
+ * A read-only token likewise, unless the handler passes `{ readonly: true }` —
+ * every GET handler does, and nothing else may (app/api/readonly-token.test.ts
+ * checks both): it reads what an automation token reads and writes nothing.
+ * requireSession cannot see the method (it has no request), so the GET
+ * handler says so; a handler that does not stays closed to it.
  */
-export async function requireSession(opts: { agent?: boolean } = {}): Promise<NextResponse | null> {
+export async function requireSession(
+  opts: { agent?: boolean; readonly?: boolean } = {}
+): Promise<NextResponse | null> {
   const actor = await resolveActor();
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -128,6 +137,16 @@ export async function requireSession(opts: { agent?: boolean } = {}): Promise<Ne
     );
   }
 
+  // A read-only token reads and nothing else: it lives in scripts that only
+  // look at the books, so if it leaked nothing could be created, changed or
+  // deleted with it.
+  if (actor.kind === "token" && actor.tokenKind === "readonly" && !opts.readonly) {
+    return NextResponse.json(
+      { error: READONLY_REFUSAL },
+      { status: 403 }
+    );
+  }
+
   // Only machine callers are limited. A runaway agent loop is the realistic
   // way this API gets hammered; a human in a browser is not.
   if (actor.kind === "token") {
@@ -148,13 +167,18 @@ export async function requireSession(opts: { agent?: boolean } = {}): Promise<Ne
 
 /**
  * The caller as lib/issues-service.ts needs it: a label for the log, and what
- * it may change. An agent token may change nothing; with no caller at all
- * (which requireSession has already refused) it gets no more.
+ * it may change. An agent token may change nothing and reads tasks only; a
+ * read-only token may change nothing and reads what the owner reads; with no
+ * caller at all (which requireSession has already refused) it gets no more
+ * than an agent.
  */
 export async function getWriter(): Promise<Writer> {
   const actor = await resolveActor().catch(() => null);
-  const owner = actor !== null && !(actor.kind === "token" && actor.tokenKind === "agent");
-  return { actor: actor?.label ?? null, access: owner ? "owner" : "agent" };
+  const label = actor?.label ?? null;
+  if (actor === null) return { actor: label, access: "agent" };
+  if (actor.kind === "token" && actor.tokenKind === "agent") return { actor: label, access: "agent" };
+  if (actor.kind === "token" && actor.tokenKind === "readonly") return { actor: label, access: "reader" };
+  return { actor: label, access: "owner" };
 }
 
 /**

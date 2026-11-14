@@ -9,7 +9,7 @@ const RoleSchema = z.object({
 });
 
 export async function GET() {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const roles = await prisma.role.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json(roles);

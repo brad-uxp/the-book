@@ -24,7 +24,7 @@ import { requireSession, invalid, toApiResponse } from "@/lib/api";
  * dashboard.
  */
 export async function GET(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
 
   const params = Object.fromEntries(new URL(req.url).searchParams);

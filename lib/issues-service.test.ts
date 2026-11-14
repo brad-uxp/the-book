@@ -5,6 +5,7 @@ vi.mock("@/lib/audit", () => ({ auditLog: vi.fn() }));
 
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
+import { READONLY_REFUSAL } from "@/lib/api-tokens";
 import {
   createIssue,
   deleteIssue,
@@ -192,6 +193,40 @@ describe("actor agent: no escribe nada", () => {
   it("borrar", async () => {
     const db = fakeDb(task);
     expect(await deleteIssue(db as unknown as Db, "i1", agent)).toEqual(REFUSAL);
+    expect(db.issue.delete).not.toHaveBeenCalled();
+    expect(audits).toEqual([]);
+  });
+});
+
+// Un token `readonly` lee todo lo que lee el dueño y no escribe nada: la ruta
+// ya lo rechaza (requireSession), y el servicio también, por su cuenta.
+describe("actor reader (token readonly): no escribe nada", () => {
+  const note = { ...before, category: "note" };
+  let reader: WriteContext;
+  beforeEach(() => {
+    reader = { actor: "token:readonly:fin (tb_read0001)", access: "reader", audit: (e) => audits.push(e) };
+  });
+
+  const REFUSAL = { ok: false, status: 403, error: READONLY_REFUSAL };
+
+  it("crear", async () => {
+    const db = fakeDb(note);
+    expect(await createIssue(db as unknown as Db, { title: "New" }, reader)).toEqual(REFUSAL);
+    expect(db.issue.create).not.toHaveBeenCalled();
+    expect(audits).toEqual([]);
+  });
+
+  it("editar", async () => {
+    const db = fakeDb(note);
+    expect(await updateIssue(db as unknown as Db, "i1", { title: "Renamed" }, reader)).toEqual(REFUSAL);
+    expect(db.issue.findUnique).not.toHaveBeenCalled();
+    expect(db.issue.update).not.toHaveBeenCalled();
+    expect(audits).toEqual([]);
+  });
+
+  it("borrar", async () => {
+    const db = fakeDb(note);
+    expect(await deleteIssue(db as unknown as Db, "i1", reader)).toEqual(REFUSAL);
     expect(db.issue.delete).not.toHaveBeenCalled();
     expect(audits).toEqual([]);
   });

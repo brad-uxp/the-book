@@ -11,7 +11,7 @@ const NotificationTypeSchema = z.enum(
 const MarkReadSchema = z.object({ id: z.string().min(1, "id is required") });
 
 export async function GET(req: NextRequest) {
-  const denied = await requireSession();
+  const denied = await requireSession({ readonly: true });
   if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const filter = searchParams.get("filter") ?? "unread"; // "unread" | "all"
