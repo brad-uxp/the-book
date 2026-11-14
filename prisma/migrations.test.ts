@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { READONLY_TOKEN_PREFIX } from "@/lib/readonly-token";
 
 /**
  * Several database objects cannot be expressed in schema.prisma:
@@ -181,6 +182,11 @@ const PROTECTED_CONSTRAINTS = [
     name: "ApiToken_oauth_audience_together",
     purpose: "an OAuth access token always has its audience, and only it has one: the REST API refuses audience-bound tokens",
   },
+  {
+    name: "ApiToken_readonly_prefix",
+    purpose:
+      "every read-only token starts with tbro_: builds older than that head refuse it (401) instead of taking a tb_ one for the owner's after a rollback",
+  },
 ];
 
 describe("CHECK constraints que Prisma no puede modelar", () => {
@@ -293,5 +299,24 @@ describe("triggers de borrado que alimentan la sync del teléfono", () => {
   it("detecta un DROP TRIGGER real (el guard no es ciego)", () => {
     const sql = stripSqlComments(`DROP TRIGGER IF EXISTS "Task_sync_tombstone" ON "Task";`);
     expect(/DROP\s+TRIGGER\s+(IF\s+EXISTS\s+)?"?Task_sync_tombstone"?/i.test(sql)).toBe(true);
+  });
+});
+
+// La cabeza de un token readonly la decide el código (lib/readonly-token.ts) y
+// la hace cumplir la base (ApiToken_readonly_prefix). Si una cambia sin la
+// otra, el CHECK protege una cabeza que nadie emite — o rechaza las que sí.
+describe("ApiToken_readonly_prefix exige la cabeza que emite el código", () => {
+  const added = migrationSql()
+    .map((m) => /ADD\s+CONSTRAINT\s+"ApiToken_readonly_prefix"\s+CHECK\s*\(([\s\S]*?)\);/i.exec(m.sql)?.[1])
+    .filter((body): body is string => body !== undefined);
+
+  it("se agrega una sola vez", () => {
+    expect(added).toHaveLength(1);
+  });
+
+  it("solo restringe a los readonly, y con LIKE escapado", () => {
+    const body = added[0].replace(/\s+/g, " ").trim();
+    const pattern = `${READONLY_TOKEN_PREFIX.replace(/_/g, "\\_")}%`;
+    expect(body).toBe(`"kind" <> 'readonly' OR "token_prefix" LIKE '${pattern}'`);
   });
 });

@@ -12,8 +12,11 @@
  *
  * Not `tb_ro_`: the rest of a `tb_` token is base64url, which can itself
  * start with `ro_`, so `tb_ro_` would not tell the kinds apart. `tbro_` is
- * never the head of a `tb_` token. A build that predates this kind does not
+ * never the head of a `tb_` token. A build older than this head does not
  * take it for a token at all: it answers 401, never treats it as another kind.
+ * That is what protects a read-only token after a rollback, so the database
+ * holds it too: CHECK ApiToken_readonly_prefix refuses a `readonly` row with
+ * any other head.
  */
 export const READONLY_TOKEN_PREFIX = "tbro_";
 
@@ -27,6 +30,25 @@ export const READONLY_REFUSAL =
  * a read.
  */
 const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
+
+/**
+ * The audit log entries a read-only token gets (GET /api/audit-logs): the
+ * books' own entities, as lib/audit.ts names them in `entity_type`. Not
+ * tokens, OAuth grants and consents, issues and canvases, app releases, roles
+ * or salary increase reminders.
+ */
+export const READONLY_AUDIT_ENTITY_TYPES: readonly string[] = [
+  "invoice",
+  "client",
+  "subscription",
+  "subscription_payment",
+  "other_expense",
+  "person",
+  "salary_payment",
+  "referrer",
+  "fee_payment",
+  "settings",
+];
 
 export function isReadMethod(method: string): boolean {
   return READ_METHODS.has(method);

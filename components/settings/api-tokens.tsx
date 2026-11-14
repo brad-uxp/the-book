@@ -123,8 +123,9 @@ export function ApiTokens() {
           no longer use. The exceptions: a release token can only publish
           builds of the Android app, an agent token only reads tasks, and a
           read-only token only reads the books (invoices, clients,
-          subscriptions, expenses, people, referrers, metrics) and cannot
-          create, change or delete anything.
+          subscriptions, expenses, people, roles, referrers, fee payments,
+          metrics, settings and the books’ audit log) and cannot create,
+          change or delete anything.
         </p>
       </div>
 
@@ -240,7 +241,7 @@ export function ApiTokens() {
                       </Badge>
                     )}
                     {t.kind === "readonly" && (
-                      <Badge variant="secondary" className="text-[10px]" title="Reads the books (GET): invoices, clients, subscriptions, expenses, people, referrers, metrics. Every create, change or delete is refused">
+                      <Badge variant="secondary" className="text-[10px]" title="Reads the books (GET): invoices, clients, subscriptions, expenses, people, roles, referrers, fee payments, metrics, settings and the books’ audit log. Every create, change or delete is refused">
                         Read-only
                       </Badge>
                     )}
