@@ -50,7 +50,7 @@ writes nothing. The rules are enforced by the server (`lib/api.ts` and
 | | |
 |---|---|
 | Reaches | `GET /api/issues` and `GET /api/issues/{id}`, **tasks only**: notes are left out of the list and are a `404` by id. Archived tasks read like any other. Every other route — finances, settings, audit logs, canvas, linked counts, bulk delete, the sync, the mobile routes, token management — is `403`. |
-| `403` | Every write: `POST /api/issues`, and `PATCH` or `DELETE` on `/api/issues/{id}`, whatever the body and whichever issue (`An agent token cannot write issues`). Nothing is written or audited. |
+| `403` | Every write: `POST /api/issues`, and `PATCH` or `DELETE` on `/api/issues/{id}`, whatever the body and whichever issue (`An agent token cannot write issues`). Nothing is changed or audited; only the token's own `last_used_at` is stamped, as on every request. |
 
 Requests count against the same 300 requests/minute. An agent token lasts at
 most 30 days (Settings proposes 14).
@@ -58,18 +58,21 @@ most 30 days (Settings proposes 14).
 ### Read-only tokens
 
 A **read-only token** (`ApiToken.kind = readonly`, minted in Settings → API
-tokens, kind "Read-only") is for a script that only reads the books — a report,
-a reconciliation — so the credential it keeps cannot change them. Enforced by
-the server (`lib/api.ts`; `lib/issues-service.ts` and `lib/canvas-service.ts`
-refuse its writes too):
+tokens, kind "Read-only") is for a script that only reads the books — a
+report, a reconciliation, the finance CLI — so the credential it keeps cannot
+change them. It looks different from every other token: `tbro_…` instead of
+`tb_…`.
 
 | | |
 |---|---|
-| Reaches | Every `GET` (and `HEAD`) an automation token reaches: invoices, clients, subscriptions and their payments, other expenses, people and their payments and reminders, referrers, roles, fee payments, metrics, settings, notifications, audit logs, issues (notes included) and canvases. Not token management, connections, the sync or the mobile routes — no hand-made token reaches those. |
-| `403` | Every `POST`, `PUT`, `PATCH` and `DELETE`, on every route, whatever the body: `A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything`. Nothing is written or audited. |
+| Reaches | `GET` (and `HEAD`) on invoices (`/api/invoices`, `/api/invoices/{id}`, `/api/invoices/{id}/download-url`), clients (`/api/clients`), subscriptions (`/api/subscriptions`, `/{id}`, `/{id}/payments`), other expenses (`/api/other-expenses`), people (`/api/people`, `/{id}`, `/{id}/payments`), roles, referrers (`/api/referrers`, `/summary`, `/{id}/detail`, `/{id}/clients`), fee payments, metrics, settings and audit logs. |
+| `403` on reads | Every other `GET`: issues, canvases, notifications, a person's reminders, token management, connections, the sync, the mobile routes — and any route added later, until it is opened to this kind on purpose. |
+| `403` on writes | Every `POST`, `PUT`, `PATCH`, `DELETE` and `OPTIONS` on the API, whatever the body: `A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything`. Refused twice, independently: `proxy.ts` by the token's `tbro_` head before any handler runs, and `requireSession` by the request's own method. |
 
-Requests count against the same 300 requests/minute. It expires like an
-automation token (90 days by default).
+Nothing it sends changes the books or is audited. The one write its requests
+make is the token's own `last_used_at`, stamped on every request as for any
+token (Settings shows it). Requests count against the same 300
+requests/minute. It expires like an automation token (90 days by default).
 
 ### The MCP (`/api/mcp`)
 

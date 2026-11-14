@@ -1,9 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { READONLY_REFUSAL, READONLY_TOKEN_PREFIX } from "@/lib/readonly-token";
+
+export { READONLY_REFUSAL };
 
 /**
  * Machine credentials for the API.
  *
- * Shape: `tb_<43 base64url chars>` — 256 bits of CSPRNG output. The visible
+ * Shape: `tb_<43 base64url chars>` — 256 bits of CSPRNG output; a read-only
+ * token's head is `tbro_` instead (lib/readonly-token.ts). The visible
  * head doubles as the lookup key so verification is one indexed read; the rest
  * is the secret and is never stored, only its SHA-256.
  *
@@ -14,8 +18,12 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
  */
 
 const TOKEN_PREFIX = "tb_";
-/** Enough to be unique and recognisable in a list, short enough to stay opaque. */
-const PREFIX_LENGTH = 11;
+/**
+ * How much of the secret the lookup key keeps after the head: enough to be
+ * unique and recognisable in a list, short enough to stay opaque. 11
+ * characters in all for a `tb_` token, 13 for a `tbro_` one.
+ */
+const PREFIX_SECRET_CHARS = 8;
 
 export const DEFAULT_EXPIRY_DAYS = 90;
 
@@ -29,14 +37,21 @@ export interface GeneratedToken {
   hash: string;
 }
 
-export function generateToken(): GeneratedToken {
+/** A token for `kind`: a read-only one carries its own head, so the edge can tell it apart. */
+export function generateToken(kind: TokenKind = "automation"): GeneratedToken {
   const secret = randomBytes(32).toString("base64url");
-  const token = `${TOKEN_PREFIX}${secret}`;
+  const token = `${kind === "readonly" ? READONLY_TOKEN_PREFIX : TOKEN_PREFIX}${secret}`;
   return {
     token,
-    prefix: token.slice(0, PREFIX_LENGTH),
+    prefix: prefixOf(token)!,
     hash: hashToken(token),
   };
+}
+
+function headOf(raw: string): string | null {
+  if (raw.startsWith(READONLY_TOKEN_PREFIX)) return READONLY_TOKEN_PREFIX;
+  if (raw.startsWith(TOKEN_PREFIX)) return TOKEN_PREFIX;
+  return null;
 }
 
 export function hashToken(token: string): string {
@@ -56,14 +71,16 @@ export function bearerFromHeader(header: string | null | undefined): string | nu
   if (!header) return null;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   const token = match?.[1];
-  if (!token || !token.startsWith(TOKEN_PREFIX)) return null;
+  if (!token || headOf(token) === null) return null;
   return token;
 }
 
-/** The lookup key for a raw token, or null when it is too short to be one. */
+/** The lookup key for a raw token, or null when it is not long enough to be one. */
 export function prefixOf(raw: string): string | null {
-  const prefix = raw.slice(0, PREFIX_LENGTH);
-  return prefix.length === PREFIX_LENGTH ? prefix : null;
+  const head = headOf(raw);
+  if (head === null) return null;
+  const length = head.length + PREFIX_SECRET_CHARS;
+  return raw.length >= length ? raw.slice(0, length) : null;
 }
 
 /**
@@ -73,10 +90,6 @@ export function prefixOf(raw: string): string | null {
  * script that only reads (GET and HEAD; every write is a 403 — lib/api.ts).
  */
 export type TokenKind = "mobile" | "automation" | "release" | "agent" | "readonly";
-
-/** What a read-only token hears on anything but a read, wherever it is refused. */
-export const READONLY_REFUSAL =
-  "A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything";
 
 /** The stored columns this module needs to judge a token. */
 export interface TokenRecord {
@@ -112,6 +125,10 @@ export function checkToken(
 ): VerifiedToken | null {
   if (!record) return null;
   if (!hashesMatch(record.token_hash, hashToken(raw))) return null;
+  // The head and the kind agree, or the token is no good: a read-only row
+  // answers only to a `tbro_` token, which the edge confines to reads, and a
+  // `tbro_` token only to a read-only row.
+  if ((record.kind === "readonly") !== raw.startsWith(READONLY_TOKEN_PREFIX)) return null;
   if (record.revoked_at !== null) return null;
   if (record.expires_at !== null && record.expires_at <= now) return null;
   return {

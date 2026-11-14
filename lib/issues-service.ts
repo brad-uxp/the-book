@@ -1,7 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
-import { READONLY_REFUSAL } from "@/lib/api-tokens";
 import type { IssueStatus } from "@/lib/issues";
 import { checkShapeChange, isBlankHtml } from "@/lib/notes";
 import { SEED_NODE_HEIGHT, SEED_NODE_WIDTH } from "@/lib/note-canvas";
@@ -20,9 +19,8 @@ import type { IssuePatch } from "@/lib/sync";
  * committed: a rolled-back change must not leave a record saying it happened.
  *
  * Who may write is decided here too, not in the routes: an agent's token
- * (`access: "agent"`) reads tasks and writes nothing, and a read-only token
- * (`access: "reader"`) reads everything and writes nothing, so every write
- * either attempts is a 403, whichever way it came in.
+ * (`access: "agent"`) reads tasks and writes nothing, so every write it
+ * attempts is a 403, whichever way it came in.
  */
 
 export type Db = Prisma.TransactionClient;
@@ -30,11 +28,12 @@ export type AuditEntry = Parameters<typeof auditLog>[0];
 
 /**
  * What the writer may change. `agent` is a token of kind `agent`: it reads
- * tasks and writes nothing. `reader` is a token of kind `readonly`: it reads
- * what the owner reads and writes nothing. Everyone else — the browser, the
- * phone, a script's automation token — is the owner.
+ * tasks and writes nothing. It is also the least any other caller that is not
+ * the owner gets (lib/api.ts getWriter): a read-only or release token, a kind
+ * the build does not know. The owner is the browser, the phone, a script's
+ * automation token.
  */
-export type Access = "owner" | "agent" | "reader";
+export type Access = "owner" | "agent";
 
 export interface Writer {
   /** Who is writing: an email, or `token:<kind>:<name> (<prefix>)` for an API token. */
@@ -82,15 +81,6 @@ function auditState(issue: {
 
 /** An agent reads; it never creates, edits or deletes an issue. */
 const AGENT_REFUSAL = { ok: false, status: 403, error: "An agent token cannot write issues" } as const;
-/** Nor does a read-only token. */
-const READER_REFUSAL = { ok: false, status: 403, error: READONLY_REFUSAL } as const;
-
-/** The 403 for a writer that may change nothing; null for the owner. */
-function writeRefusal(ctx: Writer) {
-  if (ctx.access === "agent") return AGENT_REFUSAL;
-  if (ctx.access === "reader") return READER_REFUSAL;
-  return null;
-}
 
 /**
  * The keys of `raw` that the client actually sent, with their parsed values.
@@ -128,8 +118,7 @@ export interface IssueCreate {
  * does not exist P2025) for the caller to map. An agent cannot (403).
  */
 export async function createIssue(db: Db, input: IssueCreate, ctx: WriteContext) {
-  const refused = writeRefusal(ctx);
-  if (refused) return refused;
+  if (ctx.access === "agent") return AGENT_REFUSAL;
 
   const shape = checkShapeChange(null, {
     category: input.category ?? "task",
@@ -179,8 +168,7 @@ export async function createIssue(db: Db, input: IssueCreate, ctx: WriteContext)
  * An agent cannot (403), whatever it sends.
  */
 export async function updateIssue(db: Db, id: string, patch: IssuePatch, ctx: WriteContext) {
-  const refused = writeRefusal(ctx);
-  if (refused) return refused;
+  if (ctx.access === "agent") return AGENT_REFUSAL;
 
   const has = (key: keyof IssuePatch) => Object.hasOwn(patch, key);
 
@@ -247,8 +235,7 @@ export async function updateIssue(db: Db, id: string, patch: IssuePatch, ctx: Wr
  * An agent cannot (403).
  */
 export async function deleteIssue(db: Db, id: string, ctx: WriteContext) {
-  const refused = writeRefusal(ctx);
-  if (refused) return refused;
+  if (ctx.access === "agent") return AGENT_REFUSAL;
 
   const before = await db.issue.findUnique({ where: { id } });
   if (!before) return { ok: false, status: 404, error: "Not found" } as const;

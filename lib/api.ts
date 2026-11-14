@@ -7,10 +7,10 @@ import {
   bearerFromHeader,
   checkToken,
   prefixOf,
-  READONLY_REFUSAL,
   tokenActor,
   type TokenKind,
 } from "@/lib/api-tokens";
+import { isReadMethod, READONLY_REFUSAL } from "@/lib/readonly-token";
 import { mcpResource, mcpUnauthorized } from "@/lib/mcp-auth";
 import { canonicalResource } from "@/lib/oauth";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -77,6 +77,46 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
 });
 
 /**
+ * What each kind of token may reach through requireSession — a list of the
+ * kinds this build knows, each with its own answer, rather than a list of the
+ * kinds it refuses:
+ *
+ * - `full`: the owner's access (the phone's sign-in, a script's automation token).
+ * - `issues`: only routes that pass `{ agent: true }` (an agent token).
+ * - `reads`: only GET/HEAD handlers that pass `{ readonly: req }` (a read-only token).
+ * - `none`: no route requireSession guards (a release token, which only
+ *   requireReleaseToken accepts).
+ *
+ * A kind not listed — one this build does not know, as after rolling back to
+ * a build older than the kind — reaches nothing. Same for a writer: only a
+ * `full` kind writes as the owner (getWriter).
+ */
+type TokenReach = "full" | "issues" | "reads" | "none";
+
+function reachOf(kind: string): TokenReach {
+  switch (kind) {
+    case "mobile":
+    case "automation":
+      return "full";
+    case "agent":
+      return "issues";
+    case "readonly":
+      return "reads";
+    case "release":
+      return "none";
+    default:
+      return "none";
+  }
+}
+
+/** What a token that reaches nothing here hears. */
+function refusalFor(kind: string): string {
+  return kind === "release"
+    ? "A release token can only publish app builds"
+    : "This kind of token is not accepted here";
+}
+
+/**
  * Per-handler authorization.
  *
  * `proxy.ts` already gates every route, but that is a single point of failure:
@@ -89,67 +129,68 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
  *   const denied = await requireSession();
  *   if (denied) return denied;
  *
- * An agent token is refused unless the route passes `{ agent: true }` — only
- * the issue routes do: there it reads tasks, and lib/issues-service.ts
- * refuses any write. Refusing by default means a new route never opens the
- * books to it by forgetting to.
+ * Each token kind reaches what reachOf says. Refusing by default means a new
+ * route never opens the books to a narrower token by forgetting to:
  *
- * A read-only token likewise, unless the handler passes `{ readonly: true }` —
- * every GET handler does, and nothing else may (app/api/readonly-token.test.ts
- * checks both): it reads what an automation token reads and writes nothing.
- * requireSession cannot see the method (it has no request), so the GET
- * handler says so; a handler that does not stays closed to it.
+ * - An agent token is refused unless the route passes `{ agent: true }` —
+ *   only the issue routes do: there it reads tasks, and
+ *   lib/issues-service.ts refuses any write.
+ * - A read-only token is refused unless the handler passes the request it
+ *   is answering, `{ readonly: req }`, and that request is a GET or a HEAD.
+ *   The method decides, not the handler: a PATCH that copies the GET's line
+ *   still refuses it. Only the finance reads pass it
+ *   (app/api/readonly-token.test.ts lists them); proxy.ts also cuts a
+ *   read-only token's writes before any handler runs.
  */
 export async function requireSession(
-  opts: { agent?: boolean; readonly?: boolean } = {}
+  opts: { agent?: boolean; readonly?: Request } = {}
 ): Promise<NextResponse | null> {
   const actor = await resolveActor();
   if (!actor) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // An OAuth access token is for the MCP (requireAgentToken): its audience.
-  // Here it is a token for somewhere else.
-  if (actor.kind === "token" && actor.audience) {
-    return NextResponse.json(
-      { error: "This token is for theBook's MCP only" },
-      { status: 403 }
-    );
-  }
-
-  // A release token only publishes app builds (requireReleaseToken). It lives
-  // in the release script's Keychain entry; if it leaked it must not open the
-  // books, so every other route refuses it here.
-  if (actor.kind === "token" && actor.tokenKind === "release") {
-    return NextResponse.json(
-      { error: "A release token can only publish app builds" },
-      { status: 403 }
-    );
-  }
-
-  // An agent token works issues and nothing else: no finances, no settings,
-  // no tokens. It lives in an agent's config, where a prompt it reads can
-  // try to steer it.
-  if (actor.kind === "token" && actor.tokenKind === "agent" && !opts.agent) {
-    return NextResponse.json(
-      { error: "An agent token can only reach issues" },
-      { status: 403 }
-    );
-  }
-
-  // A read-only token reads and nothing else: it lives in scripts that only
-  // look at the books, so if it leaked nothing could be created, changed or
-  // deleted with it.
-  if (actor.kind === "token" && actor.tokenKind === "readonly" && !opts.readonly) {
-    return NextResponse.json(
-      { error: READONLY_REFUSAL },
-      { status: 403 }
-    );
-  }
-
-  // Only machine callers are limited. A runaway agent loop is the realistic
-  // way this API gets hammered; a human in a browser is not.
   if (actor.kind === "token") {
+    // An OAuth access token is for the MCP (requireAgentToken): its audience.
+    // Here it is a token for somewhere else.
+    if (actor.audience) {
+      return NextResponse.json(
+        { error: "This token is for theBook's MCP only" },
+        { status: 403 }
+      );
+    }
+
+    switch (reachOf(actor.tokenKind)) {
+      case "full":
+        break;
+      // An agent token works issues and nothing else: no finances, no
+      // settings, no tokens. It lives in an agent's config, where a prompt it
+      // reads can try to steer it.
+      case "issues":
+        if (!opts.agent) {
+          return NextResponse.json(
+            { error: "An agent token can only reach issues" },
+            { status: 403 }
+          );
+        }
+        break;
+      // A read-only token reads the books and nothing else: it lives in
+      // scripts that only look at them, so if it leaked nothing could be
+      // created, changed or deleted with it.
+      case "reads":
+        if (!opts.readonly || !isReadMethod(opts.readonly.method)) {
+          return NextResponse.json({ error: READONLY_REFUSAL }, { status: 403 });
+        }
+        break;
+      // A release token only publishes app builds (requireReleaseToken). It
+      // lives in the release script's Keychain entry; if it leaked it must not
+      // open the books. Nor may a kind this build does not know.
+      case "none":
+        return NextResponse.json({ error: refusalFor(actor.tokenKind) }, { status: 403 });
+    }
+
+    // Only machine callers are limited. A runaway agent loop is the realistic
+    // way this API gets hammered; a human in a browser is not.
     const verdict = checkRateLimit(actor.id);
     if (!verdict.allowed) {
       return NextResponse.json(
@@ -167,18 +208,16 @@ export async function requireSession(
 
 /**
  * The caller as lib/issues-service.ts needs it: a label for the log, and what
- * it may change. An agent token may change nothing and reads tasks only; a
- * read-only token may change nothing and reads what the owner reads; with no
- * caller at all (which requireSession has already refused) it gets no more
- * than an agent.
+ * it may change. The owner is the browser's user or a token whose kind has the
+ * owner's reach (reachOf: `full`). Everyone else — an agent, a read-only or a
+ * release token, a kind this build does not know, no caller at all — gets the
+ * least: `agent`, which changes nothing.
  */
 export async function getWriter(): Promise<Writer> {
   const actor = await resolveActor().catch(() => null);
-  const label = actor?.label ?? null;
-  if (actor === null) return { actor: label, access: "agent" };
-  if (actor.kind === "token" && actor.tokenKind === "agent") return { actor: label, access: "agent" };
-  if (actor.kind === "token" && actor.tokenKind === "readonly") return { actor: label, access: "reader" };
-  return { actor: label, access: "owner" };
+  const owner =
+    actor !== null && (actor.kind === "user" || reachOf(actor.tokenKind) === "full");
+  return { actor: actor?.label ?? null, access: owner ? "owner" : "agent" };
 }
 
 /**

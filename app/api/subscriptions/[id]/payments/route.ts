@@ -6,10 +6,10 @@ import { requireSession, readJson, invalid } from "@/lib/api";
 import { SubscriptionPaymentSchema } from "@/lib/validations";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = await requireSession({ readonly: true });
+  const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const { id } = await params;
   const payments = await prisma.subscriptionPayment.findMany({

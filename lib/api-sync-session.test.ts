@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateToken, READONLY_REFUSAL } from "./api-tokens";
+import { generateToken, READONLY_REFUSAL, type TokenKind } from "./api-tokens";
 
 // La cadena real — encabezado → tabla de tokens → tipo del token — con la
 // base, los encabezados y la sesión simulados.
@@ -30,11 +30,20 @@ import { resetRateLimits } from "./rate-limit";
 
 const TOKEN_NAMES = { mobile: "mobile · Pixel", automation: "script", release: "book-release", agent: "claude-agent", readonly: "fin-cli" } as const;
 
-function withToken(kind: keyof typeof TOKEN_NAMES) {
-  const { token, prefix, hash } = generateToken();
+/**
+ * Presents a token of `kind`. A kind the build does not know — as after a
+ * rollback to a build older than the kind — gets a `tb_` token and its name.
+ */
+function withToken(kind: keyof typeof TOKEN_NAMES | (string & {})) {
+  const known = Object.hasOwn(TOKEN_NAMES, kind);
+  const { token, prefix, hash } = generateToken(known ? (kind as TokenKind) : undefined);
   state.authorization = `Bearer ${token}`;
-  state.record = { id: `tok-${kind}`, name: TOKEN_NAMES[kind], kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
+  const name = known ? TOKEN_NAMES[kind as keyof typeof TOKEN_NAMES] : kind;
+  state.record = { id: `tok-${kind}`, name, kind, token_prefix: prefix, token_hash: hash, expires_at: null, revoked_at: null };
 }
+
+/** The request a handler hands to requireSession({ readonly: req }). */
+const asked = (method: string) => new Request("http://localhost/api/invoices", { method });
 
 beforeEach(() => {
   resetRateLimits();
@@ -86,20 +95,28 @@ describe("matriz de acceso por tipo de credencial", () => {
     ["agent", "requireUserSession (Settings, tokens)", requireUserSession, 403],
     ["agent", "requireReleaseToken", requireReleaseToken, 403],
     ["release", "requireSession({ agent: true })", () => requireSession({ agent: true }), 403],
-    // Un token readonly solo llega a los handlers GET, que lo piden explícitamente.
-    ["readonly", "requireSession (toda escritura)", requireSession, 403],
-    ["readonly", "requireSession({ readonly: true }) (lecturas)", () => requireSession({ readonly: true }), null],
-    ["readonly", "requireSession({ agent: true }) (escrituras de issues)", () => requireSession({ agent: true }), 403],
-    ["readonly", "requireSession({ agent: true, readonly: true }) (lecturas de issues)", () => requireSession({ agent: true, readonly: true }), null],
+    // Un token readonly solo llega a los handlers que le pasan su request, y
+    // solo si esa request es un GET o un HEAD: decide el método, no el handler.
+    ["readonly", "requireSession (sin la request)", requireSession, 403],
+    ["readonly", "requireSession({ readonly: GET })", () => requireSession({ readonly: asked("GET") }), null],
+    ["readonly", "requireSession({ readonly: HEAD })", () => requireSession({ readonly: asked("HEAD") }), null],
+    ["readonly", "requireSession({ readonly: POST })", () => requireSession({ readonly: asked("POST") }), 403],
+    ["readonly", "requireSession({ readonly: PUT })", () => requireSession({ readonly: asked("PUT") }), 403],
+    ["readonly", "requireSession({ readonly: PATCH })", () => requireSession({ readonly: asked("PATCH") }), 403],
+    ["readonly", "requireSession({ readonly: patch })", () => requireSession({ readonly: asked("patch") }), 403],
+    ["readonly", "requireSession({ readonly: DELETE })", () => requireSession({ readonly: asked("DELETE") }), 403],
+    ["readonly", "requireSession({ readonly: OPTIONS })", () => requireSession({ readonly: asked("OPTIONS") }), 403],
+    ["readonly", "requireSession({ agent: true }) (issues)", () => requireSession({ agent: true }), 403],
     ["readonly", "requireSyncSession", requireSyncSession, 403],
     ["readonly", "requireAppSession", requireAppSession, 403],
     ["readonly", "requireUserSession (Settings, tokens)", requireUserSession, 403],
     ["readonly", "requireReleaseToken", requireReleaseToken, 403],
-    // Que una lectura admita readonly no abre la ruta a los demás tipos cerrados.
-    ["agent", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), 403],
-    ["release", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), 403],
-    ["automation", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), null],
-    ["mobile", "requireSession({ readonly: true })", () => requireSession({ readonly: true }), null],
+    // Que una lectura admita readonly no la abre a los demás tipos cerrados,
+    // ni le cierra un PATCH a los tipos del dueño.
+    ["agent", "requireSession({ readonly: GET })", () => requireSession({ readonly: asked("GET") }), 403],
+    ["release", "requireSession({ readonly: GET })", () => requireSession({ readonly: asked("GET") }), 403],
+    ["automation", "requireSession({ readonly: PATCH })", () => requireSession({ readonly: asked("PATCH") }), null],
+    ["mobile", "requireSession({ readonly: GET })", () => requireSession({ readonly: asked("GET") }), null],
   ] as const;
 
   it.each(cases)("token %s → %s → %s", async (kind, _label, guard, expected) => {
@@ -110,7 +127,7 @@ describe("matriz de acceso por tipo de credencial", () => {
 
   it("un token readonly oye por qué: solo lee", async () => {
     withToken("readonly");
-    const res = await requireSession();
+    const res = await requireSession({ readonly: asked("DELETE") });
     expect(await res?.json()).toEqual({ error: READONLY_REFUSAL });
   });
 
@@ -145,7 +162,7 @@ describe("un token de OAuth es solo para el MCP", () => {
 });
 
 describe("getWriter", () => {
-  it("un token agent escribe como agente; uno readonly, como lector; el resto, como dueño", async () => {
+  it("solo los tipos del dueño escriben como dueño; el resto, con el acceso mínimo", async () => {
     withToken("agent");
     expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:agent:claude-agent \(tb_/), access: "agent" });
     withToken("automation");
@@ -153,7 +170,9 @@ describe("getWriter", () => {
     withToken("mobile");
     expect((await getWriter()).access).toBe("owner");
     withToken("readonly");
-    expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:readonly:fin-cli \(tb_/), access: "reader" });
+    expect(await getWriter()).toEqual({ actor: expect.stringMatching(/^token:readonly:fin-cli \(tbro_/), access: "agent" });
+    withToken("release");
+    expect((await getWriter()).access).toBe("agent");
   });
 
   it("la sesión del navegador es el dueño; sin quien llame, el acceso mínimo", async () => {
@@ -161,5 +180,39 @@ describe("getWriter", () => {
     expect(await getWriter()).toEqual({ actor: "owner@example.com", access: "owner" });
     state.session = null;
     expect(await getWriter()).toEqual({ actor: null, access: "agent" });
+  });
+});
+
+// Lista blanca: cada tipo conocido tiene su respuesta, y uno que este build no
+// conoce no llega a nada. Es lo que pasa al volver a un build anterior a un
+// tipo: el valor sigue en la base (Postgres no saca valores de un enum) y el
+// código viejo no sabe qué permitirle.
+describe("un tipo de token que este build no conoce", () => {
+  const unknown = ["superuser", "owner", "Automation", "constructor", "__proto__", ""];
+
+  it.each(unknown)("%j no llega a ninguna ruta, ni pidiéndolo", async (kind) => {
+    for (const guard of [
+      () => requireSession(),
+      () => requireSession({ agent: true }),
+      () => requireSession({ readonly: asked("GET") }),
+      () => requireSession({ agent: true, readonly: asked("GET") }),
+      requireSyncSession,
+      requireAppSession,
+      requireUserSession,
+      requireReleaseToken,
+    ]) {
+      withToken(kind);
+      expect((await guard())?.status).toBe(403);
+    }
+  });
+
+  it.each(unknown)("%j escribe con el acceso mínimo", async (kind) => {
+    withToken(kind);
+    expect((await getWriter()).access).toBe("agent");
+  });
+
+  it("y oye por qué", async () => {
+    withToken("superuser");
+    expect(await (await requireSession())?.json()).toEqual({ error: "This kind of token is not accepted here" });
   });
 });

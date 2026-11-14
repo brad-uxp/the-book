@@ -37,12 +37,16 @@ describe("POST /api/settings/tokens", () => {
     const data = create.mock.calls[0][0].data;
     expect(data.kind).toBe("readonly");
     expect((data.expires_at as Date).getTime() - Date.now()).toBeGreaterThan(89 * 24 * 3600 * 1000);
-    expect((await res.json()).token).toMatch(/^tb_/);
+    // Su propia cabeza: proxy.ts le corta las escrituras antes del handler.
+    const body = await res.json();
+    expect(body.token).toMatch(/^tbro_/);
+    expect(data.token_prefix).toBe(body.token.slice(0, 13));
   });
 
-  it("sin kind sigue siendo automation", async () => {
-    await post({ name: "script" });
+  it("sin kind sigue siendo automation, con tb_", async () => {
+    const res = await post({ name: "script" });
     expect(create.mock.calls[0][0].data.kind).toBe("automation");
+    expect((await res.json()).token).toMatch(/^tb_/);
   });
 
   it("mobile no se emite acá, ni un kind inventado", async () => {

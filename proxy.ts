@@ -2,6 +2,7 @@ import { auth, isAllowedSession } from "@/auth";
 import { NextResponse } from "next/server";
 import { isMobilePublicPath } from "@/lib/mobile-auth";
 import { MCP_PATH, mcpUnauthorized } from "@/lib/mcp-auth";
+import { isReadMethod, presentsReadonlyToken, READONLY_REFUSAL } from "@/lib/readonly-token";
 
 /**
  * theBook's OAuth, for its MCP (lib/oauth.ts): the discovery documents and
@@ -15,6 +16,17 @@ const OAUTH_AUTHORIZE_PATH = "/oauth/authorize";
 
 export const proxy = auth(async (req) => {
   const { pathname } = req.nextUrl;
+  const authorization = req.headers.get("authorization");
+
+  // A read-only token reads and nothing else, and its head says what it is
+  // (lib/readonly-token.ts), so whatever is not a GET or a HEAD stops here —
+  // on every path the proxy sees, before the allow-lists below and before any
+  // handler. Whether the token is real is the handler's call; this only
+  // refuses. requireSession refuses it again by the request's method, so a
+  // handler is no weaker without this.
+  if (presentsReadonlyToken(authorization) && !isReadMethod(req.method)) {
+    return NextResponse.json({ error: READONLY_REFUSAL }, { status: 403 });
+  }
 
   // Always allow: login page, auth endpoints, cron
   if (
@@ -41,8 +53,7 @@ export const proxy = auth(async (req) => {
   // to the handler, where requireSession() validates it against ApiToken and
   // returns 401 if it does not check out. Nothing is trusted at this point;
   // only the cheap "is this even a token request" test happens.
-  const authorization = req.headers.get("authorization");
-  if (pathname.startsWith("/api/") && /^Bearer\s+tb_/i.test(authorization ?? "")) {
+  if (pathname.startsWith("/api/") && /^Bearer\s+(tb_|tbro_)/i.test(authorization ?? "")) {
     return NextResponse.next();
   }
 

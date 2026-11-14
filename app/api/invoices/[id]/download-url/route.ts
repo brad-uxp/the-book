@@ -6,10 +6,10 @@ import { requireSession } from "@/lib/api";
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = await requireSession({ readonly: true });
+  const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const { id } = await params;
   const invoice = await prisma.invoice.findUnique({
