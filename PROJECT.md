@@ -265,7 +265,8 @@ settings y audit logs. Esos GET pasan `requireSession({ readonly: req })`, que
 lo deja pasar solo si la request es GET o HEAD; todo otro GET le da 403, y todo
 otro método también, dos veces: en `proxy.ts` por la cabeza del token y en
 `requireSession` por el método (en `OPTIONS` y en las rutas que no miran tokens
-solo corta el proxy). Del audit log recibe solo las entradas de finanzas.
+solo corta el proxy). Del audit log recibe solo las entradas de finanzas, y de
+un token que escribió una ve solo el tipo (`token:automation`).
 `app/api/readonly-token.test.ts` lo comprueba ruta por ruta. Ante un rollback lo
 protege la cabeza `tbro_` (los builds viejos no la toman por token), que la base
 exige con el CHECK `ApiToken_readonly_prefix`. Detalle en

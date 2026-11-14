@@ -65,7 +65,7 @@ change them. It looks different from every other token: `tbro_…` instead of
 
 | | |
 |---|---|
-| Reaches | `GET` (and `HEAD`) on invoices (`/api/invoices`, `/api/invoices/{id}`, `/api/invoices/{id}/download-url`), clients (`/api/clients`), subscriptions (`/api/subscriptions`, `/{id}`, `/{id}/payments`), other expenses (`/api/other-expenses`), people (`/api/people`, `/{id}`, `/{id}/payments` — each person comes with their salary increase reminders, as `increase_reminders`), roles, referrers (`/api/referrers`, `/summary`, `/{id}/detail`, `/{id}/clients`), fee payments, metrics, settings, and the audit log (`/api/audit-logs`) — its entries about the books only: invoices, clients, subscriptions and their payments, other expenses, people and their salary payments, referrers, fee payments and settings; never those of issues, canvases, tokens, OAuth, app releases, roles or reminders, whatever the filter. |
+| Reaches | `GET` (and `HEAD`) on invoices (`/api/invoices`, `/api/invoices/{id}`, `/api/invoices/{id}/download-url`), clients (`/api/clients`), subscriptions (`/api/subscriptions`, `/{id}`, `/{id}/payments`), other expenses (`/api/other-expenses`), people (`/api/people`, `/{id}`, `/{id}/payments` — each person comes with their salary increase reminders, as `increase_reminders`), roles, referrers (`/api/referrers`, `/summary`, `/{id}/detail`, `/{id}/clients`), fee payments, metrics, settings, and the audit log (`/api/audit-logs`) — its entries about the books only: invoices, clients, subscriptions and their payments, other expenses, people and their salary payments, referrers, fee payments and settings; never those of issues, canvases, tokens, OAuth, app releases or roles, whatever the filter. When a token wrote an entry, `actor_email` shows only its kind (`token:automation`), not its name or prefix. |
 | `403` on reads | Every other `GET`: issues, canvases, notifications, `/api/people/{id}/reminders`, token management, connections, the sync, the mobile routes — and any route added later, until it is opened to this kind on purpose. |
 | `403` on writes | Every `POST`, `PUT`, `PATCH`, `DELETE` and `OPTIONS` that reaches the app, whatever the body: `A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything`. `proxy.ts` refuses it by the token's `tbro_` head before any handler runs. On the routes that take a token, `requireSession` refuses it again, by the request's own method. On `OPTIONS` and on the routes that never look at a token — `/api/oauth/token`, `/api/mobile/nonce`, `/api/mobile/sign-in`, `/api/cron/*`, `/api/auth/*` — the proxy's is the only refusal; a token grants nothing there anyway. `POST /api/mcp` gets this same `403` from the proxy, not the MCP's `401` with `WWW-Authenticate`. |
 
@@ -73,6 +73,13 @@ Nothing it sends changes the books or is audited. The one write its requests
 make is the token's own `last_used_at`, stamped on every request as for any
 token (Settings shows it). Requests count against the same 300
 requests/minute. It expires like an automation token (90 days by default).
+
+After a rollback: a build older than 595f29c does not take a `tbro_` token at
+all (401), and CHECK `ApiToken_readonly_prefix` keeps every read-only row on
+that head. A rollback to 595f29c itself, the first build with `tbro_`, is the
+exception: there a `tbro_` token still reads, writes nothing, and gets the
+**whole** audit log back, every entity type and full token labels. The CHECK
+does not cover that; only keeping that build off production does.
 
 ### The MCP (`/api/mcp`)
 
