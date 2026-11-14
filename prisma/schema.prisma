@@ -541,14 +541,14 @@ enum ApiTokenKind {
   automation
   release // publishes app builds (POST /api/mobile/releases); nothing else
   agent // an agent working issues: its note, log, progress and some statuses (lib/issues-service.ts); nothing else
-  readonly // reads what an automation token reads (GET/HEAD only); every write is a 403
+  readonly // reads the books (GET/HEAD on the finance routes, lib/api.ts); every write is a 403. Token head `tbro_` (CHECK ApiToken_readonly_prefix)
 }
 
 model ApiToken {
   id           String       @id @default(uuid())
   name         String // human label, e.g. "claude-work-session"
   kind         ApiTokenKind @default(automation)
-  token_prefix String       @unique // first chars of the token; shown in the UI
+  token_prefix String       @unique // first chars of the token; shown in the UI. `tbro_…` if and only if kind = readonly (CHECK ApiToken_readonly_prefix; the code checks the converse)
   token_hash   String // sha256 of the full token
   created_at   DateTime     @default(now())
   last_used_at DateTime?

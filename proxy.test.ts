@@ -37,6 +37,15 @@ describe("proxy: un token readonly solo lee", () => {
     }
   );
 
+  // El MCP contesta 401 con WWW-Authenticate a todo token que no sea de su
+  // OAuth; a un tbro_ ya no le llega: el proxy le da 403, sin desafío.
+  it("POST /api/mcp con tbro_ → 403 del proxy, no el 401 con WWW-Authenticate", async () => {
+    const res = await hit("/api/mcp", "POST", `Bearer ${RO}`);
+    expect(res.status).toBe(403);
+    expect(res.headers.get("www-authenticate")).toBeNull();
+    expect(await res.json()).toEqual({ error: READONLY_REFUSAL });
+  });
+
   it("sin importar mayúsculas ni espacios en el encabezado", async () => {
     for (const header of [`bearer ${RO}`, `BEARER   ${RO.toUpperCase()}`, `  Bearer ${RO}`]) {
       expect((await hit("/api/clients", "POST", header)).status).toBe(403);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/api";
+import { callerHasOwnerReach, requireSession } from "@/lib/api";
+import { READONLY_AUDIT_ENTITY_TYPES } from "@/lib/readonly-token";
 
 export async function GET(req: NextRequest) {
   const denied = await requireSession({ readonly: req });
@@ -12,10 +13,16 @@ export async function GET(req: NextRequest) {
   const action = searchParams.get("action") || undefined;
   const search = searchParams.get("search") || undefined;
 
+  // The log holds more than the books — issue titles, deleted canvas ideas,
+  // tokens, OAuth consents — so a caller without the owner's reach (a
+  // read-only token) gets only the books' entries, whatever it filters by.
+  const booksOnly = !(await callerHasOwnerReach());
+
   const where = {
     ...(entity_type ? { entity_type } : {}),
     ...(action ? { action } : {}),
     ...(search ? { entity_name: { contains: search, mode: "insensitive" as const } } : {}),
+    ...(booksOnly ? { AND: [{ entity_type: { in: [...READONLY_AUDIT_ENTITY_TYPES] } }] } : {}),
   };
 
   const [logs, total] = await Promise.all([

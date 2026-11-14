@@ -65,9 +65,9 @@ change them. It looks different from every other token: `tbro_…` instead of
 
 | | |
 |---|---|
-| Reaches | `GET` (and `HEAD`) on invoices (`/api/invoices`, `/api/invoices/{id}`, `/api/invoices/{id}/download-url`), clients (`/api/clients`), subscriptions (`/api/subscriptions`, `/{id}`, `/{id}/payments`), other expenses (`/api/other-expenses`), people (`/api/people`, `/{id}`, `/{id}/payments`), roles, referrers (`/api/referrers`, `/summary`, `/{id}/detail`, `/{id}/clients`), fee payments, metrics, settings and audit logs. |
-| `403` on reads | Every other `GET`: issues, canvases, notifications, a person's reminders, token management, connections, the sync, the mobile routes — and any route added later, until it is opened to this kind on purpose. |
-| `403` on writes | Every `POST`, `PUT`, `PATCH`, `DELETE` and `OPTIONS` on the API, whatever the body: `A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything`. Refused twice, independently: `proxy.ts` by the token's `tbro_` head before any handler runs, and `requireSession` by the request's own method. |
+| Reaches | `GET` (and `HEAD`) on invoices (`/api/invoices`, `/api/invoices/{id}`, `/api/invoices/{id}/download-url`), clients (`/api/clients`), subscriptions (`/api/subscriptions`, `/{id}`, `/{id}/payments`), other expenses (`/api/other-expenses`), people (`/api/people`, `/{id}`, `/{id}/payments` — each person comes with their salary increase reminders, as `increase_reminders`), roles, referrers (`/api/referrers`, `/summary`, `/{id}/detail`, `/{id}/clients`), fee payments, metrics, settings, and the audit log (`/api/audit-logs`) — its entries about the books only: invoices, clients, subscriptions and their payments, other expenses, people and their salary payments, referrers, fee payments and settings; never those of issues, canvases, tokens, OAuth, app releases, roles or reminders, whatever the filter. |
+| `403` on reads | Every other `GET`: issues, canvases, notifications, `/api/people/{id}/reminders`, token management, connections, the sync, the mobile routes — and any route added later, until it is opened to this kind on purpose. |
+| `403` on writes | Every `POST`, `PUT`, `PATCH`, `DELETE` and `OPTIONS` that reaches the app, whatever the body: `A read-only token can only read (GET and HEAD requests); it cannot create, change or delete anything`. `proxy.ts` refuses it by the token's `tbro_` head before any handler runs. On the routes that take a token, `requireSession` refuses it again, by the request's own method. On `OPTIONS` and on the routes that never look at a token — `/api/oauth/token`, `/api/mobile/nonce`, `/api/mobile/sign-in`, `/api/cron/*`, `/api/auth/*` — the proxy's is the only refusal; a token grants nothing there anyway. `POST /api/mcp` gets this same `403` from the proxy, not the MCP's `401` with `WWW-Authenticate`. |
 
 Nothing it sends changes the books or is audited. The one write its requests
 make is the token's own `last_used_at`, stamped on every request as for any
@@ -96,7 +96,9 @@ made in Settings. It is **read-only**: two tools, tasks only.
   Settings, an expired or revoked one, or one for another audience — `401` with
   `WWW-Authenticate: Bearer realm="book", resource_metadata="…", scope="issues"`
   (plus `error="invalid_token"` when one was presented): what starts a client's
-  OAuth. Over 300 calls a minute per connection: `429`. Bodies over 1 MiB:
+  OAuth. The exception is a read-only token (`tbro_…`): `proxy.ts` answers its
+  `POST` with a `403` and no challenge, before the MCP sees it
+  ([Read-only tokens](#read-only-tokens)). Over 300 calls a minute per connection: `429`. Bodies over 1 MiB:
   `413`; a JSON-RPC batch: `400` (one message per request). An unexpected
   failure is `500: Internal error`, never the exception's message.
 

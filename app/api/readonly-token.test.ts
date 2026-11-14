@@ -193,7 +193,10 @@ const NOT_TOKEN_ROUTES: Record<string, string> = {
 
 /** Rutas que no llaman a requireSession y rechazan con su propia respuesta. */
 const OWN_REFUSAL: Record<string, number> = {
-  "mcp/route.ts": 401, // el desafío WWW-Authenticate que arranca el OAuth del cliente
+  // El handler responde el desafío WWW-Authenticate que arranca el OAuth del
+  // cliente. En producción un POST con un tbro_ no llega: proxy.ts le da 403
+  // antes (proxy.test.ts).
+  "mcp/route.ts": 401,
   "mobile/releases/route.ts": 403,
   "mobile/releases/[code]/publish/route.ts": 403,
   "settings/connections/route.ts": 403,
@@ -204,8 +207,13 @@ const OWN_REFUSAL: Record<string, number> = {
 
 const TOKEN_GUARD = /\brequire(Session|UserSession|AppSession|SyncSession|ReleaseToken|AgentToken|MobileToken)\(/;
 
-/** What a write looks like to the recorder. */
-const WRITE_OPS = /\.(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|upsert|delete|deleteMany)$|^\$executeRaw/;
+/**
+ * What a write looks like to the recorder. Raw SQL counts, both kinds: a
+ * `$queryRaw` can write as well as an `$executeRaw` (an INSERT … RETURNING),
+ * and no handler a read-only token reaches needs either.
+ */
+const WRITE_OPS =
+  /\.(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|upsert|delete|deleteMany)$|^\$(executeRaw|queryRaw)/;
 
 /**
  * The one write a request may make: resolveActor stamping the presented
@@ -370,6 +378,13 @@ describe("control: un token de automatización sí escribe", () => {
     const { DELETE } = await load("other-expenses/[id]/route.ts");
     await call("other-expenses/[id]/route.ts", "DELETE", DELETE!);
     expect(writes().some((op) => op.startsWith("otherExpense."))).toBe(true);
+  });
+
+  it("el SQL crudo cuenta como escritura, de los dos tipos", () => {
+    for (const op of ["$queryRaw", "$queryRawUnsafe", "$executeRaw", "$executeRawUnsafe"]) {
+      state.calls.push({ op, args: null });
+    }
+    expect(writes()).toEqual(["$queryRaw", "$queryRawUnsafe", "$executeRaw", "$executeRawUnsafe"]);
   });
 
   it("un update del token que no sea solo su last_used_at cuenta como escritura", () => {

@@ -15,8 +15,8 @@ const CreateTokenSchema = z
     // `release` can publish app builds and reach nothing else (lib/api.ts).
     // `agent` reaches only the issues, reads tasks there and writes nothing
     // (lib/issues-service.ts).
-    // `readonly` reads what an automation token reads (GET and HEAD) and
-    // writes nothing (lib/api.ts).
+    // `readonly` reads the books — GET/HEAD on the finance routes only — and
+    // writes nothing (lib/api.ts); its token starts with `tbro_`.
     kind: z.enum(["automation", "release", "agent", "readonly"]).default("automation"),
   })
   // An agent's token sits in its config in plain text, read by a model that

@@ -208,7 +208,7 @@ guardan como **UTC midnight**.
 | -------------- | -------------------------------------------------------------------------- |
 | `Notification` | 9 tipos, idempotente por `(type, entity_id, event_date)`                   |
 | `AuditLog`     | Historial de cambios con snapshots JSON before/after                       |
-| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings: solo llega a las rutas REST de issues; o emitido por el OAuth del MCP: 1 h, `oauth_grant_id` + `audience` = URL del MCP, solo sirve en `/api/mcp`. En los dos casos lee tareas y no escribe nada: `lib/issues-service.ts` rechaza toda escritura) o `readonly` (hecho en Settings, empieza con `tbro_`: `GET`/`HEAD` solo en las lecturas de finanzas; todo otro método es 403, en `proxy.ts` y en el handler). CHECK `ApiToken_oauth_audience_together` |
+| `ApiToken`     | Credencial de máquina (solo se guarda su sha256). `kind`: `mobile` (lo emite el login de la app; el único que acepta la sync), `automation` (hecho en Settings), `release` (hecho en Settings; solo publica versiones de la app, todo lo demás lo rechaza) o `agent` (hecho en Settings: solo llega a las rutas REST de issues; o emitido por el OAuth del MCP: 1 h, `oauth_grant_id` + `audience` = URL del MCP, solo sirve en `/api/mcp`. En los dos casos lee tareas y no escribe nada: `lib/issues-service.ts` rechaza toda escritura) o `readonly` (hecho en Settings, empieza con `tbro_`: `GET`/`HEAD` solo en las lecturas de finanzas; todo otro método es 403, en `proxy.ts` y en el handler). CHECK `ApiToken_oauth_audience_together` y `ApiToken_readonly_prefix` (toda fila `readonly` tiene `token_prefix` `tbro_…`) |
 | `OAuthGrant`   | Una "conexión" del OAuth del MCP: lo que Brad aprobó en el consentimiento (cliente CIMD de claude.ai, redirect, scope, resource). Settings → Connected apps la lista y la revoca (con sus `ApiToken`). Revocada, nunca borrada |
 | `OAuthCode` / `OAuthRefreshToken` | Código de autorización (sha256, 60 s, un uso) y refresh tokens (sha256, 30 días, rotan en cada uso; reusar uno revoca la conexión) |
 | `MobileRelease` | Versión publicada de la app Android (versión, `version_code` único y creciente, sha256, tamaño, clave en R2, notas, `published_at`) para las actualizaciones sin cable |
@@ -264,8 +264,12 @@ gastos, personas y sus pagos, roles, referidores, fee payments, metrics,
 settings y audit logs. Esos GET pasan `requireSession({ readonly: req })`, que
 lo deja pasar solo si la request es GET o HEAD; todo otro GET le da 403, y todo
 otro método también, dos veces: en `proxy.ts` por la cabeza del token y en
-`requireSession` por el método. `app/api/readonly-token.test.ts` lo comprueba
-ruta por ruta. Detalle en [`API.md`](./API.md#read-only-tokens).
+`requireSession` por el método (en `OPTIONS` y en las rutas que no miran tokens
+solo corta el proxy). Del audit log recibe solo las entradas de finanzas.
+`app/api/readonly-token.test.ts` lo comprueba ruta por ruta. Ante un rollback lo
+protege la cabeza `tbro_` (los builds viejos no la toman por token), que la base
+exige con el CHECK `ApiToken_readonly_prefix`. Detalle en
+[`API.md`](./API.md#read-only-tokens).
 
 `/api/mcp` es el revés: **solo** acepta un token `agent` de su OAuth
 (`requireAgentToken`; sin uno válido, 401 con `WWW-Authenticate`, que arranca el

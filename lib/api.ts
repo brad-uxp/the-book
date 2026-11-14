@@ -87,9 +87,15 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
  * - `none`: no route requireSession guards (a release token, which only
  *   requireReleaseToken accepts).
  *
- * A kind not listed — one this build does not know, as after rolling back to
- * a build older than the kind — reaches nothing. Same for a writer: only a
- * `full` kind writes as the owner (getWriter).
+ * A kind not listed — one this build does not know, such as a kind added
+ * after it — reaches nothing. Same for a writer: only a `full` kind writes as
+ * the owner (getWriter).
+ *
+ * This protects this build and later ones, not older ones: a build that
+ * predates this list judges kinds its own way. What keeps a read-only token
+ * from writing there is its `tbro_` head, which those builds do not take for a
+ * token, and which CHECK ApiToken_readonly_prefix keeps on every `readonly`
+ * row (lib/readonly-token.ts).
  */
 type TokenReach = "full" | "issues" | "reads" | "none";
 
@@ -206,6 +212,20 @@ export async function requireSession(
   return null;
 }
 
+/** The browser's user, or a token whose kind has the owner's reach (reachOf: `full`). */
+function hasOwnerReach(actor: Actor | null): boolean {
+  return actor !== null && (actor.kind === "user" || reachOf(actor.tokenKind) === "full");
+}
+
+/**
+ * Whether the caller sees what the owner sees, for a route that more than the
+ * owner reaches and shows the rest less (GET /api/audit-logs to a read-only
+ * token). No caller, or one this build does not know, does not.
+ */
+export async function callerHasOwnerReach(): Promise<boolean> {
+  return hasOwnerReach(await resolveActor().catch(() => null));
+}
+
 /**
  * The caller as lib/issues-service.ts needs it: a label for the log, and what
  * it may change. The owner is the browser's user or a token whose kind has the
@@ -215,9 +235,7 @@ export async function requireSession(
  */
 export async function getWriter(): Promise<Writer> {
   const actor = await resolveActor().catch(() => null);
-  const owner =
-    actor !== null && (actor.kind === "user" || reachOf(actor.tokenKind) === "full");
-  return { actor: actor?.label ?? null, access: owner ? "owner" : "agent" };
+  return { actor: actor?.label ?? null, access: hasOwnerReach(actor) ? "owner" : "agent" };
 }
 
 /**
