@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { callerHasOwnerReach, requireSession } from "@/lib/api";
+import { tokenActorKindOnly } from "@/lib/api-tokens";
 import { READONLY_AUDIT_ENTITY_TYPES } from "@/lib/readonly-token";
 
 export async function GET(req: NextRequest) {
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest) {
   // The log holds more than the books — issue titles, deleted canvas ideas,
   // tokens, OAuth consents — so a caller without the owner's reach (a
   // read-only token) gets only the books' entries, whatever it filters by.
+  // And not which token wrote one: a token's name and prefix are Settings'
+  // business, so its label keeps only the kind (`token:automation`).
   const booksOnly = !(await callerHasOwnerReach());
 
   const where = {
@@ -35,5 +38,8 @@ export async function GET(req: NextRequest) {
     prisma.auditLog.count({ where }),
   ]);
 
-  return NextResponse.json({ logs, total });
+  return NextResponse.json({
+    logs: booksOnly ? logs.map((l) => ({ ...l, actor_email: tokenActorKindOnly(l.actor_email) })) : logs,
+    total,
+  });
 }

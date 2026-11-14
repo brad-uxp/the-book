@@ -6,6 +6,7 @@ import {
   checkToken,
   prefixOf,
   tokenActor,
+  tokenActorKindOnly,
   type TokenRecord,
 } from "./api-tokens";
 
@@ -210,5 +211,20 @@ describe("la cabeza de un token readonly", () => {
     expect(checkToken(rec(tb.hash, "readonly"), tb.token, now)).toBeNull();
     // …ni un tbro_ a una fila de otro tipo.
     expect(checkToken(rec(ro.hash, "automation"), ro.token, now)).toBeNull();
+  });
+});
+
+describe("tokenActorKindOnly", () => {
+  it("deja solo el tipo de una etiqueta de token: ni el nombre ni el prefijo", () => {
+    const label = tokenActor({ name: "fin-cli", kind: "automation", prefix: "tb_AbCd1234" });
+    expect(tokenActorKindOnly(label)).toBe("token:automation");
+    expect(tokenActorKindOnly("token:agent:Claude · 1a2b3c4d (tb_ZzYy9876)")).toBe("token:agent");
+    expect(tokenActorKindOnly("token:readonly:a:b:c (tbro_Abc12345)")).toBe("token:readonly");
+  });
+
+  it("lo demás vuelve igual", () => {
+    for (const v of ["owner@example.com", "system", "token", "token:", null]) {
+      expect(tokenActorKindOnly(v)).toBe(v);
+    }
   });
 });
