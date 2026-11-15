@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { PersonWithSalarySchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
-import { requireSession } from "@/lib/api";
+import { callerHasOwnerReach, requireSession } from "@/lib/api";
 
 export async function GET(
   req: NextRequest,
@@ -11,13 +11,15 @@ export async function GET(
   const denied = await requireSession({ readonly: req });
   if (denied) return denied;
   const { id } = await params;
+  // Reminders only with the owner's reach, as in GET /api/people.
+  const owner = await callerHasOwnerReach();
   const person = await prisma.person.findUnique({
     where: { id },
     include: {
       role: true,
       salary_base: true,
       salary_payments: { orderBy: { due_date: "desc" } },
-      increase_reminders: { orderBy: { effective_date: "asc" } },
+      ...(owner ? { increase_reminders: { orderBy: { effective_date: "asc" as const } } } : {}),
     },
   });
   if (!person) return NextResponse.json({ error: "Not found" }, { status: 404 });

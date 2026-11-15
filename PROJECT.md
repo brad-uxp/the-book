@@ -268,10 +268,12 @@ otro método también, dos veces: en `proxy.ts` por la cabeza del token y en
 `requireSession` por el método (en `OPTIONS` y en las rutas que no miran tokens
 solo corta el proxy). Del audit log recibe solo las entradas de finanzas, y de
 un token que escribió una ve solo el tipo (`token:automation`).
-`app/api/readonly-token.test.ts` lo comprueba ruta por ruta. Ante un rollback lo
-protege la cabeza `tbro_` (los builds viejos no la toman por token), que la base
-exige con el CHECK `ApiToken_readonly_prefix`. Detalle en
-[`API.md`](./API.md#read-only-tokens).
+`app/api/readonly-token.test.ts` lo comprueba ruta por ruta. Ante un rollback deja
+de andar (401) en vez de alcanzar más: los builds viejos no toman la cabeza `tbro_`
+(que la base exige con el CHECK `ApiToken_readonly_prefix`), y los que la toman
+pero le daban más no verifican su hash, salado con `READONLY_HASH_DOMAIN`. Dura
+90 días como mucho, y de cada persona no recibe los `increase_reminders`. Detalle
+en [`API.md`](./API.md#read-only-tokens).
 
 `/api/mcp` es el revés: **solo** acepta un token `agent` de su OAuth
 (`requireAgentToken`; sin uno válido, 401 con `WWW-Authenticate`, que arranca el

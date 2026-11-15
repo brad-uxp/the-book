@@ -5,6 +5,7 @@ import {
   bearerFromHeader,
   checkToken,
   prefixOf,
+  storedHashOf,
   tokenActor,
   tokenActorKindOnly,
   type TokenRecord,
@@ -176,7 +177,43 @@ describe("la cabeza de un token readonly", () => {
     expect(token.slice(5)).toHaveLength(43);
     expect(prefix).toHaveLength(13);
     expect(token.startsWith(prefix)).toBe(true);
-    expect(hash).toBe(hashToken(token));
+    expect(hash).toBe(storedHashOf(token));
+  });
+
+  // Un build que hashea el token tal cual — 595f29c, que le mostraba al
+  // readonly el audit log entero, y todos los anteriores al dominio — no
+  // encuentra el hash guardado: ante un rollback el token da 401, no alcanza más.
+  it("el hash de un readonly tiene su dominio: el sha256 del token solo no coincide", () => {
+    const { token, hash } = generateToken("readonly");
+    expect(hash).toBe(hashToken(`ro1:${token}`));
+    expect(hash).not.toBe(hashToken(token));
+    const now = new Date("2026-11-15T12:00:00Z");
+    const minted = { id: "t1", name: "n", kind: "readonly" as const, expires_at: null, revoked_at: null };
+    expect(checkToken({ ...minted, token_hash: hash }, token, now)?.kind).toBe("readonly");
+    // Una fila sin dominio y sin fecha (o de después del corte) no verifica.
+    expect(checkToken({ ...minted, token_hash: hashToken(token) }, token, now)).toBeNull();
+  });
+
+  // El token del CLI se emitió antes del dominio, con el sha256 solo: sigue
+  // andando para que el deploy no lo rompa, pero solo si la fila es de antes
+  // del corte. Nada emitido después puede tener un hash sin dominio.
+  it("un readonly emitido antes del corte, sin dominio, sigue verificando; uno de después, no", () => {
+    const { token } = generateToken("readonly");
+    const now = new Date("2026-11-15T20:00:00Z");
+    const plain = { id: "t1", name: "fin-thebook-lectura", kind: "readonly" as const, token_hash: hashToken(token), expires_at: null, revoked_at: null };
+    expect(checkToken({ ...plain, created_at: new Date("2026-11-14T20:01:00Z") }, token, now)?.kind).toBe("readonly");
+    expect(checkToken({ ...plain, created_at: new Date("2026-11-15T17:15:00Z") }, token, now)).toBeNull();
+    expect(checkToken({ ...plain, created_at: new Date("2026-11-16T00:00:00Z") }, token, now)).toBeNull();
+    // Sin perder las otras reglas: revocado o de otro tipo, no.
+    expect(checkToken({ ...plain, created_at: new Date("2026-11-14T20:01:00Z"), revoked_at: now }, token, now)).toBeNull();
+    expect(checkToken({ ...plain, kind: "automation", created_at: new Date("2026-11-14T20:01:00Z") }, token, now)).toBeNull();
+  });
+
+  it("los demás tipos hashean el token tal cual, como siempre", () => {
+    for (const kind of ["automation", "mobile", "release", "agent"] as const) {
+      const { token, hash } = generateToken(kind);
+      expect(hash).toBe(hashToken(token));
+    }
   });
 
   it("los demás tipos siguen con tb_", () => {
@@ -222,8 +259,16 @@ describe("tokenActorKindOnly", () => {
     expect(tokenActorKindOnly("token:readonly:a:b:c (tbro_Abc12345)")).toBe("token:readonly");
   });
 
+  // Hasta 2026-10-28 la etiqueta era `token:<nombre>`, sin tipo: ese nombre
+  // no puede pasar por un tipo ni quedar a la vista.
+  it("una etiqueta de token sin un tipo conocido queda en `token`", () => {
+    for (const v of ["token:cli-books", "token:claude:work", "token:Automation:x", "token:superuser:x (tb_1)", "token:", "token:agent"]) {
+      expect(tokenActorKindOnly(v)).toBe("token");
+    }
+  });
+
   it("lo demás vuelve igual", () => {
-    for (const v of ["owner@example.com", "system", "token", "token:", null]) {
+    for (const v of ["owner@example.com", "system", "token", null]) {
       expect(tokenActorKindOnly(v)).toBe(v);
     }
   });

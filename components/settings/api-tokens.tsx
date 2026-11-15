@@ -36,6 +36,7 @@ type CreatableKind = "automation" | "release" | "agent" | "readonly";
 
 const DEFAULT_EXPIRY_DAYS = 90;
 const AGENT_TOKEN_DAYS = 14;
+const READONLY_TOKEN_DAYS = 90;
 
 function statusOf(t: ApiToken): { label: string; variant: "default" | "secondary" | "destructive" } {
   if (t.revoked_at) return { label: "Revoked", variant: "destructive" };
@@ -190,6 +191,8 @@ export function ApiTokens() {
               setKind(next);
               // An agent token lasts 30 days at most (the API refuses more); 14 is the proposal.
               if (next === "agent") setDays(String(AGENT_TOKEN_DAYS));
+              // A read-only token lasts 90 days at most (the API refuses more).
+              if (next === "readonly" && !(Number(days) <= READONLY_TOKEN_DAYS)) setDays(String(READONLY_TOKEN_DAYS));
             }}
             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           >

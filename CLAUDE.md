@@ -45,7 +45,7 @@ pnpm test           # vitest run
 pnpm typecheck      # tsc --noEmit
 ```
 
-**Gestor de paquetes: solo pnpm.** Migrado desde npm el 2026-07-24 (`pnpm-lock.yaml`, `packageManager: pnpm@11.1.1`, sin `package-lock.json`). El hook global bloquea npm/npx/yarn — usa `pnpm <script>` y `pnpm exec <bin>` / `pnpm dlx <pkg>`. Ojo: `ignore-scripts=true` global → el `postinstall: prisma generate` NO corre solo tras instalar; corre `pnpm db:generate` a mano. Por eso el `build` hace `prisma generate && next build`: sin eso el deploy no compila. `minimum-release-age=1440` (24h) puede tumbar un `pnpm add` con `ERR_PNPM_MISSING_TIME`; solo entonces, y solo para deps ya vetadas, `npm_config_minimum_release_age=0 pnpm add …`.
+**Gestor de paquetes: solo pnpm.** Migrado desde npm el 2026-07-24 (`pnpm-lock.yaml`, `packageManager: pnpm@11.1.1`, sin `package-lock.json`). El hook global bloquea npm/npx/yarn — usa `pnpm <script>` y `pnpm exec <bin>` / `pnpm dlx <pkg>`. Ojo: `ignore-scripts=true` global → el `postinstall: prisma generate` NO corre solo tras instalar; corre `pnpm db:generate` a mano. Por eso el `build` hace `prisma generate && … && next build`: sin eso el deploy no compila. En el medio corre `pnpm test:security` (guardas de migraciones, proxy, tokens, `readonly` y audit log): Railway despliega `main` sin CI, así que si una de esas guardas falla el deploy no sale y queda arriba el anterior. Un test nuevo de autorización va a esa lista. `minimum-release-age=1440` (24h) puede tumbar un `pnpm add` con `ERR_PNPM_MISSING_TIME`; solo entonces, y solo para deps ya vetadas, `npm_config_minimum_release_age=0 pnpm add …`.
 
 ## Estado del proyecto / tracking
 

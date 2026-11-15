@@ -1,5 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { READONLY_REFUSAL, READONLY_TOKEN_PREFIX } from "@/lib/readonly-token";
+import {
+  READONLY_HASH_DOMAIN,
+  READONLY_REFUSAL,
+  READONLY_TOKEN_PREFIX,
+  READONLY_UNSALTED_BEFORE,
+} from "@/lib/readonly-token";
 
 export { READONLY_REFUSAL };
 
@@ -9,7 +14,8 @@ export { READONLY_REFUSAL };
  * Shape: `tb_<43 base64url chars>` — 256 bits of CSPRNG output; a read-only
  * token's head is `tbro_` instead (lib/readonly-token.ts). The visible
  * head doubles as the lookup key so verification is one indexed read; the rest
- * is the secret and is never stored, only its SHA-256.
+ * is the secret and is never stored, only its SHA-256 (a read-only token's,
+ * salted with READONLY_HASH_DOMAIN: storedHashOf).
  *
  * SHA-256 rather than bcrypt/argon2 on purpose: those exist to slow down
  * guessing of low-entropy human passwords. Against 256 random bits, brute
@@ -30,6 +36,9 @@ export const DEFAULT_EXPIRY_DAYS = 90;
 /** The longest an `agent` token may last (Settings proposes 14 days for one). */
 export const AGENT_TOKEN_MAX_DAYS = 30;
 
+/** The longest a `readonly` token may last: it sits in a script's secrets, so it is rotated like one. */
+export const READONLY_TOKEN_MAX_DAYS = 90;
+
 export interface GeneratedToken {
   /** The full secret. Shown to the user once and never recoverable. */
   token: string;
@@ -44,8 +53,21 @@ export function generateToken(kind: TokenKind = "automation"): GeneratedToken {
   return {
     token,
     prefix: prefixOf(token)!,
-    hash: hashToken(token),
+    hash: storedHashOf(token),
   };
+}
+
+/**
+ * The hash ApiToken.token_hash keeps for a token: SHA-256 of the token, or for
+ * a read-only one, of `READONLY_HASH_DOMAIN:token`. A build that hashes the
+ * plain token — every build before the domain, including one that gave a
+ * read-only token more than it has now — finds no match and answers 401, so a
+ * rollback cannot widen what such a token reaches (lib/readonly-token.ts).
+ */
+export function storedHashOf(token: string): string {
+  return token.startsWith(READONLY_TOKEN_PREFIX)
+    ? hashToken(`${READONLY_HASH_DOMAIN}:${token}`)
+    : hashToken(token);
 }
 
 function headOf(raw: string): string | null {
@@ -89,7 +111,8 @@ export function prefixOf(raw: string): string | null {
  * working issues (and nothing else — lib/api.ts, lib/issues-service.ts), or a
  * script that only reads (GET and HEAD; every write is a 403 — lib/api.ts).
  */
-export type TokenKind = "mobile" | "automation" | "release" | "agent" | "readonly";
+export const TOKEN_KINDS = ["mobile", "automation", "release", "agent", "readonly"] as const;
+export type TokenKind = (typeof TOKEN_KINDS)[number];
 
 /** The stored columns this module needs to judge a token. */
 export interface TokenRecord {
@@ -99,6 +122,8 @@ export interface TokenRecord {
   token_hash: string;
   expires_at: Date | null;
   revoked_at: Date | null;
+  /** When it was minted: a read-only token minted before READONLY_UNSALTED_BEFORE may have a plain hash. */
+  created_at?: Date;
   /** Where the token may be used: the MCP's URL for an OAuth access token, null for the REST API. */
   audience?: string | null;
   /** The OAuth connection an access token belongs to. */
@@ -124,7 +149,7 @@ export function checkToken(
   now: Date
 ): VerifiedToken | null {
   if (!record) return null;
-  if (!hashesMatch(record.token_hash, hashToken(raw))) return null;
+  if (!hashesMatch(record.token_hash, storedHashOf(raw)) && !unsaltedReadonlyMatch(record, raw)) return null;
   // The head and the kind agree, or the token is no good: a read-only row
   // answers only to a `tbro_` token, which the edge confines to reads, and a
   // `tbro_` token only to a read-only row.
@@ -141,6 +166,20 @@ export function checkToken(
 }
 
 /**
+ * A read-only token minted before READONLY_HASH_DOMAIN existed, with its plain
+ * hash: accepted only when the row says it was minted before
+ * READONLY_UNSALTED_BEFORE, so no token minted from now on can have one.
+ */
+function unsaltedReadonlyMatch(record: TokenRecord, raw: string): boolean {
+  return (
+    raw.startsWith(READONLY_TOKEN_PREFIX) &&
+    record.created_at instanceof Date &&
+    record.created_at < READONLY_UNSALTED_BEFORE &&
+    hashesMatch(record.token_hash, hashToken(raw))
+  );
+}
+
+/**
  * How an API token appears in the audit log, distinct from a human actor:
  * `token:<kind>:<name> (<prefix>)`. The kind says what it was allowed to do —
  * an agent's writes stand out from a script's — and the prefix, which
@@ -151,13 +190,17 @@ export function tokenActor(token: { name: string; kind: TokenKind; prefix: strin
 }
 
 /**
- * A tokenActor label with only its kind left — `token:<kind>:<name> (<prefix>)`
- * becomes `token:<kind>` — for a reader who may see that a token acted but not
- * which one (a read-only token reading the audit log). Anything else — an
- * email, "system", null — comes back as it was.
+ * A token's audit label with only its kind left — `token:<kind>:<name>
+ * (<prefix>)` becomes `token:<kind>` — for a reader who may see that a token
+ * acted but not which one (a read-only token reading the audit log).
+ *
+ * Only a kind this module knows is kept. Any other `token:…` label is just
+ * `token`: before 2026-10-28 the label was `token:<name>`, with no kind, and
+ * a name must not pass for one. Anything else — an email, "system", null —
+ * comes back as it was.
  */
 export function tokenActorKindOnly(label: string | null): string | null {
-  if (label === null) return null;
-  const match = /^token:([^:\s]+):/.exec(label);
-  return match ? `token:${match[1]}` : label;
+  if (typeof label !== "string" || !label.startsWith("token:")) return label;
+  const kind = /^token:([a-z]+):/.exec(label)?.[1];
+  return kind !== undefined && (TOKEN_KINDS as readonly string[]).includes(kind) ? `token:${kind}` : "token";
 }

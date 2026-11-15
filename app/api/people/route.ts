@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { PersonWithSalarySchema } from "@/lib/validations";
 import { auditLog, getActorEmail } from "@/lib/audit";
-import { requireSession } from "@/lib/api";
+import { callerHasOwnerReach, requireSession } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
   const denied = await requireSession({ readonly: req });
@@ -11,15 +11,23 @@ export async function GET(req: NextRequest) {
   const pageParam = searchParams.get("page");
   const limitParam = searchParams.get("limit");
 
+  // Salary increase reminders are the owner's plans, not the books: a caller
+  // without the owner's reach (a read-only token) gets the person and their
+  // payments, as /api/people/{id}/reminders refuses it the reminders.
+  const owner = await callerHasOwnerReach();
   const include = {
     role: true,
     salary_base: true,
     salary_payments: { orderBy: { due_date: "desc" } as const, take: 12 },
-    increase_reminders: {
-      where: { status: "scheduled" as const },
-      orderBy: { effective_date: "asc" } as const,
-      take: 1,
-    },
+    ...(owner
+      ? {
+          increase_reminders: {
+            where: { status: "scheduled" as const },
+            orderBy: { effective_date: "asc" } as const,
+            take: 1,
+          },
+        }
+      : {}),
   };
   const orderBy = { created_at: "desc" } as const;
 
