@@ -2,6 +2,7 @@ import { cache } from "react";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth, isAllowedSession } from "@/auth";
+import { isCredentialEmail } from "@/lib/allowed-emails";
 import { prisma } from "@/lib/db";
 import {
   bearerFromHeader,
@@ -257,6 +258,26 @@ export async function requireUserSession(): Promise<NextResponse | null> {
       { error: "This endpoint requires an interactive session" },
       { status: 403 }
     );
+  }
+  return null;
+}
+
+/** What an allowed session hears when it may not mint a credential that outlives it. */
+export const CREDENTIAL_REFUSAL =
+  "This account cannot create API tokens or connect apps. Sign in with the personal account to do it.";
+
+/**
+ * requireUserSession, for minting a credential that outlives the session (an
+ * API token in Settings): the signed-in email must also be in
+ * CREDENTIAL_EMAILS (lib/allowed-emails.ts). Any allowed session may still
+ * list and revoke tokens; only minting is narrower.
+ */
+export async function requireCredentialSession(): Promise<NextResponse | null> {
+  const denied = await requireUserSession();
+  if (denied) return denied;
+  const actor = await resolveActor();
+  if (actor?.kind !== "user" || !isCredentialEmail(actor.label)) {
+    return NextResponse.json({ error: CREDENTIAL_REFUSAL }, { status: 403 });
   }
   return null;
 }

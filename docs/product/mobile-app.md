@@ -366,9 +366,10 @@ Servidor: `GET/POST /api/sync/notes` y `GET /api/sync/refs` (detalle en `API.md`
    Google, el emisor, `aud === AUTH_GOOGLE_ID`, **`azp` === el cliente Android de release**
    (`MOBILE_ANDROID_CLIENT_ID`; el de debug, `MOBILE_ANDROID_DEBUG_CLIENT_ID`, solo vale fuera
    de producción y eso lo impone el código), la expiración, `email_verified` y el allowlist
-   **mobile**, que es solo `bradlyls95@gmail.com` (`MOBILE_ALLOWED_EMAILS`, un subconjunto
+   **de credenciales**, que es solo `bradlyls95@gmail.com` (`CREDENTIAL_EMAILS`, un subconjunto
    del de la web; la cuenta de Workspace no, porque sus admins podrían resetearla y un token
-   dura 90 días), y consume el nonce. El body se lee con un tope de 8 KB. Si todo pasa, emite un `ApiToken` (se guarda solo el
+   dura 90 días; la misma lista decide quién emite tokens en Settings y conecta apps por OAuth),
+   y consume el nonce. El body se lee con un tope de 8 KB. Si todo pasa, emite un `ApiToken` (se guarda solo el
    hash) llamado `mobile · <modelo del teléfono>`, que **vence a los 90 días**, y lo audita
    con el email verificado. El teléfono lo guarda en `expo-secure-store` (Keystore).
 4. Salir llama a `POST /api/mobile/sign-out`, que revoca solo ese token. También se puede

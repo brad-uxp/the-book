@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { AlertTriangle, Check } from "lucide-react";
 import { auth, isAllowedSession } from "@/auth";
 import { Button } from "@/components/ui/button";
+import { isCredentialEmail } from "@/lib/allowed-emails";
+import { CREDENTIAL_REFUSAL } from "@/lib/api";
 import { checkAuthorizeRequest } from "@/lib/oauth-service";
 import { AUTHORIZE_PATH } from "@/lib/oauth";
 import { decide } from "./actions";
@@ -38,10 +40,14 @@ export default async function AuthorizePage({
     else params[key] = value;
   }
 
-  if (!isAllowedSession(await auth())) {
+  const session = await auth();
+  if (!isAllowedSession(session)) {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     redirect(`/login?callbackUrl=${encodeURIComponent(`${AUTHORIZE_PATH}?${query}`)}`);
   }
+  // Only the account that mints long-lived credentials connects apps
+  // (lib/allowed-emails.ts); any other allowed session sees why, not the form.
+  const mayConnect = isCredentialEmail((session as { user?: { email?: string } } | null)?.user?.email);
 
   // A parameter given twice is refused before anything else (RFC 6749 §3.1).
   const check = repeated
@@ -61,7 +67,13 @@ export default async function AuthorizePage({
 
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
             <div className="h-1 bg-linear-to-r from-orange-400 to-orange-500" />
-            {check.ok ? <Consent request={check.request} params={params} /> : <Refusal description={check.description} />}
+            {!mayConnect ? (
+              <Refusal description={CREDENTIAL_REFUSAL} />
+            ) : check.ok ? (
+              <Consent request={check.request} params={params} />
+            ) : (
+              <Refusal description={check.description} />
+            )}
           </div>
         </div>
       </div>
