@@ -1,8 +1,39 @@
 import { auth, isAllowedSession } from "@/auth";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { isMobilePublicPath } from "@/lib/mobile-auth";
-import { MCP_PATH, mcpUnauthorized } from "@/lib/mcp-auth";
+import { MCP_PATH, mcpUnauthorized, publicOrigin } from "@/lib/mcp-auth";
 import { isReadMethod, presentsReadonlyToken, READONLY_REFUSAL } from "@/lib/readonly-token";
+
+/**
+ * Methods that change nothing. An OPTIONS preflight carries no cookies, so it
+ * is no browser session's write either.
+ */
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** What a signed-in browser hears when another origin tries to write through it. */
+const CROSS_ORIGIN_REFUSAL =
+  "Refused: a signed-in browser can only change things from book.'s own pages";
+
+/**
+ * Whether a request from a signed-in browser comes from this app's own pages.
+ *
+ * The session cookie is SameSite=Lax, which keeps it off cross-site requests
+ * but not off another origin of the same site: a page on any other host under
+ * bolstro.com could make the owner's browser POST here, with the cookie, as
+ * the owner. Fetch Metadata tells them apart: every current browser sends
+ * Sec-Fetch-Site, and that page's request says `same-site`, not
+ * `same-origin`. A browser without it (Safari before 16.4) sends Origin on
+ * every write, so Origin decides then. A request with neither header came
+ * from no browser page — a script or the phone, which hold their credential
+ * themselves — so there is no one to forge it.
+ */
+function fromOwnPages(req: NextRequest): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site !== null) return site === "same-origin" || site === "none";
+  const origin = req.headers.get("origin");
+  if (origin !== null) return origin === publicOrigin() || origin === req.nextUrl.origin;
+  return true;
+}
 
 /**
  * theBook's OAuth, for its MCP (lib/oauth.ts): the discovery documents and
@@ -26,6 +57,16 @@ export const proxy = auth(async (req) => {
   // handler is no weaker without this.
   if (presentsReadonlyToken(authorization) && !isReadMethod(req.method)) {
     return NextResponse.json({ error: READONLY_REFUSAL }, { status: 403 });
+  }
+
+  // A signed-in browser changes things only from book.'s own pages
+  // (fromOwnPages): on every path, the API, server actions and /api/auth
+  // alike. Only requests that carry a session: the public token, sign-in and
+  // cron endpoints take no cookie and are called from no page of ours. A
+  // truthy req.auth that is an Auth.js error object gets checked too, which
+  // only refuses more.
+  if (!SAFE_METHODS.has(req.method) && req.auth && !fromOwnPages(req)) {
+    return NextResponse.json({ error: CROSS_ORIGIN_REFUSAL }, { status: 403 });
   }
 
   // Always allow: login page, auth endpoints, cron
