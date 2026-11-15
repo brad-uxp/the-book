@@ -175,7 +175,7 @@ model CanvasEdge {
 Solo en la migración, porque Prisma no los expresa. Van a `PROTECTED_CONSTRAINTS` de
 `prisma/migrations.test.ts` para que un `migrate dev` no los borre sin que nadie lo note:
 
-- `Task_canvas_only_for_notes`: `CHECK (category = 'note' OR note_format = 'text')`
+- `Task_canvas_only_for_notes`: `CHECK (category::text = 'note' OR note_format::text = 'text')` (comparado como texto desde `20261115120000_task_canvas_check_as_text`: así no depende de los enums `IssueCategory` y `NoteFormat`)
 - `CanvasEdge_no_self_link`: `CHECK (source_id <> target_id)`
 
 Las FK compuestas compartiendo `issue_id` con la relación a `Issue` se validan con

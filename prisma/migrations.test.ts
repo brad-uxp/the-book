@@ -222,6 +222,68 @@ function dropsTable(stmt: string, table: string): boolean {
   return !!m && m[1].split(",").some((t) => new RegExp(`^\\s*${ident(table)}\\s*$`).test(t));
 }
 
+type Check = { table: string; body: string };
+
+/**
+ * What one statement does to the CHECK constraints, by name: ADD CONSTRAINT …
+ * CHECK (…) adds one, DROP CONSTRAINT drops it, RENAME CONSTRAINT moves it to
+ * its new name, DROP TABLE takes its table's. Enough for what these
+ * migrations do: one CHECK per ALTER TABLE.
+ */
+function applyToChecks(checks: Map<string, Check>, stmt: string): void {
+  const dropped = /^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([\s\S]+?)(?:\s+(?:CASCADE|RESTRICT))?$/i.exec(stmt);
+  if (dropped) {
+    for (const [name, c] of checks) if (dropsTable(stmt, c.table)) checks.delete(name);
+    return;
+  }
+  const table = /^ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:"?public"?\.)?"?(\w+)"?\s/i.exec(stmt)?.[1];
+  if (!table) return;
+  for (const d of stmt.matchAll(/DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?"?(\w+)"?/gi)) checks.delete(d[1]);
+  const added = /ADD\s+CONSTRAINT\s+"?(\w+)"?\s+CHECK\s*\(([\s\S]*)\)\s*(?:NOT\s+VALID\s*)?$/i.exec(stmt);
+  if (added) checks.set(added[1], { table, body: added[2].replace(/\s+/g, " ").trim() });
+  const renamed = /RENAME\s+CONSTRAINT\s+"?(\w+)"?\s+TO\s+"?(\w+)"?/i.exec(stmt);
+  if (renamed && checks.has(renamed[1])) {
+    checks.set(renamed[2], checks.get(renamed[1])!);
+    checks.delete(renamed[1]);
+  }
+}
+
+/** The CHECK constraints as each migration leaves them, in order. */
+function checksAfterEach(migrations: { file: string; sql: string }[]): { file: string; checks: Map<string, Check> }[] {
+  const checks = new Map<string, Check>();
+  return migrations.map((m) => {
+    for (const stmt of statements(m.sql)) applyToChecks(checks, stmt);
+    return { file: m.file, checks: new Map(checks) };
+  });
+}
+
+/** Each table's enum-typed columns, from schema.prisma (no field here uses @map). */
+function enumColumns(): Map<string, Set<string>> {
+  const schema = readFileSync(join(__dirname, "schema.prisma"), "utf8");
+  const enums = new Set([...schema.matchAll(/^enum\s+(\w+)\s*\{/gm)].map((m) => m[1]));
+  const out = new Map<string, Set<string>>();
+  for (const m of schema.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
+    const table = /@@map\("([^"]+)"\)/.exec(m[2])?.[1] ?? m[1];
+    const columns = new Set<string>();
+    for (const f of m[2].matchAll(/^\s+(\w+)\s+(\w+)/gm)) if (enums.has(f[2])) columns.add(f[1]);
+    out.set(table, columns);
+  }
+  return out;
+}
+
+/**
+ * The enum columns a CHECK body compares as the enum itself, not as text. Such
+ * a CHECK depends on the enum type, and rebuilding the type (rename to _old,
+ * create again, ALTER COLUMN … TYPE) fails with "operator does not exist".
+ */
+function enumColumnsNotAsText(body: string, columns: Iterable<string>): string[] {
+  return [...columns].filter((col) =>
+    [...body.matchAll(new RegExp(`"?\\b${col}\\b"?`, "g"))].some(
+      (occ) => !/^\s*::\s*text\b/i.test(body.slice(occ.index + occ[0].length))
+    )
+  );
+}
+
 /** Whether a statement drops `column` of `table` (ALTER TABLE … DROP [COLUMN], any of its actions). */
 function dropsColumn(stmt: string, table: string, column: string): boolean {
   const m = new RegExp(`^ALTER\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?${ident(table)}([\\s\\S]*)$`, "i").exec(stmt);
@@ -239,27 +301,38 @@ describe("CHECK constraints que Prisma no puede modelar", () => {
       expect(created, `falta el ADD CONSTRAINT — ${c.purpose}`).toBe(true);
     });
 
-    it(`ninguna migración dropea ${c.name}`, () => {
-      const dropped = migrations.filter((m) =>
-        new RegExp(
-          `DROP\\s+CONSTRAINT\\s+(IF\\s+EXISTS\\s+)?"?${c.name}"?`,
-          "i"
-        ).test(m.sql)
-      );
+    // Dropping it is allowed only in a migration that leaves it in place again
+    // — re-created, or a replacement renamed to its name — as
+    // 20261115120000_task_canvas_check_as_text does. A DROP alone is what
+    // `prisma migrate dev` generates for an object it cannot see.
+    it(`ninguna migración deja la base sin ${c.name}`, () => {
+      const states = checksAfterEach(migrations);
+      const from = states.findIndex((s) => s.checks.has(c.name));
+      const lost = states
+        .slice(from)
+        .filter((s) => s.checks.get(c.name)?.table !== c.table)
+        .map((s) => s.file);
       expect(
-        dropped.map((d) => d.file),
-        `una migración dropea este constraint — ${c.purpose}. ` +
+        lost,
+        `una migración dropea este constraint y no lo deja de vuelta — ${c.purpose}. ` +
           `Si prisma migrate dev lo generó, borrá esa línea del SQL antes de commitear.`
       ).toEqual([]);
     });
 
     it(`${c.name} descansa en ${c.table} (${c.columns.join(", ")})`, () => {
-      const stmt = migrations
-        .flatMap((m) => statements(m.sql))
-        .find((st) => new RegExp(`ADD\\s+CONSTRAINT\\s+"${c.name}"\\s+CHECK`, "i").test(st));
-      expect(stmt, "falta el ADD CONSTRAINT").toBeDefined();
-      expect(stmt).toMatch(new RegExp(`^ALTER\\s+TABLE\\s+"${c.table}"`, "i"));
-      for (const col of c.columns) expect(stmt, col).toMatch(new RegExp(`\\b${col}\\b`));
+      const final = checksAfterEach(migrations).at(-1)!.checks.get(c.name);
+      expect(final, "falta el ADD CONSTRAINT").toBeDefined();
+      expect(final!.table).toBe(c.table);
+      for (const col of c.columns) expect(final!.body, col).toMatch(new RegExp(`\\b${col}\\b`));
+    });
+
+    it(`${c.name} compara sus columnas enum como texto`, () => {
+      const final = checksAfterEach(migrations).at(-1)!.checks.get(c.name)!;
+      const enums = enumColumns().get(c.table) ?? new Set<string>();
+      expect(
+        enumColumnsNotAsText(final.body, enums),
+        `compará la columna como "col"::text: comparada como enum, el CHECK impide reconstruir ese tipo`
+      ).toEqual([]);
     });
 
     it(`ninguna migración posterior se lleva ${c.name} con su tabla o sus columnas`, () => {
@@ -276,6 +349,35 @@ describe("CHECK constraints que Prisma no puede modelar", () => {
       ).toEqual([]);
     });
   }
+
+  // El simulador que decide si una migración deja la base sin el constraint.
+  it("sigue el ciclo de un CHECK: agregar, dropear, reemplazar, renombrar", () => {
+    const run = (...sql: string[]) => checksAfterEach([{ file: "x", sql: sql.join(";\n") }]).at(-1)!.checks;
+    const add = (name: string, body: string) => `ALTER TABLE "T" ADD CONSTRAINT "${name}" CHECK (${body})`;
+    expect(run(add("c", `"a" = 1`)).get("c")).toEqual({ table: "T", body: `"a" = 1` });
+    expect(run(add("c", "a = 1"), `ALTER TABLE "T" DROP CONSTRAINT "c"`).has("c")).toBe(false);
+    expect(run(add("c", "a = 1"), `ALTER TABLE "T" DROP CONSTRAINT IF EXISTS c`, add("c", "a = 2")).get("c")?.body).toBe("a = 2");
+    const replaced = run(
+      add("c", "a = 1"),
+      add("c_new", "a::text = '1'"),
+      `ALTER TABLE "T" DROP CONSTRAINT "c"`,
+      `ALTER TABLE "T" RENAME CONSTRAINT "c_new" TO "c"`
+    );
+    expect([...replaced.keys()]).toEqual(["c"]);
+    expect(replaced.get("c")?.body).toBe("a::text = '1'");
+    expect(run(add("c", "a = 1"), `ALTER TABLE "T" RENAME CONSTRAINT "c" TO "d"`).has("c")).toBe(false);
+    expect(run(add("c", "a = 1"), `DROP TABLE IF EXISTS "T" CASCADE`).has("c")).toBe(false);
+    expect(run(add("c", "((a IS NULL) OR (a IN ('x', 'y')))")).get("c")?.body).toBe("((a IS NULL) OR (a IN ('x', 'y')))");
+  });
+
+  it("ve una columna enum comparada como enum, y no la que va como texto", () => {
+    const cols = ["category", "note_format"];
+    expect(enumColumnsNotAsText(`"category" = 'note' OR "note_format" = 'text'`, cols)).toEqual(cols);
+    expect(enumColumnsNotAsText(`"category"::text = 'note' OR "note_format" = 'text'`, cols)).toEqual(["note_format"]);
+    expect(enumColumnsNotAsText(`"category"::text = 'note' OR note_format :: TEXT = 'text'`, cols)).toEqual([]);
+    expect(enumColumns().get("Task")).toEqual(new Set(["category", "note_format", "status"]));
+    expect(enumColumns().get("ApiToken")?.has("kind")).toBe(true);
+  });
 
   // Si el guard de arriba dejara de reconocer un DROP real, pasaría para siempre.
   it("reconoce los drops que se llevan un constraint sin nombrarlo, y nada más", () => {

@@ -221,7 +221,8 @@ guardan como **UTC midnight**.
 - **Índice único parcial** en `SubscriptionPayment (subscription_id, due_date) WHERE deleted_at IS NULL` —
   evita cobrar dos veces el mismo período.
 - **Índice único funcional** en `Invoice (lower(invoice_number)) WHERE invoice_number IS NOT NULL`.
-- **CHECK `Task_canvas_only_for_notes`**: `category = 'note' OR note_format = 'text'`. Todo lo
+- **CHECK `Task_canvas_only_for_notes`**: `category::text = 'note' OR note_format::text = 'text'`
+  (como texto desde `20261115120000`, para que reconstruir los enums no choque con él). Todo lo
   que mantiene un canvas fuera del board, del archivo y del job diario depende de
   `category = note`; una tarea canvas se saltaría esas reglas.
 - `CanvasEdge` usa **FKs compuestas `(issue_id, node_id)`** en ambos extremos: una conexión
