@@ -13,12 +13,32 @@ const storageConnectSrc = (() => {
   }
 })();
 
+/**
+ * The image files in /public, each at its own path. Only these get the short
+ * public cache below. The rule used to go by extension (`/:path*.png` and the
+ * like), which also matched /api/… and page paths: the proxy's auth wrapper
+ * adds the owner's refreshed session cookie (Set-Cookie) to those responses,
+ * and a shared cache must never keep one of them. next.config.test.ts keeps
+ * this list equal to what /public holds.
+ */
+const PUBLIC_IMAGES = [
+  "/file.svg",
+  "/globe.svg",
+  "/logo.svg",
+  "/next.svg",
+  "/vercel.svg",
+  "/window.svg",
+];
+
 const nextConfig: NextConfig = {
   turbopack: {},
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "lh3.googleusercontent.com" },
-    ],
+    // Served as they are: no image optimizer. /_next/image sits outside the
+    // proxy (no sign-in), so with a remote pattern anyone could make this one
+    // server fetch and re-encode any Google user's images, as many as they
+    // liked. The only remote image is the owner's 32 px avatar, which the
+    // browser now loads from lh3 directly (the CSP's img-src allows https:).
+    unoptimized: true,
   },
   async headers() {
     return [
@@ -46,13 +66,14 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
         ],
       },
-      {
-        // Static assets in /public — short cache + revalidate so deploys show changes fast
-        source: "/:path*.(svg|png|jpg|jpeg|ico|webp)",
+      // The images in /public: short cache + revalidate so deploys show changes
+      // fast. By exact path only (PUBLIC_IMAGES).
+      ...PUBLIC_IMAGES.map((source) => ({
+        source,
         headers: [
           { key: "Cache-Control", value: "public, max-age=60, stale-while-revalidate=300" },
         ],
-      },
+      })),
       {
         source: "/(.*)",
         headers: [
