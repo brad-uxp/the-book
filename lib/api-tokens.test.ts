@@ -8,6 +8,8 @@ import {
   storedHashOf,
   tokenActor,
   tokenActorKindOnly,
+  NARROW_UNSALTED_BEFORE,
+  TOKEN_KINDS,
   type TokenRecord,
 } from "./api-tokens";
 
@@ -177,7 +179,7 @@ describe("la cabeza de un token readonly", () => {
     expect(token.slice(5)).toHaveLength(43);
     expect(prefix).toHaveLength(13);
     expect(token.startsWith(prefix)).toBe(true);
-    expect(hash).toBe(storedHashOf(token));
+    expect(hash).toBe(storedHashOf(token, "readonly"));
   });
 
   // Un build que hashea el token tal cual — 595f29c, que le mostraba al
@@ -209,8 +211,8 @@ describe("la cabeza de un token readonly", () => {
     expect(checkToken({ ...plain, kind: "automation", created_at: new Date("2026-11-14T20:01:00Z") }, token, now)).toBeNull();
   });
 
-  it("los demás tipos hashean el token tal cual, como siempre", () => {
-    for (const kind of ["automation", "mobile", "release", "agent"] as const) {
+  it("los de alcance de dueño (automation, mobile) hashean el token tal cual, como siempre", () => {
+    for (const kind of ["automation", "mobile"] as const) {
       const { token, hash } = generateToken(kind);
       expect(hash).toBe(hashToken(token));
     }
@@ -271,5 +273,65 @@ describe("tokenActorKindOnly", () => {
     for (const v of ["owner@example.com", "system", "token", null]) {
       expect(tokenActorKindOnly(v)).toBe(v);
     }
+  });
+});
+
+// Los builds anteriores a ApiToken.kind (hasta 3fc4735) verifican un token con
+// el sha256 solo y le dan el alcance del dueño. Si el hash guardado de un
+// token con menos alcance lleva el dominio de su tipo, ahí no verifica: tras un
+// rollback deja de andar en vez de alcanzar los libros.
+describe("el hash de los tipos con menos alcance que el dueño", () => {
+  const now = new Date("2026-11-20T12:00:00Z");
+  const row = (kind: TokenRecord["kind"], token_hash: string, created_at?: Date): TokenRecord => ({
+    id: "t1", name: "n", kind, token_hash, expires_at: null, revoked_at: null, ...(created_at && { created_at }),
+  });
+
+  it("release y agent llevan su dominio: el sha256 del token solo no coincide", () => {
+    for (const [kind, domain] of [["release", "rel1"], ["agent", "ag1"]] as const) {
+      const { token, hash } = generateToken(kind);
+      expect(token.startsWith("tb_")).toBe(true);
+      expect(hash).toBe(hashToken(`${domain}:${token}`));
+      expect(hash).not.toBe(hashToken(token));
+      expect(checkToken(row(kind, hash), token, now)?.kind).toBe(kind);
+    }
+  });
+
+  it("el hash dice para qué es el token: uno de agent no verifica como release ni como automation", () => {
+    const { token, hash } = generateToken("agent");
+    expect(checkToken(row("release", hash), token, now)).toBeNull();
+    expect(checkToken(row("automation", hash), token, now)).toBeNull();
+  });
+
+  // Todo tipo nuevo con menos alcance que el dueño necesita su dominio: este
+  // test falla hasta que lo tenga (HASH_DOMAINS en lib/api-tokens.ts).
+  it("todo tipo salvo mobile y automation tiene dominio", () => {
+    const token = generateToken().token;
+    for (const kind of TOKEN_KINDS) {
+      const salted = storedHashOf(token, kind) !== hashToken(token);
+      expect(salted, kind).toBe(kind !== "mobile" && kind !== "automation");
+    }
+  });
+
+  // Los release y agent emitidos antes del dominio (el del script de releases,
+  // los de un agente, los access tokens del OAuth) tienen el sha256 solo: siguen
+  // andando si la fila es de antes del corte. Uno de después, no.
+  it("un release o agent sin dominio verifica solo si es de antes del corte", () => {
+    for (const kind of ["release", "agent"] as const) {
+      const { token } = generateToken(kind);
+      const plain = hashToken(token);
+      const before = new Date(NARROW_UNSALTED_BEFORE.getTime() - 1);
+      expect(checkToken(row(kind, plain, before), token, now)?.kind).toBe(kind);
+      expect(checkToken(row(kind, plain, NARROW_UNSALTED_BEFORE), token, now)).toBeNull();
+      expect(checkToken(row(kind, plain), token, now)).toBeNull();
+      // Sin perder las otras reglas: revocado, no.
+      expect(checkToken({ ...row(kind, plain, before), revoked_at: now }, token, now)).toBeNull();
+    }
+  });
+
+  it("el corte de release y agent no toca a readonly, que tiene el suyo", () => {
+    const { token } = generateToken("readonly");
+    const plain = hashToken(token);
+    // Entre el corte de readonly (2026-11-15 17:15 UTC) y el de release/agent.
+    expect(checkToken(row("readonly", plain, new Date("2026-11-18T00:00:00Z")), token, now)).toBeNull();
   });
 });

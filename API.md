@@ -55,6 +55,20 @@ writes nothing. The rules are enforced by the server (`lib/api.ts` and
 Requests count against the same 300 requests/minute. An agent token lasts at
 most 30 days (Settings proposes 14).
 
+**After a rollback** an agent token — and a release token, and an access token
+of the MCP's OAuth — stops working (401) rather than reaching more. The builds
+before `ApiToken.kind` (up to 3fc4735) give every token they verify the
+owner's reach, but they hash the plain token, while the stored hash of these
+kinds is salted with the kind's domain (`ag1`, `rel1`: `HASH_DOMAINS` in
+`lib/api-tokens.ts`), so they find no match. Roll forward and it works again.
+`automation` and `mobile` tokens keep the plain hash: they already have the
+owner's reach. A release or agent token minted before the domain existed
+(before `NARROW_UNSALTED_BEFORE`, 2026-11-22 00:00 UTC) keeps its plain hash and
+still works, so nothing broke on deploy — but a build before `ApiToken.kind`
+accepts it too, with the owner's reach. Mint a new one, move it to where the
+old one lived (the release script's Keychain item, the agent's config), then
+revoke the old one. OAuth access tokens renew themselves within the hour.
+
 ### Read-only tokens
 
 A **read-only token** (`ApiToken.kind = readonly`, minted in Settings → API

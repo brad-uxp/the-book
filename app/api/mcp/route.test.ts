@@ -50,7 +50,7 @@ const task = {
  * in Settings, with no audience.
  */
 function withToken(kind: "agent" | "automation" | "mobile", { oauth = kind === "agent", audience = MCP_URL } = {}) {
-  const { token, prefix, hash } = generateToken();
+  const { token, prefix, hash } = generateToken(kind);
   state.authorization = `Bearer ${token}`;
   state.token = {
     id: `tok-${kind}`,

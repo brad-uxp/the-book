@@ -43,7 +43,20 @@ describe("POST /api/settings/tokens", () => {
     expect(body.token).toMatch(/^tbro_/);
     expect(data.token_prefix).toBe(body.token.slice(0, 13));
     // Guarda el hash con dominio: un build anterior no lo verifica (lib/readonly-token.ts).
-    expect(data.token_hash).toBe(storedHashOf(body.token));
+    expect(data.token_hash).toBe(storedHashOf(body.token, "readonly"));
+    expect(data.token_hash).not.toBe(hashToken(body.token));
+  });
+
+  // Un build anterior a ApiToken.kind le da a todo token que verifica el
+  // alcance del dueño: el hash de un release o un agent no es el sha256 solo,
+  // así que ahí no verifica (lib/api-tokens.ts).
+  it.each(["release", "agent"] as const)("guarda el hash de un token %s con su dominio", async (kind) => {
+    const res = await post({ name: "x", kind, expires_in_days: 7 });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const data = create.mock.calls[0][0].data;
+    expect(body.token).toMatch(/^tb_/);
+    expect(data.token_hash).toBe(storedHashOf(body.token, kind));
     expect(data.token_hash).not.toBe(hashToken(body.token));
   });
 

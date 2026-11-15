@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     return refuse(401, "Sign-in expired. Try again.", "nonce");
   }
 
-  const { token, prefix, hash } = generateToken();
+  const { token, prefix, hash } = generateToken("mobile");
   const name = mobileTokenName(parsed.data.device_name);
   const expiresAt = new Date(now + MOBILE_TOKEN_DAYS * 24 * 60 * 60 * 1000);
 

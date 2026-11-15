@@ -95,7 +95,9 @@ export const resolveActor = cache(async (): Promise<Actor | null> => {
  * predates this list judges kinds its own way. What keeps a read-only token
  * from writing there is its `tbro_` head, which those builds do not take for a
  * token, and which CHECK ApiToken_readonly_prefix keeps on every `readonly`
- * row (lib/readonly-token.ts).
+ * row (lib/readonly-token.ts). What keeps a release or agent token from the
+ * owner's reach there is its hash, salted with its kind's domain: those builds
+ * hash the plain token and find no match (HASH_DOMAINS in lib/api-tokens.ts).
  */
 type TokenReach = "full" | "issues" | "reads" | "none";
 
