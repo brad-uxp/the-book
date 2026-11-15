@@ -164,7 +164,9 @@ export function connectionLabel(grant: Pick<OAuthGrant, "id" | "client_name">): 
 }
 
 async function issueTokens(db: Db, grant: OAuthGrant, now: Date): Promise<TokenResponse> {
-  const access = generateToken();
+  // Minted as the agent token its row is, so its hash carries the agent
+  // domain: a build that hashes the plain token does not verify it.
+  const access = generateToken("agent");
   await db.apiToken.create({
     data: {
       name: connectionLabel(grant),

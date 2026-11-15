@@ -88,6 +88,7 @@ vi.mock("@/lib/db", () => ({ prisma: db.prisma }));
 vi.mock("@/lib/audit", () => ({ auditLog: vi.fn() }));
 
 import { auditLog } from "@/lib/audit";
+import { hashToken, storedHashOf } from "@/lib/api-tokens";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { mcpResource } from "@/lib/mcp-auth";
 import { checkAuthorizeRequest, createCode, exchangeCode, refreshTokens, revokeConnection, type AuthorizeRequest } from "./oauth-service";
@@ -168,6 +169,10 @@ describe("el canje del código", () => {
     expect(tokens.refresh_token).toMatch(/^tbr_/);
     expect(db.tables.tokens[0]).toMatchObject({ kind: "agent", audience: mcpResource(), expires_at: later(1_000 + 3_600_000) });
     expect(db.tables.tokens[0].token_hash).not.toBe(tokens.access_token);
+    // Con el dominio de agent: un build anterior a ApiToken.kind, que hashea el
+    // token solo y le daría el alcance del dueño, no lo verifica.
+    expect(db.tables.tokens[0].token_hash).toBe(storedHashOf(tokens.access_token, "agent"));
+    expect(db.tables.tokens[0].token_hash).not.toBe(hashToken(tokens.access_token));
     expect(vi.mocked(auditLog)).toHaveBeenCalledWith(expect.objectContaining({ entity_type: "oauth_grant", action: "create" }));
   });
 

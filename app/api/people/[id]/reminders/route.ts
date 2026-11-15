@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ReminderActionSchema, SalaryIncreaseReminderSchema } from "@/lib/validations";
 import { requireSession, readJson, invalid } from "@/lib/api";
+import { auditLog, getActorEmail } from "@/lib/audit";
 
 export async function GET(
   _req: NextRequest,
@@ -68,7 +69,11 @@ export async function PATCH(
   }
 
   if (action === "apply") {
-    await prisma.$transaction(async (tx) => {
+    const { personName, baseBefore } = await prisma.$transaction(async (tx) => {
+      const current = await tx.salaryBase.findUnique({
+        where: { person_id: id },
+        select: { base_salary_cents: true },
+      });
       await tx.salaryBase.upsert({
         where: { person_id: id },
         update: { base_salary_cents: reminder.suggested_new_base_cents },
@@ -81,6 +86,21 @@ export async function PATCH(
         where: { id: reminderId },
         data: { status: "done" },
       });
+      const person = await tx.person.findUnique({ where: { id }, select: { name: true } });
+      return { personName: person?.name ?? id, baseBefore: current?.base_salary_cents ?? null };
+    });
+    // Applying changes the person's base salary, as PATCH /api/people/{id}
+    // does, so it is audited the same way: a person update with the base
+    // before and after, under the caller's label. The reminder rows themselves
+    // stay out of the log, as everywhere else.
+    auditLog({
+      entity_type: "person",
+      entity_id: id,
+      entity_name: personName,
+      action: "update",
+      actor_email: await getActorEmail(),
+      before: { base_salary_cents: baseBefore },
+      after: { base_salary_cents: reminder.suggested_new_base_cents, applied_reminder_id: reminderId },
     });
     return NextResponse.json({ ok: true, action: "applied" });
   }
