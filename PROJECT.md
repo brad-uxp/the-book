@@ -457,6 +457,13 @@ automáticamente; el `build` genera el cliente Prisma por su cuenta.
 - **Headers HTTP**: X-Robots-Tag (noindex), X-Frame-Options DENY, HSTS con
   preload, CSP, Permissions-Policy, Cross-Origin-Opener-Policy `same-origin`
   (una página que la app abre en otro sitio no recibe `window.opener`)
+- **Escrituras con cookie, solo desde book.**: `proxy.ts` rechaza (403) un
+  `POST`/`PUT`/`PATCH`/`DELETE` con sesión si el navegador no dice que viene de
+  este origen (`Sec-Fetch-Site: same-origin`, o el `Origin`). `SameSite=Lax`
+  frena otros sitios pero no otro host bajo bolstro.com
+- **Credenciales largas, solo desde el Gmail personal** (`CREDENTIAL_EMAILS`):
+  el token del teléfono, los tokens de Settings y las conexiones OAuth del MCP.
+  La cuenta de Workspace entra a la web y puede revocar, no emitir
 - **Autorización en dos capas**: `proxy.ts` en el borde y `requireSession()` en
   cada handler. El chequeo valida el email contra `ALLOWED_EMAILS`, no la mera
   presencia de `req.auth` — un error de configuración de Auth.js hace que

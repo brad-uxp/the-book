@@ -13,7 +13,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "test:security": "vitest run prisma/migrations.test.ts proxy.test.ts lib/api-tokens.test.ts lib/api-sync-session.test.ts lib/issues-service.test.ts app/api/readonly-token.test.ts app/api/audit-logs/route.test.ts app/api/settings/tokens/route.test.ts lib/oauth-service.test.ts next.config.test.ts reminders/route.test.ts",
+    "test:security": "vitest run prisma/migrations.test.ts proxy.test.ts lib/api-tokens.test.ts lib/api-sync-session.test.ts lib/issues-service.test.ts app/api/readonly-token.test.ts app/api/audit-logs/route.test.ts app/api/settings/tokens/route.test.ts lib/oauth-service.test.ts next.config.test.ts reminders/route.test.ts lib/allowed-emails.test.ts app/oauth/authorize/actions.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
