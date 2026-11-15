@@ -1,4 +1,16 @@
 import type { NextConfig } from "next";
+import { SYNC_PUSH_MAX_BYTES } from "./lib/sync-protocol";
+
+/**
+ * How much of a request body Next buffers for the proxy, before any handler
+ * or credential check runs: the largest body a route accepts (the phone's sync
+ * push, SYNC_PUSH_MAX_BYTES) plus room for that route to answer 413 itself.
+ * The default is 10 MB, which any caller could make the one replica hold per
+ * connection without signing in. Past this, Next cuts the body short, so it
+ * must stay above every route's own cap (next.config.test.ts checks the sync
+ * one, the largest).
+ */
+const PROXY_BODY_MAX_BYTES = SYNC_PUSH_MAX_BYTES + 1024 * 1024;
 
 // CSP origin for the storage backend.
 // In production R2 derives from R2_ACCOUNT_ID → use the wildcard.
@@ -32,6 +44,9 @@ const PUBLIC_IMAGES = [
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  experimental: {
+    proxyClientMaxBodySize: PROXY_BODY_MAX_BYTES,
+  },
   images: {
     // Served as they are: no image optimizer. /_next/image sits outside the
     // proxy (no sign-in), so with a remote pattern anyone could make this one
