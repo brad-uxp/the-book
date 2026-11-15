@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import nextConfig from "./next.config";
+import { SYNC_PUSH_MAX_BYTES } from "./lib/sync-protocol";
 
 /**
  * Lo que la config de Next promete sobre caché e imágenes.
@@ -42,5 +43,27 @@ describe("next.config — imágenes", () => {
   it("sin optimizador y sin hosts remotos", () => {
     expect(nextConfig.images?.unoptimized).toBe(true);
     expect(nextConfig.images?.remotePatterns ?? []).toHaveLength(0);
+  });
+});
+
+// Next guarda el cuerpo para el proxy antes de cualquier handler o chequeo de
+// credencial. Por defecto, 10 MB por conexión, sin login. Tiene que quedar
+// arriba del tope más grande de una ruta (el push de la sync), o Next le corta
+// el cuerpo a un push válido.
+describe("next.config — cuerpo antes del proxy", () => {
+  const limit = nextConfig.experimental?.proxyClientMaxBodySize;
+
+  it("es un número de bytes, menor que el default de 10 MB", () => {
+    expect(typeof limit).toBe("number");
+    expect(limit as number).toBeLessThan(10 * 1024 * 1024);
+  });
+
+  it("deja pasar el push de sync más grande, con margen para que la ruta conteste 413", () => {
+    expect(limit as number).toBeGreaterThan(SYNC_PUSH_MAX_BYTES);
+    expect((limit as number) - SYNC_PUSH_MAX_BYTES).toBeGreaterThanOrEqual(64 * 1024);
+  });
+
+  it("y arriba de los otros topes de las rutas (MCP 1 MB, sign-in y token 8 KB)", () => {
+    for (const cap of [1024 * 1024, 8 * 1024]) expect(limit as number).toBeGreaterThan(cap);
   });
 });

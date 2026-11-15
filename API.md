@@ -15,7 +15,24 @@ Two credentials are accepted, checked in every handler:
 
 Create a token in **Settings → API tokens**. It is shown once and never
 again — only its SHA-256 is stored. Tokens expire in 90 days by default and can
-be revoked instantly from the same screen.
+be revoked instantly from the same screen. Only the personal account
+(`CREDENTIAL_EMAILS`, `lib/allowed-emails.ts`) creates one; any account that
+signs in to the web can list and revoke them. The Workspace account gets a
+`403` on `POST /api/settings/tokens`: it can be reset by its domain's admins,
+which is acceptable for a 12-hour session, not for a token that lasts a year.
+
+A browser session writes only from book.'s own pages. A `POST`, `PUT`,
+`PATCH` or `DELETE` that carries the session cookie is refused with `403` in
+`proxy.ts` unless the browser says it comes from this origin
+(`Sec-Fetch-Site: same-origin`, or, from a browser without it, an `Origin` of
+book.). The cookie is `SameSite=Lax`, which keeps it off other sites but not
+off another host under bolstro.com. Tokens are unaffected: a request with no
+cookie is not checked.
+
+Before any of that, Next buffers at most `SYNC_PUSH_MAX_BYTES` + 1 MB (6 MB)
+of a request body for the proxy (`experimental.proxyClientMaxBodySize` in
+`next.config.ts`, 10 MB by default). Each route then applies its own, smaller
+cap.
 
 ```bash
 curl https://book.bolstro.com/api/invoices \
@@ -150,7 +167,7 @@ gets tokens for the MCP alone.
 | Discovery | `GET /.well-known/oauth-protected-resource/api/mcp` (RFC 9728) and `GET /.well-known/oauth-authorization-server` (RFC 8414). Public. |
 | Clients | Claude's only, identified by a Client ID Metadata Document on `https://claude.ai` (`client_id_metadata_document_supported`); theBook fetches it, from claude.ai only. No dynamic registration. |
 | Redirects | `https://claude.ai/api/mcp/auth_callback` (claude.ai, Desktop, mobile) or a loopback `http://localhost:<port>/callback` / `http://127.0.0.1:<port>/callback` (Claude Code), and only if the client's document lists it. Anything else is shown as an error, never redirected to. |
-| Authorize | `GET /oauth/authorize`: the owner's session (else `/login`, and back), PKCE `S256`, `resource` = `https://book.bolstro.com/api/mcp`, scope `issues`. The response carries `code`, `state` and `iss`. |
+| Authorize | `GET /oauth/authorize`: the owner's session (else `/login`, and back) — the personal account's: any other allowed session sees a refusal instead of the form, and the Allow action refuses it too —, PKCE `S256`, `resource` = `https://book.bolstro.com/api/mcp`, scope `issues`. The response carries `code`, `state` and `iss`. |
 | Token | `POST /api/oauth/token`, form-encoded, public client (no secret). `authorization_code`: a code lives a minute, once; a code used twice revokes what it issued. `refresh_token`: rotated on every use; an old one used again after 30 s revokes the connection; 10 refreshes a minute per connection. No endpoint-wide limit: a real code or refresh is never turned away for traffic. |
 | Tokens | Access: an hour, bound to the MCP — the REST API refuses it (`403`). Refresh: 30 days. |
 | Revoke | **Settings → Connected apps**: the connection and its tokens; the next call is a `401`. Disconnecting inside Claude does not reach theBook (no RFC 7009 endpoint). |

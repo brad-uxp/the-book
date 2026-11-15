@@ -5,13 +5,14 @@ vi.mock("@/lib/audit", () => ({ auditLog: vi.fn(), getActorEmail: vi.fn(async ()
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   requireUserSession: vi.fn(),
+  requireCredentialSession: vi.fn(),
 }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAllowedSession: () => false }));
 
 import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { prisma } from "@/lib/db";
-import { requireUserSession } from "@/lib/api";
+import { CREDENTIAL_REFUSAL, requireCredentialSession, requireUserSession } from "@/lib/api";
 import { hashToken, storedHashOf } from "@/lib/api-tokens";
 
 const create = vi.mocked(prisma.apiToken.create);
@@ -28,10 +29,24 @@ const post = (body: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireUserSession).mockResolvedValue(null);
+  vi.mocked(requireCredentialSession).mockResolvedValue(null);
   create.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => ({ id: "tok-1", ...data })) as never);
 });
 
 describe("POST /api/settings/tokens", () => {
+  // Emitir pide más que listar: la cuenta que emite credenciales largas
+  // (CREDENTIAL_EMAILS), no cualquier sesión de la allowlist.
+  it("pasa por requireCredentialSession y, si lo rechaza, no emite nada", async () => {
+    vi.mocked(requireCredentialSession).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: CREDENTIAL_REFUSAL }), { status: 403 }) as never
+    );
+    const res = await post({ name: "x" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: CREDENTIAL_REFUSAL });
+    expect(create).not.toHaveBeenCalled();
+    expect(requireUserSession).not.toHaveBeenCalled();
+  });
+
   it("crea un token readonly, que dura lo de siempre", async () => {
     const res = await post({ name: "fin-cli", kind: "readonly" });
     expect(res.status).toBe(201);

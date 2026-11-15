@@ -81,7 +81,8 @@ export function ApiTokens() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast.error(
-          err.error?.formErrors?.[0] ??
+          (typeof err.error === "string" ? err.error : undefined) ??
+            err.error?.formErrors?.[0] ??
             err.error?.fieldErrors?.expires_in_days?.[0] ??
             "Could not create the token"
         );

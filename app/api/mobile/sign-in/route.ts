@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { readJsonLimited, toApiResponse } from "@/lib/api";
 import { generateToken } from "@/lib/api-tokens";
-import { MOBILE_ALLOWED_EMAILS } from "@/lib/allowed-emails";
+import { CREDENTIAL_EMAILS } from "@/lib/allowed-emails";
 import { checkGoogleClaims, verifyGoogleIdToken } from "@/lib/google-id-token";
 import { consumeNonce } from "@/lib/mobile-nonce";
 import {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   const claims = checkGoogleClaims(payload, {
     audience,
     authorizedParties: parties,
-    allowedEmails: MOBILE_ALLOWED_EMAILS,
+    allowedEmails: CREDENTIAL_EMAILS,
     now: new Date(now),
   });
   if (!claims.ok) {

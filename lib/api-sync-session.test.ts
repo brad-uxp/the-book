@@ -25,7 +25,7 @@ vi.mock("@/auth", () => ({
   isAllowedSession: (s: unknown) => !!s,
 }));
 
-import { getWriter, mcpBudgetKey, requireAppSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
+import { CREDENTIAL_REFUSAL, getWriter, mcpBudgetKey, requireAppSession, requireCredentialSession, requireReleaseToken, requireSession, requireSyncSession, requireUserSession } from "./api";
 import { resetRateLimits } from "./rate-limit";
 
 const TOKEN_NAMES = { mobile: "mobile · Pixel", automation: "script", release: "book-release", agent: "claude-agent", readonly: "fin-cli" } as const;
@@ -238,5 +238,37 @@ describe("un tipo de token que este build no conoce", () => {
   it("y oye por qué", async () => {
     withToken("superuser");
     expect(await (await requireSession())?.json()).toEqual({ error: "This kind of token is not accepted here" });
+  });
+});
+
+// Emitir un token en Settings pide la cuenta de credenciales (el Gmail
+// personal), no cualquier sesión de la allowlist: la de Workspace la pueden
+// resetear sus admins, y un token dura hasta un año (lib/allowed-emails.ts).
+describe("requireCredentialSession", () => {
+  it("la sesión del Gmail personal pasa", async () => {
+    state.session = { user: { email: "bradlyls95@gmail.com" } };
+    expect(await requireCredentialSession()).toBeNull();
+  });
+
+  it("la de Workspace, que sí entra a la web, recibe 403 con el motivo", async () => {
+    state.session = { user: { email: "brad@uxprogramming.com" } };
+    expect(await requireUserSession()).toBeNull();
+    const res = await requireCredentialSession();
+    expect(res?.status).toBe(403);
+    expect(await res?.json()).toEqual({ error: CREDENTIAL_REFUSAL });
+  });
+
+  it("una sesión sin email tampoco", async () => {
+    state.session = { user: {} };
+    expect((await requireCredentialSession())?.status).toBe(403);
+  });
+
+  it.each(["automation", "mobile", "release", "agent", "readonly"])("un token %s, ni siquiera uno de alcance total: 403", async (kind) => {
+    withToken(kind);
+    expect((await requireCredentialSession())?.status).toBe(403);
+  });
+
+  it("sin credencial, 401", async () => {
+    expect((await requireCredentialSession())?.status).toBe(401);
   });
 });

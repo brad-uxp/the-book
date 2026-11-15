@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { auth, isAllowedSession } from "@/auth";
+import { isCredentialEmail } from "@/lib/allowed-emails";
+import { CREDENTIAL_REFUSAL } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
 import { authorizationResponseUrl, checkAuthorizeRequest, createCode } from "@/lib/oauth-service";
 import { AUTHORIZE_PARAMS } from "./params";
@@ -16,6 +18,11 @@ export async function decide(formData: FormData) {
   const session = await auth();
   if (!isAllowedSession(session)) redirect("/login");
   const owner = (session as { user?: { email?: string } } | null)?.user?.email ?? null;
+  // A connection renews itself with no end date, so it takes the account that
+  // mints long-lived credentials, not just any allowed session
+  // (lib/allowed-emails.ts). The page already shows this refusal instead of
+  // the form; this is for a POST made without it.
+  if (!isCredentialEmail(owner)) throw new Error(CREDENTIAL_REFUSAL);
 
   const params: Record<string, string | undefined> = {};
   for (const key of AUTHORIZE_PARAMS) {

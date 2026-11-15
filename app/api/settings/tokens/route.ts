@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { auditLog, getActorEmail } from "@/lib/audit";
-import { requireUserSession, readJson, invalid, toApiResponse } from "@/lib/api";
+import { requireCredentialSession, requireUserSession, readJson, invalid, toApiResponse } from "@/lib/api";
 import {
   generateToken,
   AGENT_TOKEN_MAX_DAYS,
@@ -64,7 +64,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const denied = await requireUserSession();
+  // Minting is narrower than listing: a token outlives the session by up to a
+  // year, so only CREDENTIAL_EMAILS mints one (lib/allowed-emails.ts).
+  const denied = await requireCredentialSession();
   if (denied) return denied;
 
   const parsed = CreateTokenSchema.safeParse(await readJson(req));
