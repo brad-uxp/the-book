@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateToken, READONLY_REFUSAL, type TokenKind } from "./api-tokens";
+import { generateToken, hashToken, READONLY_REFUSAL, type TokenKind } from "./api-tokens";
 
 // La cadena real — encabezado → tabla de tokens → tipo del token — con la
 // base, los encabezados y la sesión simulados.
@@ -180,6 +180,30 @@ describe("getWriter", () => {
     expect(await getWriter()).toEqual({ actor: "owner@example.com", access: "owner" });
     state.session = null;
     expect(await getWriter()).toEqual({ actor: null, access: "agent" });
+  });
+});
+
+// El token readonly del CLI se emitió el 2026-11-14, antes del dominio del
+// hash: tiene que seguir leyendo después del deploy, por la cadena real.
+describe("un readonly emitido antes del dominio del hash", () => {
+  function withPlainReadonly(createdAt: Date) {
+    const { token, prefix } = generateToken("readonly");
+    state.authorization = `Bearer ${token}`;
+    state.record = {
+      id: "tok-ro-old", name: "fin-thebook-lectura", kind: "readonly", token_prefix: prefix,
+      token_hash: hashToken(token), created_at: createdAt, expires_at: null, revoked_at: null,
+    };
+  }
+
+  it("sigue leyendo, y sigue sin escribir", async () => {
+    withPlainReadonly(new Date("2026-11-14T20:01:26Z"));
+    expect(await requireSession({ readonly: asked("GET") })).toBeNull();
+    expect((await requireSession({ readonly: asked("POST") }))?.status).toBe(403);
+  });
+
+  it("uno así de después del corte no es un token", async () => {
+    withPlainReadonly(new Date("2026-11-15T18:00:00Z"));
+    expect((await requireSession({ readonly: asked("GET") }))?.status).toBe(401);
   });
 });
 

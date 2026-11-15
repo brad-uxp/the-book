@@ -12,6 +12,7 @@ import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { prisma } from "@/lib/db";
 import { requireUserSession } from "@/lib/api";
+import { hashToken, storedHashOf } from "@/lib/api-tokens";
 
 const create = vi.mocked(prisma.apiToken.create);
 
@@ -41,6 +42,19 @@ describe("POST /api/settings/tokens", () => {
     const body = await res.json();
     expect(body.token).toMatch(/^tbro_/);
     expect(data.token_prefix).toBe(body.token.slice(0, 13));
+    // Guarda el hash con dominio: un build anterior no lo verifica (lib/readonly-token.ts).
+    expect(data.token_hash).toBe(storedHashOf(body.token));
+    expect(data.token_hash).not.toBe(hashToken(body.token));
+  });
+
+  it("un token readonly dura 90 días como mucho", async () => {
+    expect((await post({ name: "fin-cli", kind: "readonly", expires_in_days: 90 })).status).toBe(201);
+    const res = await post({ name: "fin-cli", kind: "readonly", expires_in_days: 91 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fieldErrors.expires_in_days[0]).toMatch(/90 days/);
+    // Los de automatización siguen pudiendo durar un año.
+    expect((await post({ name: "script", expires_in_days: 365 })).status).toBe(201);
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("sin kind sigue siendo automation, con tb_", async () => {

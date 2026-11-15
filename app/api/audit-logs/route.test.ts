@@ -62,12 +62,18 @@ function auditedEntityTypes(texts: string[]): string[] {
 
 const TYPES = auditedEntityTypes(sources());
 
-/** How actor_email looks in the log: tokens (with name and prefix), the owner, the jobs, nobody. */
+/**
+ * How actor_email looks in the log: tokens (with name and prefix), the owner,
+ * the jobs, nobody — and tokens as they were labelled before 2026-10-28,
+ * `token:<name>` with no kind, which the log still holds.
+ */
 const ACTORS = [
   "token:automation:fin-cli (tb_AbCd1234)",
   "token:agent:Claude · 1a2b3c4d (tb_ZzYy9876)",
   "token:readonly:fin-ro (tbro_Abc12345)",
   "token:mobile:mobile · Pixel (tb_Mob11111)",
+  "token:cli-books",
+  "token:claude:work",
   "owner@example.com",
   "system",
   null,
@@ -215,9 +221,11 @@ describe("GET /api/audit-logs con un token readonly", () => {
     const { logs, raw } = await read();
     const actors = [...new Set(logs.map((e) => e.actor_email))];
     expect(actors.sort()).toEqual(
-      ["token:automation", "token:agent", "token:readonly", "token:mobile", "owner@example.com", "system", null].sort()
+      ["token:automation", "token:agent", "token:readonly", "token:mobile", "token", "owner@example.com", "system", null].sort()
     );
-    for (const leak of ["tb_", "tbro_", "fin-cli", "fin-ro", "Claude", "Pixel"]) expect(raw).not.toContain(leak);
+    for (const leak of ["tb_", "tbro_", "fin-cli", "fin-ro", "Claude", "Pixel", "cli-books", "claude"]) {
+      expect(raw).not.toContain(leak);
+    }
   });
 
   it.each(OUTSIDE)(

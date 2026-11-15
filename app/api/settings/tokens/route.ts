@@ -3,7 +3,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { auditLog, getActorEmail } from "@/lib/audit";
 import { requireUserSession, readJson, invalid, toApiResponse } from "@/lib/api";
-import { generateToken, AGENT_TOKEN_MAX_DAYS, DEFAULT_EXPIRY_DAYS } from "@/lib/api-tokens";
+import {
+  generateToken,
+  AGENT_TOKEN_MAX_DAYS,
+  DEFAULT_EXPIRY_DAYS,
+  READONLY_TOKEN_MAX_DAYS,
+} from "@/lib/api-tokens";
 
 export const runtime = "nodejs";
 
@@ -23,6 +28,12 @@ const CreateTokenSchema = z
   // reads untrusted text: it should not outlive the work by months.
   .refine((t) => t.kind !== "agent" || t.expires_in_days <= AGENT_TOKEN_MAX_DAYS, {
     message: `An agent token lasts at most ${AGENT_TOKEN_MAX_DAYS} days`,
+    path: ["expires_in_days"],
+  })
+  // A read-only token sits in a script's secrets for good: least privilege
+  // also means it is rotated, not kept for a year.
+  .refine((t) => t.kind !== "readonly" || t.expires_in_days <= READONLY_TOKEN_MAX_DAYS, {
+    message: `A read-only token lasts at most ${READONLY_TOKEN_MAX_DAYS} days`,
     path: ["expires_in_days"],
   });
 

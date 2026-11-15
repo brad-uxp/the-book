@@ -70,6 +70,7 @@ vi.mock("@/lib/db", () => {
     client_id: "c-1",
     referrer_id: null,
     role_id: null,
+    actor_email: "token:automation:fin-cli (tb_AbCd1234)",
     fee_cents: 5_000,
     total_cents: 100_000,
     paid_at: day,
@@ -358,6 +359,27 @@ describe("un token readonly lee las finanzas, y nada más", () => {
       expect(ops().filter((op) => !op.startsWith("apiToken."))).toEqual([]);
     }
     expect(writes()).toEqual([]);
+  });
+
+  // Los recordatorios de aumento no son de las finanzas: /reminders le da 403,
+  // y /api/people tampoco se los trae dentro de cada persona.
+  it.each([
+    ["people/route.ts", "person.findMany"],
+    ["people/[id]/route.ts", "person.findUnique"],
+  ])("GET /api/%s no incluye increase_reminders para el readonly, sí para el dueño", async (file, op) => {
+    const includeOf = () =>
+      (state.calls.find((c) => c.op === op)?.args as { include?: Record<string, unknown> } | undefined)?.include;
+    const { GET } = await load(file);
+
+    await call(file, "GET", GET!);
+    expect(includeOf()).toBeDefined();
+    expect(includeOf()).not.toHaveProperty("increase_reminders");
+    expect(includeOf()).toHaveProperty("salary_payments");
+
+    state.calls.length = 0;
+    withToken("automation");
+    await call(file, "GET", GET!);
+    expect(includeOf()).toHaveProperty("increase_reminders");
   });
 });
 
